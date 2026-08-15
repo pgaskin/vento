@@ -22,23 +22,24 @@ remotedesktop-common.workspace = true
 # `ironrdp-blocking` rather than the async one: this client owns its threads and
 # blocks on a socket, which keeps a tokio runtime out of the app.
 #
-# A pinned commit rather than the published versions, and not by preference:
+# A submodule pinned to a commit rather than the published versions, and not by
+# preference:
 # `ironrdp-session` 0.11.0 chunks a decoded bitmap by the *rectangle's* width
 # where the protocol pads the bitmap's own width up to a multiple of four, so
 # every update not a multiple of four wide shears one row further left than the
 # last. On xrdp that is most of them. Fixed upstream and unreleased — revisit at
 # the next release.
-ironrdp-cliprdr = { git = "https://github.com/Devolutions/IronRDP", rev = "24eb1f62f9aadf36fb6b3b588ecda390fcad2b38" }
-ironrdp-blocking = { git = "https://github.com/Devolutions/IronRDP", rev = "24eb1f62f9aadf36fb6b3b588ecda390fcad2b38" }
-ironrdp-connector = { git = "https://github.com/Devolutions/IronRDP", rev = "24eb1f62f9aadf36fb6b3b588ecda390fcad2b38" }
-ironrdp-displaycontrol = { git = "https://github.com/Devolutions/IronRDP", rev = "24eb1f62f9aadf36fb6b3b588ecda390fcad2b38" }
-ironrdp-dvc = { git = "https://github.com/Devolutions/IronRDP", rev = "24eb1f62f9aadf36fb6b3b588ecda390fcad2b38" }
-ironrdp-core = { git = "https://github.com/Devolutions/IronRDP", rev = "24eb1f62f9aadf36fb6b3b588ecda390fcad2b38" }
-ironrdp-graphics = { git = "https://github.com/Devolutions/IronRDP", rev = "24eb1f62f9aadf36fb6b3b588ecda390fcad2b38" }
-ironrdp-input = { git = "https://github.com/Devolutions/IronRDP", rev = "24eb1f62f9aadf36fb6b3b588ecda390fcad2b38" }
-ironrdp-pdu = { git = "https://github.com/Devolutions/IronRDP", rev = "24eb1f62f9aadf36fb6b3b588ecda390fcad2b38" }
-ironrdp-session = { git = "https://github.com/Devolutions/IronRDP", rev = "24eb1f62f9aadf36fb6b3b588ecda390fcad2b38" }
-ironrdp-svc = { git = "https://github.com/Devolutions/IronRDP", rev = "24eb1f62f9aadf36fb6b3b588ecda390fcad2b38" }
+ironrdp-cliprdr = { path = "../../../../../third_party/ironrdp/crates/ironrdp-cliprdr" }
+ironrdp-blocking = { path = "../../../../../third_party/ironrdp/crates/ironrdp-blocking" }
+ironrdp-connector = { path = "../../../../../third_party/ironrdp/crates/ironrdp-connector" }
+ironrdp-displaycontrol = { path = "../../../../../third_party/ironrdp/crates/ironrdp-displaycontrol" }
+ironrdp-dvc = { path = "../../../../../third_party/ironrdp/crates/ironrdp-dvc" }
+ironrdp-core = { path = "../../../../../third_party/ironrdp/crates/ironrdp-core" }
+ironrdp-graphics = { path = "../../../../../third_party/ironrdp/crates/ironrdp-graphics" }
+ironrdp-input = { path = "../../../../../third_party/ironrdp/crates/ironrdp-input" }
+ironrdp-pdu = { path = "../../../../../third_party/ironrdp/crates/ironrdp-pdu" }
+ironrdp-session = { path = "../../../../../third_party/ironrdp/crates/ironrdp-session" }
+ironrdp-svc = { path = "../../../../../third_party/ironrdp/crates/ironrdp-svc" }
 
 rustls = { version = "0.23", default-features = false, features = [
     "ring",

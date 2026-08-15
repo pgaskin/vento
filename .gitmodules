@@ -33,3 +33,8 @@
 	url = https://github.com/FreeRDP/FreeRDP.git
 	shallow = true
 	ignore = all
+[submodule "third_party/ironrdp"]
+	path = third_party/ironrdp
+	url = https://github.com/Devolutions/IronRDP.git
+	shallow = true
+	ignore = all
