@@ -52,10 +52,7 @@ public final class LibVncProvider implements BackendProvider {
     static final List<BackendOption> OPTIONS = List.of(
             // ---- the picture: a connection's, defaulting to the backend's ----
             BackendOption.choice(ENCODING, "Encoding",
-                    "How the server compresses the picture. Automatic offers "
-                            + "every encoding this client knows, best first, and "
-                            + "lets the server choose. Tight sends photographs and "
-                            + "gradients as JPEG.",
+                    "Preferred image encoding, overriding the server's selection if not Automatic.",
                     "auto", Scope.LAYERED, true,
                     new Choice("auto", "Automatic"),
                     new Choice("tight", "Tight"),
@@ -66,10 +63,7 @@ public final class LibVncProvider implements BackendProvider {
                     new Choice("rre", "RRE"),
                     new Choice("raw", "Raw (uncompressed)")),
             BackendOption.choice(COMPRESSION, "Compression",
-                    "The compressLevel pseudo-encoding sent with SetEncodings, 1 "
-                            + "to 9. Higher costs the remote machine's processor "
-                            + "and sends less over the link. Automatic sends none "
-                            + "of it, which leaves the server its own.",
+                    "Image compression level, where supported by the encoding.",
                     "auto", Scope.LAYERED, true,
                     new Choice("auto", "Automatic"),
                     new Choice("1", "1 (fastest)"),
@@ -77,10 +71,7 @@ public final class LibVncProvider implements BackendProvider {
                     new Choice("6", "6 (balanced)"),
                     new Choice("9", "9 (smallest)")),
             BackendOption.choice(QUALITY, "Picture quality",
-                    "What Tight is allowed to throw away. Lossless sends every "
-                            + "pixel exactly; anything else lets the server send "
-                            + "photographs and gradients as JPEG, which is most of "
-                            + "what Tight is faster for. Only Tight uses this.",
+                    "JPEG image quality, for Tight encoding.",
                     "lossless", Scope.LAYERED, true,
                     new Choice("lossless", "Lossless"),
                     new Choice("9", "9 (best)"),
@@ -89,10 +80,7 @@ public final class LibVncProvider implements BackendProvider {
                     new Choice("3", "3"),
                     new Choice("0", "0 (smallest)")),
             BackendOption.choice(COLOUR, "Colour depth",
-                    "The colour depth of the pixel format asked for. Less colour "
-                            + "is fewer bytes over the link whatever the encoding, "
-                            + "and visible banding on a photograph. Takes effect on "
-                            + "the next connection.",
+                    "Pixel color depth. Takes effect on the next connection.",
                     "full", Scope.LAYERED, false,
                     new Choice("full", "Full colour (24-bit)"),
                     new Choice("rgb222", "6-bit (rgb222)"),
@@ -100,17 +88,15 @@ public final class LibVncProvider implements BackendProvider {
 
             // ---- per connection ---------------------------------------------
             BackendOption.bool(VIEW_ONLY, "View only",
-                    "The desktop is shown and no key, pointer or clipboard event "
-                            + "is sent.",
+                    "Do not send input or clipboard events.",
                     false, Scope.CONNECTION, true),
-            BackendOption.bool(SHARED, "Share the desktop",
-                    "Other viewers stay connected. Off asks the server to "
-                            + "disconnect them.",
+            BackendOption.bool(SHARED, "Shared",
+                    "Do not ask the server to disconnect other clients.",
                     true, Scope.CONNECTION, false),
 
             // ---- per backend -------------------------------------------------
             BackendOption.bool(BELL, "Bell",
-                    "The phone buzzes when the remote machine rings its bell.",
+                    "Vibrate when the remote servers rings the bell.",
                     true, Scope.GLOBAL, false));
 
     @Override
@@ -133,10 +119,7 @@ public final class LibVncProvider implements BackendProvider {
 
     @Override
     public String description() {
-        return "Tight, which sends photographs as JPEG for fewer bytes over the link, and the "
-                + "one that asks least of the phone on a desktop that is only partly moving. "
-                + "It takes encryption where a server offers it and cannot be asked to require "
-                + "it.";
+        return "Usually the best option for typical usage. Has the lowest bandwidth usage for small incremental updates, and is the most CPU efficient.";
     }
 
     /** After our own client, which is the one that will still be here. */

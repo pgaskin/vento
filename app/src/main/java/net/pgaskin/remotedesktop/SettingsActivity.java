@@ -194,7 +194,7 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                     () -> a.open(SECTION_GENERAL)));
             screen.addPreference(link(R.string.settings_input, R.string.settings_input_summary,
                     () -> a.open(SECTION_INPUT)));
-            screen.addPreference(heading(R.string.settings_group_protocols));
+            screen.addPreference(heading(R.string.settings_group_backends));
             for (String id : Backends.ids()) {
                 final Preference p = link(0, 0, () -> a.openBackend(id));
                 p.setTitle(Backends.name(id));

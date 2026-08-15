@@ -209,7 +209,7 @@ public final class TigerVncBackend implements Backend, TigerVncNative.Callbacks 
             facts.add(ConnectionFact.of(ConnectionFact.Field.PROTOCOL, "Protocol", info[1]));
             facts.add(ConnectionFact.of(ConnectionFact.Field.CONNECTION, "Connection", info[2]));
             facts.add(ConnectionFact.of(ConnectionFact.Field.SECURITY, "Security", info[3]));
-            facts.add(ConnectionFact.of(ConnectionFact.Field.ENCODING, "Encoding in use", info[4]));
+            facts.add(ConnectionFact.of(ConnectionFact.Field.ENCODING, "Encoding", info[4]));
             facts.add(ConnectionFact.of(ConnectionFact.Field.LINE_SPEED, "Line speed", info[5]));
             final long[] traffic = TigerVncNative.nativeTraffic(h);
             if (traffic != null && traffic.length == 2 && traffic[0] >= 0) {

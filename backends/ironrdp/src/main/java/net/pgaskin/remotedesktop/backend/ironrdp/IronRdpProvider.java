@@ -87,21 +87,17 @@ public final class IronRdpProvider implements BackendProvider {
 
     static final List<BackendOption> OPTIONS = List.of(
             // ---- per connection ---------------------------------------------
-            BackendOption.choice(NLA, "Authentication",
-                    "Network Level Authentication checks your password over "
-                            + "CredSSP before the session exists. A server without "
-                            + "it falls back to its own login screen.",
+            BackendOption.choice(NLA, "NLA",
+                    "Network Level Authentication authenticates using CredSSP before the session starts rather than using the server-side login screen.",
                     "prefer", Scope.CONNECTION, false,
                     new Choice("prefer", "Where the server offers it"),
                     new Choice("require", "Required"),
                     new Choice("off", "Never")),
             BackendOption.choice(DESKTOP_SIZE, "Desktop size",
-                    "The size the remote machine is asked to make the desktop, in "
-                            + "pixels. RDP creates the session at this size rather "
-                            + "than showing one that already exists.",
+                    "Preferred screen resolution.",
                     "1920x1200", Scope.CONNECTION, false,
-                    new Choice(REMOTE, "The size it was last time"),
-                    new Choice(DEVICE, "This phone's screen"),
+                    new Choice(REMOTE, "Do not change"),
+                    new Choice(DEVICE, "Match local device"),
                     new Choice("1920x1200", "1920 × 1200"),
                     new Choice("1920x1080", "1920 × 1080"),
                     new Choice("1600x1000", "1600 × 1000"),
@@ -109,40 +105,27 @@ public final class IronRdpProvider implements BackendProvider {
                     new Choice("1280x800", "1280 × 800"),
                     new Choice("2560x1440", "2560 × 1440")),
             BackendOption.choice(MONITORS, "Monitors",
-                    "How many screens the remote machine is asked to make, each "
-                            + "the size above, side by side. More than one is a "
-                            + "wider desktop to move the viewport over, and the "
-                            + "remote machine treats them as separate screens — a "
-                            + "window maximises onto one of them. Default: one.",
+                    "Simulate multiple monitors.",
                     "1", Scope.CONNECTION, false,
                     new Choice("1", "One"),
                     new Choice("2", "Two"),
                     new Choice("3", "Three")),
             BackendOption.choice(GRAPHICS, "Graphics",
-                    "RemoteFX is a video codec: much less data over a picture "
-                            + "with photographs in it, and a little of the detail "
-                            + "lost. Bitmaps are exact and cost what they cost.",
+                    "EGFX is not supported, RemoteFX is older, and Bitmap sends raw images.",
                     "rfx", Scope.LAYERED, false,
                     new Choice("rfx", "RemoteFX"),
                     new Choice("bitmap", "Bitmaps")),
             BackendOption.choice(EXPERIENCE, "Visual effects",
-                    "What the remote machine may spend the link on drawing for "
-                            + "you. Fewer effects is a plainer desktop and less to "
-                            + "send, and the machine decides some of the rest for "
-                            + "itself from what this says about the connection.",
+                    "Controls the amount of animation and visual effects, if supported by the server.",
                     "balanced", Scope.LAYERED, false,
                     new Choice("full", "Everything"),
                     new Choice("balanced", "No animation"),
                     new Choice("plain", "As little as possible")),
             BackendOption.bool(COMPRESSION, "Compression",
-                    "The remote machine compresses what it sends, on top of "
-                            + "whatever the picture is already encoded as. It "
-                            + "costs it some work and changes nothing about what "
-                            + "is drawn. Default: on.",
+                    "Enable connection-level compression. Uses less bandwidth, but more CPU.",
                     true, Scope.LAYERED, false),
             BackendOption.bool(VIEW_ONLY, "View only",
-                    "The desktop is shown and no key, pointer or clipboard event "
-                            + "is sent.",
+                    "Do not send input or clipboard events.",
                     false, Scope.CONNECTION, true));
 
     @Override
@@ -162,9 +145,7 @@ public final class IronRdpProvider implements BackendProvider {
 
     @Override
     public String description() {
-        return "The lighter of the two RDP clients, at about half the decoding of the other for "
-                + "more dropped frames. It has no EGFX and no sound, so no video either, and a "
-                + "recent Windows machine can be very slow over it.";
+        return "Rust RDP implementation. Uses less CPU than FreeRDP, but drops more frames and does not properly support EGFX";
     }
 
     @Override

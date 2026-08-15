@@ -42,9 +42,7 @@ public final class RfbProvider implements BackendProvider {
     static final List<BackendOption> OPTIONS = List.of(
             // ---- per connection ---------------------------------------------
             BackendOption.choice(SECURITY, "Encryption",
-                    "VeNCrypt carries the session inside TLS. A VNC server signs "
-                            + "its own certificate, so it is remembered the first "
-                            + "time you accept it and questioned if it changes.",
+                    "TLS (VeNCrypt) extension support.",
                     "prefer", Scope.CONNECTION, false,
                     new Choice("prefer", "Where the server offers it"),
                     new Choice("require", "Required"),
@@ -56,9 +54,7 @@ public final class RfbProvider implements BackendProvider {
             // region read a row copy, and a reduced one would put a conversion
             // back in the path for every decoder it has.
             BackendOption.choice(ENCODING, "Encoding",
-                    "How the server compresses the picture. Automatic sends "
-                            + "SetEncodings with every encoding this client knows, "
-                            + "best first, and lets the server choose.",
+                    "Preferred image encoding, overriding the server's selection if not Automatic.",
                     "auto", Scope.LAYERED, true,
                     new Choice("auto", "Automatic"),
                     new Choice("zrle", "ZRLE"),
@@ -66,10 +62,7 @@ public final class RfbProvider implements BackendProvider {
                     new Choice("rre", "RRE"),
                     new Choice("raw", "Raw (uncompressed)")),
             BackendOption.choice(COMPRESSION, "Compression",
-                    "The compressLevel pseudo-encoding sent with SetEncodings, 1 "
-                            + "to 9. Higher costs the remote machine's processor "
-                            + "and sends less over the link. Automatic sends none "
-                            + "of it, which leaves the server its own.",
+                    "Image compression level, where supported by the encoding.",
                     "auto", Scope.LAYERED, true,
                     new Choice("auto", "Automatic"),
                     new Choice("1", "1 (fastest)"),
@@ -77,17 +70,15 @@ public final class RfbProvider implements BackendProvider {
                     new Choice("6", "6 (balanced)"),
                     new Choice("9", "9 (smallest)")),
             BackendOption.bool(VIEW_ONLY, "View only",
-                    "The desktop is shown and no key, pointer or clipboard event "
-                            + "is sent.",
+                    "Do not send input or clipboard events.",
                     false, Scope.CONNECTION, true),
-            BackendOption.bool(SHARED, "Share the desktop",
-                    "Other viewers stay connected. Off asks the server to "
-                            + "disconnect them.",
+            BackendOption.bool(SHARED, "Shared",
+                    "Do not ask the server to disconnect other clients.",
                     true, Scope.CONNECTION, false),
 
             // ---- per backend -------------------------------------------------
             BackendOption.bool(BELL, "Bell",
-                    "The phone buzzes when the remote machine rings its bell.",
+                    "Vibrate when the remote servers rings the bell.",
                     true, Scope.GLOBAL, false));
 
     @Override
@@ -110,10 +101,7 @@ public final class RfbProvider implements BackendProvider {
 
     @Override
     public String description() {
-        return "Written for this app: half the size of the others, encryption that can be "
-                + "required rather than preferred, and the only support here for a remote "
-                + "machine that moves its own pointer. It has no Tight and no video, so a "
-                + "photograph costs more over a slow link.";
+        return "Rust RFB implementation. Does not support Tight encoding, and typically uses more bandwith and performs worse on slow networks. Allows remote pointer position updates, where supported by the server.";
     }
 
     /** First in a picker: it is ours, and it is the one that will still be here. */

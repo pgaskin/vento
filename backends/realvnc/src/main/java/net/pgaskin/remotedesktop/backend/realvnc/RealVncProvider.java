@@ -52,9 +52,7 @@ public final class RealVncProvider implements BackendProvider {
      */
     private static final BackendOption COLOR_LEVEL = BackendOption.choice(
             "ColorLevel", "Colour depth",
-            "The colour depth to ask the server for. Only the Low and Custom "
-                    + "picture qualities use it; the others ask for full colour "
-                    + "whatever it says.",
+            "Pixel color depth. Only used when quality is set to Low or Custom.",
             "full", Scope.LAYERED, true,
             new Choice("full", "Full colour (24-bit)"),
             new Choice("rgb222", "64 colours (rgb222)"),
@@ -90,13 +88,12 @@ public final class RealVncProvider implements BackendProvider {
      */
     private static final BackendOption ENCODING = BackendOption.choice(
             "PreferredEncoding", "Encoding",
-            "Which encoding to ask the server for first. The server has the "
-                    + "last word.",
+            "Preferred image encoding. The server may still choose to use a different one. Only used when quality is set to Custom",
             "ZRLE2", Scope.LAYERED, true,
             new Choice("JPEG", "JPEG (lossy)"),
             new Choice("Zlib", "Zlib"),
             new Choice("ZRLE", "ZRLE"),
-            new Choice("ZRLE2", "ZRLE2 (RealVNC's own)"),
+            new Choice("ZRLE2", "ZRLE2"),
             new Choice("TRLE", "TRLE"),
             new Choice("Hextile", "Hextile"),
             new Choice("Raw", "Raw (uncompressed)"),
@@ -108,10 +105,7 @@ public final class RealVncProvider implements BackendProvider {
             // measured line speed, and pinning High on every connection is
             // deciding for a network nobody has seen yet.
             BackendOption.choice("Quality", "Picture quality",
-                    "How hard the server compresses the picture. Automatic, High "
-                            + "and Medium choose the encoding and ask for full "
-                            + "colour; Low chooses the encoding and drops the "
-                            + "colour; Custom hands both back to you.",
+                    "Encoding and color depth preset.",
                     "Auto", Scope.LAYERED, true,
                     new Choice("Auto", "Automatic"),
                     new Choice("High", "High"),
@@ -121,38 +115,34 @@ public final class RealVncProvider implements BackendProvider {
             ENCODING,
             COLOR_LEVEL,
             BackendOption.bool("ViewOnly", "View only",
-                    "The desktop is shown and no key, pointer or clipboard event "
-                            + "is sent.",
+                    "Do not send input or clipboard events.",
                     false, Scope.CONNECTION, true),
-            BackendOption.bool("Shared", "Share the desktop",
-                    "Other viewers stay connected. Off disconnects them.",
+            BackendOption.bool("Shared", "Shared",
+                    "Do not ask the server to disconnect other clients.",
                     true, Scope.CONNECTION, false),
             BackendOption.bool("AutoReconnect", "Reconnect automatically",
-                    "A connection that drops is re-established without asking.",
+                    "Do not ask before re-establishing dropped connections.",
                     true, Scope.CONNECTION, true),
-            BackendOption.bool("EnableUdpRfb", "Try UDP first",
-                    "RealVNC's own UDP transport is tried first, falling back to "
-                            + "TCP half a second later. That half second is the "
-                            + "cost against a server without it.",
+            BackendOption.bool("EnableUdpRfb", "Enable UDP",
+                    "Enable RealVNC's proprietary SCTP/RTP-based UDP protocol, falling back to TCP if the server doesn't respond within 500ms.",
                     true, Scope.CONNECTION, false),
 
             // ---- per backend -------------------------------------------------
             BackendOption.choice("Encryption", "Encryption",
-                    "What to ask for when the server offers a choice.",
+                    "Whether to encrypt connections.",
                     "PreferOn", Scope.GLOBAL, false,
                     new Choice("AlwaysOn", "Required"),
-                    new Choice("PreferOn", "Preferred"),
-                    new Choice("PreferOff", "Only if asked for"),
-                    new Choice("Server", "Whatever the server picks")),
+                    new Choice("PreferOn", "If supported by the server"),
+                    new Choice("PreferOff", "Only if required by the server"),
+                    new Choice("Server", "Let the server decide")),
             BackendOption.bool("WarnUnencrypted", "Warn when unencrypted",
-                    "An unencrypted connection is confirmed before it is made.",
+                    "Show a warning when connecting to a server which doesn't support encryption.",
                     true, Scope.GLOBAL, false),
             BackendOption.bool("DotWhenNoCursor", "Dot for an invisible cursor",
-                    "A dot marks the pointer when the server has hidden its "
-                            + "cursor.",
+                    "Show a dot when the server hides the cursor.",
                     true, Scope.GLOBAL, false),
             BackendOption.bool("AcceptBell", "Bell",
-                    "The phone buzzes when the remote machine rings its bell.",
+                    "Vibrate when the remote servers rings the bell.",
                     true, Scope.GLOBAL, false),
             // The three clipboard parameters this core has are deliberately not
             // rows. Whether a phone's clipboard goes to a remote machine and
@@ -161,12 +151,10 @@ public final class RealVncProvider implements BackendProvider {
             // second answer to it, in a second screen, one layer down. Left at
             // their defaults, which is on, so the app's answer is the only one.
             BackendOption.integer("KeepAliveInterval", "Keep-alive interval",
-                    "Seconds between keep-alives on an idle connection. Default "
-                            + "30.",
+                    "Seconds between keep-alives on an idle connection.",
                     30, Scope.GLOBAL, false),
             BackendOption.integer("KeepAliveResponseTimeout", "Keep-alive timeout",
-                    "Seconds to wait for an answer before the connection is given "
-                            + "up. Default 30.",
+                    "Seconds to wait for an answer before giving up.",
                     30, Scope.GLOBAL, false));
 
     /**
@@ -201,9 +189,7 @@ public final class RealVncProvider implements BackendProvider {
 
     @Override
     public String description() {
-        return "RealVNC's own client, and the one that speaks their UDP transport and their "
-                + "encryption to a RealVNC server. It is a closed binary and offers only the "
-                + "settings it exposes.";
+        return "RealVNC's proprietary client implementation. This is the only one which supports UDP, ZRLE2, and RealVNC's proprietary authentication/encryption. It performs significantly better than the others when connecting to a RealVNC server, especially for typical desktop usage.";
     }
 
     /**

@@ -58,10 +58,8 @@ public final class TigerVncProvider implements BackendProvider {
 
     static final List<BackendOption> OPTIONS = List.of(
             // ---- the picture: a connection's, defaulting to the backend's ----
-            BackendOption.choice(ENCODING, "Preferred encoding",
-                    "Which encoding to ask the server for first. This client "
-                            + "offers every encoding it can decode whatever is "
-                            + "chosen here, and the server has the last word.",
+            BackendOption.choice(ENCODING, "Encoding",
+                    "Preferred image encoding. The server may still choose to use a different one.",
                     "tight", Scope.LAYERED, true,
                     new Choice("tight", "Tight"),
                     new Choice("h264", "H.264", null, H264),
@@ -70,10 +68,7 @@ public final class TigerVncProvider implements BackendProvider {
                     new Choice("rre", "RRE"),
                     new Choice("raw", "Raw (uncompressed)")),
             BackendOption.choice(COMPRESSION, "Compression",
-                    "The compressLevel pseudo-encoding sent with SetEncodings, 1 "
-                            + "to 9. Higher costs the remote machine's processor "
-                            + "and sends less over the link. Automatic sends none "
-                            + "of it, which leaves the server its own.",
+                    "Image compression level, where supported by the encoding.",
                     "auto", Scope.LAYERED, true,
                     new Choice("auto", "Automatic"),
                     new Choice("1", "1 (fastest)"),
@@ -81,11 +76,7 @@ public final class TigerVncProvider implements BackendProvider {
                     new Choice("6", "6 (balanced)"),
                     new Choice("9", "9 (smallest)")),
             BackendOption.choice(QUALITY, "Picture quality",
-                    "What Tight is allowed to throw away. Lossless sends every "
-                            + "pixel exactly; anything else lets the server send "
-                            + "photographs and gradients as JPEG, which is most of "
-                            + "what Tight is faster for. Automatic follows the "
-                            + "measured line speed. Only Tight uses this.",
+                    "JPEG image quality, for Tight encoding.",
                     "lossless", Scope.LAYERED, true,
                     new Choice("auto", "Automatic"),
                     new Choice("lossless", "Lossless"),
@@ -95,10 +86,7 @@ public final class TigerVncProvider implements BackendProvider {
                     new Choice("3", "3"),
                     new Choice("0", "0 (smallest)")),
             BackendOption.choice(COLOUR, "Colour depth",
-                    "The colour depth of the pixel format asked for. Less colour "
-                            + "is fewer bytes over the link whatever the encoding, "
-                            + "and visible banding on a photograph. Automatic "
-                            + "follows the measured line speed. Applies at once.",
+                    "Pixel color depth.",
                     "full", Scope.LAYERED, true,
                     new Choice("auto", "Automatic"),
                     new Choice("full", "Full colour (24-bit)"),
@@ -107,25 +95,18 @@ public final class TigerVncProvider implements BackendProvider {
 
             // ---- per connection ---------------------------------------------
             BackendOption.bool(VIEW_ONLY, "View only",
-                    "The desktop is shown and no key, pointer or clipboard event "
-                            + "is sent.",
+                    "Do not send input or clipboard events.",
                     false, Scope.CONNECTION, true),
-            BackendOption.bool(SHARED, "Share the desktop",
-                    "Other viewers stay connected. Off asks the server to "
-                            + "disconnect them.",
+            BackendOption.bool(SHARED, "Shared",
+                    "Do not ask the server to disconnect other clients.",
                     true, Scope.CONNECTION, false),
 
             // ---- per backend -------------------------------------------------
-            BackendOption.bool(H264, "Offer H.264 video",
-                    "Lets a server send the desktop as video, decoded by the "
-                            + "phone's video hardware. It sends about a quarter "
-                            + "of the data and costs about twice the processor, "
-                            + "since a frame costs the same however little "
-                            + "changed, and the picture is never exact. Few "
-                            + "servers can send it. Off unless you want it.",
+            BackendOption.bool(H264, "Offer H.264 encoding",
+                    "Allow the server to use H.264 encoding, with local hardware-accelerated decoding.",
                     false, Scope.GLOBAL, true),
             BackendOption.bool(BELL, "Bell",
-                    "The phone buzzes when the remote machine rings its bell.",
+                    "Vibrate when the remote servers rings the bell.",
                     true, Scope.GLOBAL, false));
 
     @Override
@@ -145,10 +126,7 @@ public final class TigerVncProvider implements BackendProvider {
 
     @Override
     public String description() {
-        return "Tight, H.264 video on the phone's own decoder, and the only client here that "
-                + "can talk to a RealVNC server or follow the line speed it measures. It "
-                + "decodes on four threads, which drops the fewest frames and costs two to "
-                + "five times the processor of the others.";
+        return "Fastest implementation, dropping the fewest frames, but using 2-5x the CPU usage. This the only VNC backend which supports H.264 encoding, which is the most bandwidth-efficient for large screen updates, where supported by the server.";
     }
 
     /** After libvncclient, which came first. */

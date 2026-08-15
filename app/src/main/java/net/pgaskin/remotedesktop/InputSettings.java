@@ -87,99 +87,62 @@ public final class InputSettings {
 
     private static final List<Tunable> TUNABLES = List.of(
             bool("accelEnabled", "Pointer acceleration",
-                    "Cursor travel is scaled by a jerk-based factor, clamped to "
-                            + "1.1–5.0. Off moves the cursor exactly as far as "
-                            + "the finger.",
+                    "Scale cursor movement by the speed of the gesture.",
                     c -> c.accelEnabled, (c, v) -> c.accelEnabled = v),
-            bool("accelAdaptive", "Fade acceleration when slow",
-                    "Below 0.15 dp/ms the factor is held at its 1.1 floor, and "
-                            + "the full curve returns above 0.6 dp/ms. Off "
-                            + "applies the curve at every speed.",
+            bool("accelAdaptive", "Adaptive acceleration",
+                    "Reduce acceleration at low speeds for better precision.",
                     c -> c.accelAdaptive, (c, v) -> c.accelAdaptive = v),
             bool("axisLockEnabled", "Axis locking",
-                    "A straight drag slower than 0.25 dp/ms has its minor axis "
-                            + "zeroed, which holds a text selection on one line. "
-                            + "The lock releases while the direction turns, so a "
-                            + "circle stays a circle.",
+                    "Snap slow straight movements to the horizontal or vertical axis.",
                     c -> c.axisLockEnabled, (c, v) -> c.axisLockEnabled = v),
             bool("inertiaEnabled", "Momentum",
-                    "The cursor glides on after a flick, starting 50 ms after "
-                            + "the finger lifts and losing 15% of its speed every "
-                            + "10 ms. Off stops the cursor with the finger.",
+                    "Keep moving the cursor after a flick.",
                     c -> c.inertiaEnabled, (c, v) -> c.inertiaEnabled = v),
-            bool("rawMotionWhenRelative", "Send raw motion when the remote owns the cursor",
-                    "Some machines keep their own cursor and are told how far "
-                            + "the finger moved rather than where it is, and "
-                            + "they accelerate that motion themselves. "
-                            + "Acceleration, axis locking and momentum are all "
-                            + "skipped in those sessions. Off applies them here "
-                            + "as well, on top of whatever the machine does.",
+            bool("rawMotionWhenRelative", "Raw motion for remote cursors",
+                    "Skip acceleration, axis locking, and momentum when the remote cursor is relative.",
                     c -> c.rawMotionWhenRelative, (c, v) -> c.rawMotionWhenRelative = v),
-            bool("bumpScrollEnabled", "Bump scroll",
-                    "A held drag pushed into the outer 24 dp of the screen keeps "
-                            + "scrolling the desktop, 12 dp every 100 ms.",
+            bool("bumpScrollEnabled", "Edge scrolling",
+                    "Pan the desktop while dragging against the edge of the screen.",
                     c -> c.bumpScrollEnabled, (c, v) -> c.bumpScrollEnabled = v),
             bool("naturalScrolling", "Natural scrolling",
-                    "Two-finger scrolling and a physical wheel are inverted, so "
-                            + "the content follows the fingers.",
+                    "Invert the scroll direction of gestures and the mouse wheel.",
                     c -> c.naturalScrolling, (c, v) -> c.naturalScrolling = v),
-            bool("recentreCursorOnZoom", "Re-centre the cursor when zooming",
-                    "The cursor moves to the middle of the view when the zoom "
-                            + "changes. Off leaves it where it was on the desktop "
-                            + "while the view scales around it.",
+            bool("recentreCursorOnZoom", "Recenter cursor when zooming",
+                    "Move the cursor to the center of the view when the zoom changes.",
                     c -> c.recentreCursorOnZoom, (c, v) -> c.recentreCursorOnZoom = v),
-            bool("keyboardInfoSolid", "Solid extension keyboard readout",
-                    "The strip above the extension keys is part of the keyboard: "
-                            + "the desktop stops above it. Off floats it over the "
-                            + "last 30 dp of desktop and fades it as the cursor "
-                            + "comes near, which is what the original does.",
+            bool("keyboardInfoSolid", "Solid extension keyboard bar",
+                    "Inset the desktop above the extension keyboard bar instead of fading it over the desktop.",
                     c -> c.keyboardInfoSolid, (c, v) -> c.keyboardInfoSolid = v),
             bool("keyboardHaptics", "Extension keyboard haptics",
-                    "The extension row buzzes on each key, and again when a "
-                            + "modifier locks. The system keyboard's own setting "
-                            + "is separate.",
+                    "Vibrate when pressing extension keyboard keys.",
                     c -> c.keyboardHaptics, (c, v) -> c.keyboardHaptics = v),
-            bool("mouseCapture", "Capture a physical mouse",
-                    "A connected mouse is captured while the session is open, so "
-                            + "it reports relative motion and cannot run out of "
-                            + "screen. Off leaves the phone's own cursor visible "
-                            + "and stops it at the screen edge.",
+            bool("mouseCapture", "Capture physical mouse",
+                    "Capture the pointer while connected to send relative motion instead of using the local cursor.",
                     c -> c.mouseCapture, (c, v) -> c.mouseCapture = v),
             number("mouseSpeed", "Physical mouse speed",
-                    "A multiplier on a captured mouse's motion. Default 1, which "
-                            + "is the pointer speed the phone applies everywhere "
-                            + "else.",
+                    "Multiplier for captured mouse motion.",
                     c -> c.mouseSpeed, (c, v) -> c.mouseSpeed = v),
-            number("mouseWheelStep", "Physical wheel notches per click",
-                    "Wheel notches per click sent, where one notch is a detent "
-                            + "on an ordinary mouse. Default 1; raise it for a "
-                            + "high-resolution wheel that scrolls too far.",
+            number("mouseWheelStep", "Physical mouse wheel step",
+                    "Wheel detents per scroll event sent. Increase for high-resolution wheels.",
                     c -> c.mouseWheelStep, (c, v) -> c.mouseWheelStep = v),
             number("clickHoldMs", "Click hold (ms)",
-                    "How long a tap holds the button down, which is also the "
-                            + "double-tap window and the tap-then-drag window. "
-                            + "Default 250 ms.",
+                    "Button hold time for taps, and the window for double-taps and tap-then-drag.",
                     c -> (float) c.clickHoldMs, (c, v) -> c.clickHoldMs = (long) (float) v),
             number("wheelStepPx", "Two-finger scroll step (px)",
-                    "Finger travel per wheel click. Default 8 px.",
+                    "Finger travel per scroll event sent.",
                     c -> c.wheelStepPx, (c, v) -> c.wheelStepPx = v),
-            number("overlayWheelTicksPerClick", "Wheel strip gearing (ticks per click)",
-                    "Ticks between clicks at rate 1 on the mouse overlay's scroll "
-                            + "strip, and proportionally fewer further from its "
-                            + "middle. Default 3.",
+            number("overlayWheelTicksPerClick", "Scroll bar gearing (ticks per click)",
+                    "Ticks between scroll events at rate 1, scaling down towards the ends of the bar.",
                     c -> c.overlayWheelTicksPerClick, (c, v) -> c.overlayWheelTicksPerClick = v),
-            number("overlayWheelMaxRate", "Wheel strip top rate (clicks per tick)",
-                    "The rate at each end of the strip, with the middle at 0 and "
-                            + "position scaling between them. Default 4.",
+            number("overlayWheelMaxRate", "Scroll bar maximum rate (clicks per tick)",
+                    "Scroll rate at the ends of the bar, scaling to zero at the middle.",
                     c -> c.overlayWheelMaxRate, (c, v) -> c.overlayWheelMaxRate = v),
-            number("overlayWheelTickMs", "Wheel strip tick (ms)",
-                    "The strip's clock, which the two settings above are counted "
-                            + "in. Default 40 ms.",
+            number("overlayWheelTickMs", "Scroll bar tick (ms)",
+                    "Interval the two settings above are counted in.",
                     c -> (float) c.overlayWheelTickMs,
                     (c, v) -> c.overlayWheelTickMs = (long) (float) v),
-            number("overlayWheelStartDelayTicks", "Wheel strip repeat delay (ticks)",
-                    "Ticks between the first click and the repeat, so a tap on "
-                            + "the strip is one click. Default 8, or 320 ms.",
+            number("overlayWheelStartDelayTicks", "Scroll bar repeat delay (ticks)",
+                    "Ticks before the first scroll event repeats, so a tap is a single scroll.",
                     c -> (float) c.overlayWheelStartDelayTicks,
                     (c, v) -> c.overlayWheelStartDelayTicks = (int) (float) v));
 

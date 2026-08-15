@@ -81,88 +81,59 @@ public final class FreeRdpProvider implements BackendProvider {
     private static final int[] FALLBACK = {1920, 1200};
 
     static final List<BackendOption> OPTIONS = List.of(
-            BackendOption.choice(NLA, "Authentication",
-                    "Network Level Authentication checks your password over "
-                            + "CredSSP before the session exists. A server without "
-                            + "it falls back to its own login screen.",
+            BackendOption.choice(NLA, "NLA",
+                    "Network Level Authentication authenticates using CredSSP before the session starts rather than using the server-side login screen.",
                     "prefer", Scope.CONNECTION, false,
-                    new Choice("prefer", "Where the server offers it"),
+                    new Choice("prefer", "If supported by the server"),
                     new Choice("require", "Required"),
                     new Choice("off", "Never")),
             BackendOption.choice(DESKTOP_SIZE, "Desktop size",
-                    "The size the remote machine is asked to make the desktop, in "
-                            + "pixels. RDP creates the session at this size rather "
-                            + "than showing one that already exists.",
+                    "Preferred screen resolution.",
                     "1920x1200", Scope.CONNECTION, false,
-                    new Choice(REMOTE, "The size it was last time"),
-                    new Choice(DEVICE, "This phone's screen"),
+                    new Choice(REMOTE, "Do not change"),
+                    new Choice(DEVICE, "Match local device"),
                     new Choice("1920x1200", "1920 × 1200"),
                     new Choice("1920x1080", "1920 × 1080"),
                     new Choice("1600x1000", "1600 × 1000"),
                     new Choice("1366x768", "1366 × 768"),
                     new Choice("1280x800", "1280 × 800"),
                     new Choice("2560x1440", "2560 × 1440")),
-            BackendOption.choice(SCALE, "Interface size",
-                    "How big the remote machine draws its own text, icons and "
-                            + "window controls, as a percentage. It makes a "
-                            + "desktop wider than this screen readable without "
-                            + "zooming into it. Windows 8.1 and later act on "
-                            + "this; anything older ignores it. Default: 100%.",
+            BackendOption.choice(SCALE, "Display scale",
+                    "Supported on Windows 8.1 and later.",
                     "100", Scope.CONNECTION, false,
                     new Choice("100", "100%"),
                     new Choice("140", "140%"),
                     new Choice("180", "180%")),
             BackendOption.choice(MONITORS, "Monitors",
-                    "How many screens the remote machine is asked to make, each "
-                            + "the size above, side by side. More than one is a "
-                            + "wider desktop to move the viewport over, and the "
-                            + "remote machine treats them as separate screens — a "
-                            + "window maximises onto one of them. Default: one.",
+                    "Simulate multiple monitors.",
                     "1", Scope.CONNECTION, false,
                     new Choice("1", "One"),
                     new Choice("2", "Two"),
                     new Choice("3", "Three")),
             BackendOption.choice(GRAPHICS, "Graphics",
-                    "EGFX is what a recent Windows would rather send a desktop "
-                            + "over, and the only one that can send video, which "
-                            + "this phone decodes in hardware — without it the "
-                            + "same pipeline sends still pictures instead. "
-                            + "RemoteFX is the older codec. Bitmaps are exact "
-                            + "and cost what they cost.",
+                    "EGFX is the newest and most advanced codec, RemoteFX is older, and Bitmap sends raw images.",
                     "gfx", Scope.LAYERED, false,
                     new Choice("gfx", "EGFX"),
                     new Choice("gfx-novideo", "EGFX, no video"),
                     new Choice("rfx", "RemoteFX"),
-                    new Choice("bitmap", "Bitmaps")),
+                    new Choice("bitmap", "Bitmap")),
             BackendOption.choice(EXPERIENCE, "Visual effects",
-                    "What the remote machine may spend the link on drawing for "
-                            + "you. Fewer effects is a plainer desktop and less to "
-                            + "send, and the machine decides some of the rest for "
-                            + "itself from what this says about the connection.",
+                    "Controls the amount of animation and visual effects, if supported by the server.",
                     "balanced", Scope.LAYERED, false,
-                    new Choice("full", "Everything"),
-                    new Choice("balanced", "No animation"),
-                    new Choice("plain", "As little as possible")),
+                    new Choice("full", "Full"),
+                    new Choice("balanced", "Balanced"),
+                    new Choice("plain", "Limited")),
             BackendOption.choice(SOUND, "Sound",
-                    "Where what the remote machine plays comes out. Sent to this "
-                            + "phone it is uncompressed and costs about 1.4 Mb/s "
-                            + "while anything is playing. Left over there it "
-                            + "plays on the machine's own speakers, if it has "
-                            + "any. Default: off, and the machine is told not to "
-                            + "play at all.",
+                    "Controls where sound is played, if supported by the server.",
                     "off", Scope.LAYERED, false,
                     new Choice("off", "Off"),
                     new Choice("local", "This phone"),
                     new Choice("remote", "The remote machine")),
             BackendOption.bool(COMPRESSION, "Compression",
-                    "The remote machine compresses what it sends, on top of "
-                            + "whatever the picture is already encoded as. It "
-                            + "costs it some work and changes nothing about what "
-                            + "is drawn. Default: on.",
+                    "Enable connection-level compression. Uses less bandwidth, but more CPU.",
                     true, Scope.LAYERED, false),
             BackendOption.bool(VIEW_ONLY, "View only",
-                    "The desktop is shown and no key, pointer or clipboard event "
-                            + "is sent.",
+                    "Do not send input or clipboard events.",
                     false, Scope.CONNECTION, true));
 
     @Override
@@ -182,9 +153,7 @@ public final class FreeRdpProvider implements BackendProvider {
 
     @Override
     public String description() {
-        return "EGFX with H.264 video on the phone's own decoder, sound, and control of how big "
-                + "the remote machine draws its interface. It asks more of the phone, and it is "
-                + "the one for a recent Windows machine.";
+        return "The most robust RDP implementation. Support EGFX with hardware-accelerated H.264 video, and supports audio. This is the best one to use with a Windows RDP server.";
     }
 
     @Override

@@ -740,7 +740,7 @@ public final class SessionActivity extends Activity
         }
         // Only the fields the scheme actually has. VncAuth has no user name,
         // and a box for one is a question nobody can answer.
-        final EditText user = field(form, R.string.prompt_user_name,
+        final EditText user = field(form, R.string.prompt_username,
                 InputType.TYPE_CLASS_TEXT, prompt.needsUserName);
         user.setText(prompt.userName);
         final EditText pass = field(form, R.string.prompt_password,
