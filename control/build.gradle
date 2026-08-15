@@ -1,0 +1,73 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: MIT
+
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace = 'net.pgaskin.remotedesktop.control'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 34
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    // One variant, because debug and release differ in nothing here, and the
+    // sources beside it, because most of what is worth knowing about this code
+    // is in its comments. There is no publishing plugin: where it goes, if
+    // anywhere, is a decision for whoever publishes it.
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+        }
+    }
+
+    testOptions {
+        unitTests.all {
+            testLogging {
+                events = ["failed"]
+                exceptionFormat = "full"
+                // AccelSweepTest's output is the point of running it.
+                showStandardStreams = System.getProperty('remotedesktop.accelSweep', 'false') == 'true'
+            }
+            // FixtureReplayTest reads these at runtime; without this, dropping a
+            // new recording in does not make the task out of date.
+            inputs.dir('src/test/fixtures')
+                    .withPropertyName('fixtures')
+                    .withPathSensitivity(PathSensitivity.RELATIVE)
+            // -D... sets properties on the Gradle JVM; the tests run in a
+            // forked one, so they have to be handed across explicitly. recDir
+            // points ad-hoc analysis at recordings outside the fixture set.
+            systemProperty 'remotedesktop.updateGolden', System.getProperty('remotedesktop.updateGolden', 'false')
+            systemProperty 'remotedesktop.recDir', System.getProperty('remotedesktop.recDir', '')
+            systemProperty 'remotedesktop.accelSweep', System.getProperty('remotedesktop.accelSweep', 'false')
+        }
+    }
+}
+
+// Nothing here differs between build types, so the release variant's copy of
+// the same suite is duplicate work.
+androidComponents {
+    beforeVariants(selector().withBuildType('release')) { variant ->
+        variant.enableUnitTest = false
+    }
+}
+
+dependencies {
+    // The whole suite runs on a plain JVM — the four classes with an Android
+    // dependency are adapters with nothing to test — so no Robolectric and no
+    // androidx.test.
+    testImplementation 'junit:junit:4.13.2'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

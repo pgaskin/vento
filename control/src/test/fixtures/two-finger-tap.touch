@@ -1,0 +1,13 @@
+# format remotedesktop-touch-1
+# label two-finger-tap
+# source hand-recorded
+# density 2.28125
+# preset improved
+# view 2400 1080
+0 D 0 | 0 1179.0 633.0
+8 M | 0 1179.0 633.0
+8 D 1 | 0 1179.0 633.0 | 1 1400.0 408.0
+12 M | 0 1179.0 633.0 | 1 1400.0 408.0
+107 U 0 | 0 1179.0 633.0 | 1 1400.0 408.0
+107 M | 1 1400.0 408.0
+110 U 0 | 1 1400.0 408.0

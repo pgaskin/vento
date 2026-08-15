@@ -1,0 +1,13 @@
+# format remotedesktop-touch-1
+# label flick
+# source adb shell input, Pixel-class device, landscape
+# density 2.28125
+# preset improved
+# view 2400 1080
+0 D 0 | 0 1500.0 700.0
+12 M | 0 1380.0 655.0
+30 M | 0 1195.0 585.625
+45 M | 0 1045.0 529.375
+63 M | 0 870.0 463.75
+79 M | 0 710.0 403.75
+88 U 0 | 0 700.0 400.0

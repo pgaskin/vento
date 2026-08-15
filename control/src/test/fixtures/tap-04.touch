@@ -1,0 +1,11 @@
+# format remotedesktop-touch-1
+# label tap-04
+# source hand-recorded
+# density 2.28125
+# preset improved
+# view 2400 1080
+0 D 0 | 0 2034.0 533.0
+30 M | 0 2034.0 533.0
+52 M | 0 2034.0 533.0
+65 M | 0 2034.0 533.0
+68 U 0 | 0 2034.0 533.0
