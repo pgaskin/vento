@@ -63,6 +63,17 @@
     <string name="settings_source">Source code</string>
     <string name="settings_source_summary">github.com/pgaskin/vento</string>
     <string name="settings_version">Version</string>
+    <string name="settings_session_timeout">Session timeout</string>
+    <string name="settings_session_timeout_summary">Automatically disconnect inactive sessions.</string>
+    <string name="settings_session_timeout_never">Never</string>
+    <plurals name="duration_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <plurals name="duration_hours">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
     <string name="settings_hud">Debug overlay</string>
     <string name="settings_hud_summary">Show cursor, viewport, gesture, and rendering debug information.</string>
     <string name="settings_keep_awake">Keep screen on</string>
@@ -132,6 +143,7 @@
     <string name="session_no_address">No address. Pass --es address host[:port].</string>
     <string name="session_connecting">Connecting…</string>
     <string name="session_disconnected">Disconnected</string>
+    <string name="session_timed_out">Closed after %1$s timeout</string>
     <string name="session_disconnect">Disconnect</string>
     <string name="session_disconnect_confirm">Disconnect?</string>
     <string name="session_new_window">New window</string>

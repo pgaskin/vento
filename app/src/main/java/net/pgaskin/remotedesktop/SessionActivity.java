@@ -393,6 +393,9 @@ public final class SessionActivity extends Activity
         // nothing — the core compares the flag.
         if (session != null) {
             session.backend().focus(true);
+            // The same signal at a longer scale: what pauses the far end is
+            // what decides a session has nobody looking at it.
+            session.onScreen(true);
         }
         if (panel != null && panel.isShowing()) {
             panel.resume();
@@ -413,6 +416,7 @@ public final class SessionActivity extends Activity
                 session.backend().releaseAllKeys();
             }
             session.backend().focus(false);
+            session.onScreen(false);
         }
         // The panel polls the connection once a second while it is open, and
         // a screen that is not on screen has no business asking.

@@ -100,6 +100,17 @@ public final class Sessions {
         changed();
     }
 
+    /**
+     * The session timeout has been set, imported or reset, so every live
+     * session's deadline moves with it — including one already off screen for
+     * longer than the new answer, which closes now.
+     */
+    public static void timeoutChanged() {
+        for (Session s : all()) {
+            s.rearmTimeout();
+        }
+    }
+
     public static void addWatcher(Watcher w) {
         watchers.add(w);
     }

@@ -163,9 +163,10 @@ final class Transfer {
      */
     private static int writeSettings(Context ctx, JSONObject root) throws JSONException {
         final JSONObject app = new JSONObject();
-        final SharedPreferences ap = AppSettings.prefs(ctx);
-        for (Map.Entry<String, Boolean> e : AppSettings.DEFAULTS.entrySet()) {
-            app.put(e.getKey(), ap.getBoolean(e.getKey(), e.getValue()));
+        for (String key : AppSettings.KEYS) {
+            // Whatever type the table says this key is: a switch goes out as
+            // true or false and the timeout as the text it is stored as.
+            app.put(key, AppSettings.value(ctx, key));
         }
         root.put("app", app);
 
@@ -403,14 +404,22 @@ final class Transfer {
             final SharedPreferences.Editor e = AppSettings.prefs(ctx).edit();
             for (Iterator<String> it = app.keys(); it.hasNext(); ) {
                 final String key = it.next();
+                final Object def = AppSettings.DEFAULTS.get(key);
+                final Object v = app.opt(key);
                 total++;
-                // Every one of these is a switch, so anything that is not a
-                // boolean is not an answer to one.
-                if (!AppSettings.KEYS.contains(key) || !(app.opt(key) instanceof Boolean b)) {
+                // The table is the only thing that says what a key's answer
+                // looks like, so a value of another class is not an answer to
+                // this setting — which is also how a key this build does not
+                // know is dropped rather than stored.
+                if (def == null || v == null || v.getClass() != def.getClass()) {
                     Log.w(TAG, "dropping app setting " + key);
                     continue;
                 }
-                e.putBoolean(key, b);
+                if (v instanceof Boolean b) {
+                    e.putBoolean(key, b);
+                } else {
+                    e.putString(key, (String) v);
+                }
                 applied++;
             }
             e.apply();

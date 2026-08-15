@@ -120,6 +120,14 @@
                 android:value="remote_desktop_session" />
         </service>
 
+        <!--
+            Where a session's timeout alarm comes back, which is the app's own
+            process and nobody else's business.
+        -->
+        <receiver
+            android:name=".Session$Timeout"
+            android:exported="false" />
+
     </application>
 
 </manifest>

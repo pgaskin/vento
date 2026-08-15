@@ -3,9 +3,13 @@
 
 package net.pgaskin.remotedesktop;
 
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.os.SystemClock;
 
 import net.pgaskin.remotedesktop.backend.Backend;
 import net.pgaskin.remotedesktop.backend.Prompt;
@@ -76,6 +80,9 @@ public final class Session implements Backend.Listener, Prompt.Handler {
     /** Never reset: a notification id outlives the session it was posted for. */
     private static int nextNotification = 1;
 
+    /** Which session an alarm is for, on the intent {@link Timeout} receives. */
+    private static final String EXTRA_SESSION = "session";
+
     private final Context context;
     private final String key;
     private final String title;
@@ -99,9 +106,14 @@ public final class Session implements Backend.Listener, Prompt.Handler {
     private boolean leaving;
     private boolean closed;
 
+    /** Whether a screen is showing this, and when one last was. */
+    private boolean onScreen;
+    private long lastOnScreenAt;
+
     private Session(Context context, String key, String title, String subtitle,
                     Intent reopen, Backend backend, Map<String, String> options) {
         this.context = context;
+        this.lastOnScreenAt = SystemClock.elapsedRealtime();
         this.key = key;
         this.title = title;
         this.subtitle = subtitle;
@@ -229,6 +241,118 @@ public final class Session implements Backend.Listener, Prompt.Handler {
         ui = null;
     }
 
+    // ---- closing itself after a while off screen ----------------------------
+
+    /**
+     * Told by the screen at the two moments it becomes and stops being visible,
+     * which are the same pair the backend's pause hangs off — one definition of
+     * "on screen" in the app.
+     *
+     * <p>Visibility rather than window focus, for the reason the pause has: a
+     * dialog over the session takes the focus without hiding anything. And
+     * rather than {@link #attach}/{@link #detach}, which are about the activity
+     * existing: a session backgrounded with its window intact is the ordinary
+     * case this is for, and would never arm.
+     */
+    public void onScreen(boolean visible) {
+        onScreen = visible;
+        if (!visible) {
+            lastOnScreenAt = SystemClock.elapsedRealtime();
+        }
+        rearmTimeout();
+    }
+
+    /**
+     * Set, move or drop the alarm that closes this session, from what the
+     * setting says now and when a screen last had it.
+     *
+     * <p>The deadline is computed from {@link #lastOnScreenAt} rather than
+     * counted down from here, which is what makes three cases fall out for
+     * free: a rotation re-arms against the same instant and changes nothing, a
+     * setting shortened past what a session has already spent off screen sets a
+     * deadline in the past — which {@code AlarmManager} delivers at once, being
+     * what somebody choosing a shorter one means — and lengthening it moves the
+     * deadline out with no stored count to adjust.
+     *
+     * <p>{@code ELAPSED_REALTIME} because {@code uptimeMillis} does not advance
+     * in deep sleep, so a {@link android.os.Handler} would fire an eight-hour
+     * timeout after eight hours <em>awake</em>, which on a phone in a pocket is
+     * never. Inexact and non-waking on purpose: nothing here needs the phone
+     * woken to drop a socket, and it keeps the feature clear of
+     * {@code SCHEDULE_EXACT_ALARM}, which this app would have to justify.
+     */
+    void rearmTimeout() {
+        final AlarmManager alarms = context.getSystemService(AlarmManager.class);
+        final PendingIntent when = alarm();
+        alarms.cancel(when);
+        final int minutes = AppSettings.sessionTimeout(context);
+        // A session that has already ended is left exactly as it is: its window
+        // is showing why, and that reason is worth more than this one.
+        if (!alive() || onScreen || minutes <= 0) {
+            return;
+        }
+        alarms.set(AlarmManager.ELAPSED_REALTIME,
+                lastOnScreenAt + minutes * 60_000L, when);
+    }
+
+    /**
+     * The alarm, which is one per session and identified by the same number the
+     * notification is: a {@code PendingIntent}'s identity is its request code
+     * and its intent bar the extras, so without a distinct code one session's
+     * deadline would replace another's.
+     */
+    private PendingIntent alarm() {
+        return PendingIntent.getBroadcast(context, notification,
+                new Intent(context, Timeout.class).putExtra(EXTRA_SESSION, key),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    /**
+     * Where the alarm lands. A receiver rather than {@link SessionService},
+     * which is where the notification's Disconnect goes: the sessions are a map
+     * in this process, so there is nothing to start and nothing to be
+     * foreground for — and an alarm that outlived the process it was set from
+     * finds no session here and does nothing at all, where a service start
+     * would have owed a notification for a connection that no longer exists.
+     */
+    public static final class Timeout extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context ctx, Intent intent) {
+            final Session s = Sessions.byKey(intent.getStringExtra(EXTRA_SESSION));
+            if (s != null) {
+                s.timedOut();
+            }
+        }
+    }
+
+    /**
+     * The alarm went off: end the connection, and leave the window saying so.
+     *
+     * <p>Not {@link #disconnect}, which sets {@link #leaving} and so takes the
+     * screen with it. Nobody asked for this one, so the window stays in the
+     * CLOSED state it already knows how to draw — a window that had quietly
+     * vanished would leave nothing to connect the setting to — and the reason
+     * names the length of time, since "Disconnected" on its own is what a far
+     * end going away says and would read as a fault in the connection.
+     */
+    void timedOut() {
+        // An alarm already in flight is not cancellable, so everything that
+        // would have cancelled it is checked again here: a screen coming back
+        // in that moment, the row being set to Never, and the far end having
+        // gone by itself in the meantime.
+        final int minutes = AppSettings.sessionTimeout(context);
+        if (!alive() || onScreen || minutes <= 0) {
+            return;
+        }
+        final String reason = context.getString(R.string.session_timed_out,
+                AppSettings.timeoutLabel(context, minutes));
+        backend.disconnect();
+        // After the far end has been told, so that whatever it says on the way
+        // out is not the last word: close() reports this one to the screen.
+        detail = reason;
+        close();
+    }
+
     // ---- options changed while it runs --------------------------------------
 
     /**
@@ -276,6 +400,10 @@ public final class Session implements Backend.Listener, Prompt.Handler {
             return;
         }
         closed = true;
+        // Which cancels, now that closed is set. An alarm outlives the process
+        // that set it, so one left behind for an ended session is a wake-up
+        // days later for a connection nobody has any memory of.
+        rearmTimeout();
         Sessions.remove(this);
         // Whatever is still queued is owed an answer, and there will never be
         // anyone to give it: the core blocks its session thread until each one
@@ -286,8 +414,9 @@ public final class Session implements Backend.Listener, Prompt.Handler {
         // The screen hears it from here rather than from the backend. A
         // disconnect asked for on the notification frees the session before the
         // far end's own "closed" can come back through it, so this is the only
-        // report the view is going to get.
-        state(Backend.State.CLOSED, detail);
+        // report the view is going to get — and, since the guard above is now
+        // shut, the only one it can get.
+        report(Backend.State.CLOSED, detail);
         backend.destroy();
     }
 
@@ -299,6 +428,17 @@ public final class Session implements Backend.Listener, Prompt.Handler {
 
     @Override
     public void state(Backend.State s, String d) {
+        // A backend that has been let go of is still finishing: its own "closed"
+        // arrives after close() has already reported one, and the last word has
+        // to be the session's. Without this a timeout says why on the window and
+        // then has it replaced by "Disconnected" a moment later.
+        if (closed) {
+            return;
+        }
+        report(s, d);
+    }
+
+    private void report(Backend.State s, String d) {
         state = s;
         // A detail is what a state says about itself and cannot outlive it: a
         // backend that reports its progress — RealVNC's core says it is

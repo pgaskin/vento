@@ -31,20 +31,26 @@ public final class AppSettings {
     public static final String KEY_CLIPBOARD_IN = "clipboardIn";
     public static final String KEY_REGION_HINTS = "regionHints";  // where the controls are
     public static final String KEY_RELEASE_KEYS = "releaseKeys";
+    public static final String KEY_SESSION_TIMEOUT = "sessionTimeout";  // minutes off screen
 
     /**
-     * Every key in this file with the answer it gives when nothing is stored,
-     * and every one of them a switch. The getters below read it, an export walks
-     * it and an import checks a file's keys against it — one table, because a
-     * default written in two places is one that will differ in two places. A
-     * setting added above and not added here is one that does not travel.
+     * Every key in this file with the answer it gives when nothing is stored.
+     * The getters below read it, an export walks it and an import checks a
+     * file's keys against it — one table, because a default written in two
+     * places is one that will differ in two places. A setting added above and
+     * not added here is one that does not travel.
+     *
+     * <p>A value's <em>class</em> is what says how the key is stored, which is
+     * the whole of the type information here: everything was a switch until the
+     * timeout, and an import checks what a file offers against it rather than
+     * against a second table of types.
      */
-    static final Map<String, Boolean> DEFAULTS = defaults();
+    static final Map<String, Object> DEFAULTS = defaults();
 
     static final List<String> KEYS = List.copyOf(DEFAULTS.keySet());
 
-    private static Map<String, Boolean> defaults() {
-        final Map<String, Boolean> m = new LinkedHashMap<>();
+    private static Map<String, Object> defaults() {
+        final Map<String, Object> m = new LinkedHashMap<>();
         m.put(KEY_HUD, false);
         m.put(KEY_KEEP_AWAKE, true);
         m.put(KEY_IMMERSIVE, true);
@@ -56,6 +62,7 @@ public final class AppSettings {
         m.put(KEY_CLIPBOARD_IN, true);
         m.put(KEY_REGION_HINTS, true);
         m.put(KEY_RELEASE_KEYS, true);
+        m.put(KEY_SESSION_TIMEOUT, "0");
         return Collections.unmodifiableMap(m);
     }
 
@@ -67,7 +74,19 @@ public final class AppSettings {
     }
 
     private static boolean get(Context ctx, String key) {
-        return prefs(ctx).getBoolean(key, DEFAULTS.get(key));
+        return prefs(ctx).getBoolean(key, (Boolean) DEFAULTS.get(key));
+    }
+
+    /**
+     * What this phone answers for {@code key}, stored or not, as the class the
+     * table says it is. What an export writes, so that the reading of the file
+     * and the reading of the preference cannot drift apart.
+     */
+    static Object value(Context ctx, String key) {
+        final Object def = DEFAULTS.get(key);
+        return def instanceof Boolean b
+                ? prefs(ctx).getBoolean(key, b)
+                : prefs(ctx).getString(key, (String) def);
     }
 
     public static boolean hud(Context ctx) {
@@ -176,5 +195,42 @@ public final class AppSettings {
 
     public static void setRegionHints(Context ctx, boolean show) {
         prefs(ctx).edit().putBoolean(KEY_REGION_HINTS, show).apply();
+    }
+
+    /**
+     * How long a session may stay connected with nothing looking at it, in
+     * minutes, or 0 for never — which is where a phone that has not been asked
+     * stays, since a connection ending by itself is a surprise until somebody
+     * has asked for it.
+     *
+     * <p>Global rather than per connection: whether to drop a session nobody is
+     * watching is about how this phone is used, not about the machine at the
+     * other end. Stored as text because that is what a list row persists, and
+     * parsed leniently because a file from another phone can say anything —
+     * where 0 is the safe answer, being the one that changes nothing.
+     */
+    public static int sessionTimeout(Context ctx) {
+        final String v = (String) value(ctx, KEY_SESSION_TIMEOUT);
+        try {
+            return Math.max(0, Integer.parseInt(v));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /** What the row offers, in minutes, in the order it offers them. */
+    public static final List<Integer> SESSION_TIMEOUTS =
+            List.of(0, 1, 5, 15, 30, 45, 60, 120, 240, 480, 720, 1440);
+
+    /** What one of those is called, on the row and on a session that hit one. */
+    public static String timeoutLabel(Context ctx, int minutes) {
+        if (minutes <= 0) {
+            return ctx.getString(R.string.settings_session_timeout_never);
+        }
+        return minutes % 60 == 0
+                ? ctx.getResources().getQuantityString(
+                        R.plurals.duration_hours, minutes / 60, minutes / 60)
+                : ctx.getResources().getQuantityString(
+                        R.plurals.duration_minutes, minutes, minutes);
     }
 }

@@ -283,6 +283,7 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                     OptionScreen.switches(AppSettings.prefs(requireContext()));
             getPreferenceManager().setPreferenceDataStore(store);
             final PreferenceScreen screen = newScreen();
+            screen.addPreference(sessionTimeout());
             screen.addPreference(switchPref(AppSettings.KEY_HUD, R.string.settings_hud,
                     R.string.settings_hud_summary, false));
             screen.addPreference(switchPref(AppSettings.KEY_KEEP_AWAKE,
@@ -320,6 +321,41 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             });
             screen.addPreference(previews);
             store.built();
+        }
+
+        /**
+         * The one row on this screen that is not a switch. Its values are
+         * minutes, which is what {@link AppSettings} parses, and its labels are
+         * the same ones a session that closed itself explains with.
+         */
+        private ListPreference sessionTimeout() {
+            final ListPreference p = new ListPreference(requireContext());
+            p.setKey(AppSettings.KEY_SESSION_TIMEOUT);
+            p.setTitle(R.string.settings_session_timeout);
+            p.setDialogTitle(R.string.settings_session_timeout);
+            p.setIconSpaceReserved(false);
+            p.setSingleLineTitle(false);
+            p.setEntryValues(AppSettings.SESSION_TIMEOUTS.stream()
+                    .map(String::valueOf).toArray(CharSequence[]::new));
+            p.setEntries(AppSettings.SESSION_TIMEOUTS.stream()
+                    .map(m -> AppSettings.timeoutLabel(requireContext(), m))
+                    .toArray(CharSequence[]::new));
+            p.setDefaultValue("0");
+            // The label rather than the row's own entry, which is null for a
+            // value that is not one of the twelve — a file from another build
+            // is allowed to say four hours and a half.
+            p.setSummaryProvider(x -> AppSettings.timeoutLabel(requireContext(),
+                    AppSettings.sessionTimeout(requireContext()))
+                    + "\n" + getString(R.string.settings_session_timeout_summary));
+            // Every live session's deadline is computed from when it left the
+            // screen, so a change here is a re-arm and nothing else — and the
+            // listener runs before the value is stored, which is why the
+            // re-arm is posted rather than done from inside it.
+            p.setOnPreferenceChangeListener((x, v) -> {
+                requireView().post(Sessions::timeoutChanged);
+                return true;
+            });
+            return p;
         }
 
         private SwitchPreferenceCompat switchPref(String key, int title, int summary,
@@ -637,7 +673,9 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                             r.applied(), r.total());
                     if (!connections) {
                         // The screens behind this one are built from the values
-                        // that have just moved.
+                        // that have just moved, and so is every running
+                        // session's deadline.
+                        Sessions.timeoutChanged();
                         rebuild();
                     }
                 };
@@ -659,6 +697,7 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                         for (String id : Backends.ids()) {
                             Connections.backendPrefs(ctx, id).edit().clear().apply();
                         }
+                        Sessions.timeoutChanged();
                         said(R.string.settings_reset_all_done);
                         rebuild();
                     })
