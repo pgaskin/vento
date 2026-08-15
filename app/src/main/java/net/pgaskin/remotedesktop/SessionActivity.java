@@ -671,6 +671,12 @@ public final class SessionActivity extends Activity
         recreate();
     }
 
+    /** The panel's button, on the screen's own path out. */
+    @Override
+    public void panelDisconnect() {
+        disconnectRequested();
+    }
+
     // ---- Prompt.Handler -----------------------------------------------------
 
     /**

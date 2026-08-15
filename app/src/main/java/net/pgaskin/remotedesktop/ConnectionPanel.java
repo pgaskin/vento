@@ -63,10 +63,18 @@ import java.util.Map;
  */
 final class ConnectionPanel {
 
-    /** The one thing the panel can ask of the screen that owns the session. */
+    /** What the panel can ask of the screen that owns the session. */
     interface Host {
         /** Start again, for a session that has already ended. */
         void panelReconnect();
+
+        /**
+         * End this one. The screen's own disconnect, so the panel's button asks
+         * the same question the tap region and the back gesture ask, and leaves
+         * the same way — a preview taken before the framebuffer goes, and one
+         * confirmation however it was reached.
+         */
+        void panelDisconnect();
 
         /**
          * A live option was changed from here. Most of them are the backend's
@@ -94,6 +102,7 @@ final class ConnectionPanel {
     private final ViewGroup diagnostics;
     private final MaterialButton action;
 
+    private final String backendName;       // which client this session is on
     private final List<BackendOption> live; // changeable on a running session
 
     private final PanelOptions optionRows;  // so a refresh writes values instead of views
@@ -164,10 +173,18 @@ final class ConnectionPanel {
         content.findViewById(R.id.close).setOnClickListener(v -> dialog.dismiss());
         content.findViewById(R.id.log).setOnClickListener(v -> SessionLog.show(activity));
         action.setOnClickListener(v -> {
+            // Which of the two it is now, not which it was when the panel
+            // opened: a session can end while this is on screen.
+            final boolean ended = ended();
             dialog.dismiss();
-            host.panelReconnect();
+            if (ended) {
+                host.panelReconnect();
+            } else {
+                host.panelDisconnect();
+            }
         });
 
+        backendName = Backends.name(backendId);
         live = Backends.options(backendId).stream().filter(BackendOption::live).toList();
         // What the session is on, rather than what the record says: the two
         // differ once either has been edited since it opened, and an
@@ -192,6 +209,7 @@ final class ConnectionPanel {
             }
         });
         controls.setVisibility(optionRows.isEmpty() ? View.GONE : View.VISIBLE);
+        refreshAction();    // before it is shown, so the button is never briefly the other one
         refreshResize();
         setFacts(List.of());
 
@@ -262,10 +280,15 @@ final class ConnectionPanel {
     }
 
     /**
-     * What the connection is doing, in one line. The size comes from the
-     * backend rather than from the facts: it is known locally the moment the
-     * first framebuffer arrives, and this line has to say something before any
-     * answer has come back over the wire.
+     * What the connection is doing, in one line: the state, which client it is
+     * on, and the desktop. The client is here because it is the one thing about
+     * a live session that no other surface repeats — a machine can be reached
+     * by four of them and they do not behave alike, so "which one is this" is
+     * asked of the panel the way the picture's quality is.
+     *
+     * <p>The size comes from the backend rather than from the facts: it is
+     * known locally the moment the first framebuffer arrives, and this line has
+     * to say something before any answer has come back over the wire.
      */
     private String stateLine() {
         if (session.state() != Backend.State.CONNECTED || session.isClosed()) {
@@ -274,15 +297,15 @@ final class ConnectionPanel {
         final int w = session.backend().desktopWidth();
         final int h = session.backend().desktopHeight();
         if (w <= 0 || h <= 0) {
-            return activity.getString(R.string.panel_connected);
+            return activity.getString(R.string.panel_connected, backendName);
         }
         // How the desktop is divided is only worth a word when it is divided:
         // one monitor is what a desktop is, and saying so on every session
         // would be a fact that is never news.
         final int monitors = session.backend().monitors().size();
         return monitors > 1
-                ? activity.getString(R.string.panel_connected_monitors, w, h, monitors)
-                : activity.getString(R.string.panel_connected_size, w, h);
+                ? activity.getString(R.string.panel_connected_monitors, backendName, w, h, monitors)
+                : activity.getString(R.string.panel_connected_size, backendName, w, h);
     }
 
     /** A session that is over: the bottom action becomes a way back in. */
@@ -291,12 +314,14 @@ final class ConnectionPanel {
     }
 
     /**
-     * The footer. Reconnect is for a session that has ended and is hidden
-     * otherwise; the log is always worth reading, and is the only place the
-     * reason a connection failed is written down in full.
+     * The footer. One button at the end of the row, and which one it is follows
+     * the session: Disconnect while there is something to disconnect, Reconnect
+     * once there is not — two states of a slot rather than two buttons, since
+     * no session is ever in both. The log is beside it always, and is the only
+     * place the reason a connection failed is written down in full.
      */
     private void refreshAction() {
-        action.setVisibility(ended() ? View.VISIBLE : View.GONE);
+        action.setText(ended() ? R.string.panel_reconnect : R.string.session_disconnect);
     }
 
     // ---- the controls -------------------------------------------------------

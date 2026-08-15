@@ -126,17 +126,24 @@
             android:orientation="vertical" />
 
         <!--
-            Two buttons: Log always, Reconnect only when the session is over.
+            Two buttons: Log always, and at the end of the row whichever of
+            Disconnect and Reconnect the session is in a state for — the text
+            and the action are ConnectionPanel's, since no session is ever in
+            both states at once.
 
-            The footer used to hold two others. "Connection settings" opened the
-            editor, which edits the *saved* connection — none of which reaches
-            the session in front of you until the next one, so a link to it from
-            a live session's panel says something untrue about what it does. And
-            Disconnect was a third way to do what the disconnect tap region and
-            the back gesture already do, in a panel opened to change the
-            picture. Neither of these is that: nothing else on this screen offers
-            a reconnection, and nothing anywhere offers the log, which is where
-            the reason a connection failed actually is.
+            Disconnect was taken out of this footer once, on the grounds that it
+            was a third way to do what the disconnect tap region and the back
+            gesture already do, in a panel opened to change the picture. It is
+            back because the panel is where somebody looking at a connection
+            looks, and the two ways it duplicates are a corner of the screen
+            nothing labels and a gesture. It asks the same question and leaves
+            the same way.
+
+            The other button that went is still gone: "Connection settings"
+            opened the editor, which edits the *saved* connection — none of
+            which reaches the session in front of you until the next one, so a
+            link to it from a live session's panel says something untrue about
+            what it does.
         -->
         <LinearLayout
             android:id="@+id/action_row"
@@ -161,7 +168,7 @@
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/panel_reconnect" />
+                android:text="@string/session_disconnect" />
 
         </LinearLayout>
 
