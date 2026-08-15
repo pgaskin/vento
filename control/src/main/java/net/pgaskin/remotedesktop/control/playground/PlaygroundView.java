@@ -437,6 +437,12 @@ public final class PlaygroundView extends View
         invalidate();
     }
 
+    /** A click consumes the armed modifiers, exactly as a key does. */
+    @Override
+    public void onButtonsReleased() {
+        keyboard.externalClick();
+    }
+
     // ---- FakeDesktop.ToggleHandler ---------------------------------------
 
     @Override

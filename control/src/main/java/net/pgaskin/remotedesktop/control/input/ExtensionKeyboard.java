@@ -848,6 +848,22 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
         changed();
     }
 
+    /**
+     * A click finished somewhere else — the touchpad, the mouse overlay, a real
+     * mouse. Consumes the armed modifiers, because Ctrl+click is a chord in
+     * exactly the way Ctrl+C is and this row is the only half of either that can
+     * be armed.
+     *
+     * <p>What the caller reports is the <em>release</em> of the last button, not
+     * the press: a modifier let go of at the press would be gone for the drag
+     * that press turns into, and Shift+drag and Ctrl+drag are most of what this
+     * is for.
+     */
+    public void externalClick() {
+        releaseOneShotModifiers();
+        changed();
+    }
+
     /** Let go of every one-shot modifier; locked ones stay down. */
     public void releaseOneShotModifiers() {
         for (Key m : modifiers) {

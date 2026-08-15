@@ -783,6 +783,16 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         invalidate();
     }
 
+    /**
+     * A click is a key as far as the extension row is concerned: a one-shot
+     * modifier armed on it is what makes Ctrl+click, and it has to let go
+     * afterwards or the next click carries it too.
+     */
+    @Override
+    public void onButtonsReleased() {
+        keyboard.externalClick();
+    }
+
     // ---- KeySink -----------------------------------------------------------
 
     /**

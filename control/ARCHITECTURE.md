@@ -336,11 +336,16 @@ Down; and F1 … F12. Keys fire on **release**, both edges back to back.
 
 **Modifiers are sticky in three states — off, one-shot, locked — and in the
 latter two the key is genuinely held down at the remote.** Entering either state
-sends a key-down, leaving it sends a key-up, and every one-shot is released after
-the next key of any kind. That, and nothing else, is what joins a Ctrl pressed
+sends a key-down, leaving it sends a key-up, and every one-shot is released
+either by the next key of any kind or by the next **mouse button release** — a
+click consumes an armed modifier exactly as a key does, which is what makes
+Ctrl+click a chord and, being the release rather than the press, leaves a
+Shift+drag its Shift for the whole drag. Every producer of buttons goes through
+the one release call, the wheel included (§3.19). That, and nothing else, is what joins a Ctrl pressed
 here to a C typed on the system IME: the two never meet on the client. A single
 tap arms a one-shot or disarms; a **double tap** locks (see §2.11 for what that
-costs), and so does a hold — the second gesture is ours, and free.
+costs), and so does a hold — the second gesture is ours, and free. A key of any
+kind is the only thing that consumes one; ours adds the click (§3.19).
 
 **A character typed on the soft keyboard is put in the case the held modifiers
 imply.** The soft keyboard cannot see them, so it reports the character it would
@@ -1040,6 +1045,30 @@ fingers *started* on rather than the point they are on. Anchoring the moving
 midpoint is the same arithmetic as the pan, but it needs an anchor that survives
 `centreOn` redefining the focus as the centre of the window, and in absolute
 mode it fights the re-centring above.
+
+### 3.19 A scroll is not a click
+
+The original clears the armed modifiers on **every** button release, and the
+wheel is a button: each notch of a two-finger scroll is a press and a release of
+button 4, 5, 6 or 7, so a Ctrl armed for Ctrl+scroll survives exactly one notch
+of the gesture and the rest of it arrives unmodified. Ctrl+scroll zooms and
+Shift+scroll goes sideways on most desktops, and neither is a one-notch
+instruction.
+
+So the edge is taken over the buttons somebody clicks with — `Button.CLICK_MASK`,
+the three under the hand and the two at the side — and the wheel's four
+pseudo-buttons are excluded from it. Everything else about the rule is §1.13's:
+one-shots go, locked ones stay, and it happens on the release. This is the one
+deliberate departure from the original in the whole of that rule, and it was
+kept rather than reverted once the original's behaviour was established.
+
+The edge itself belongs to `CursorController` rather than to the gesture layer,
+because that is where every producer of buttons meets: the gesture layer, the
+overlay and a real mouse each hold their own mask (§2.9), and "the last one has
+been let go" is a question about the union — a tap during a mouse-held drag ends
+no click. It reports `Listener.onButtonsReleased`, the host calls
+`ExtensionKeyboard.externalClick`, and a host with no such row implements
+neither.
 
 ---
 

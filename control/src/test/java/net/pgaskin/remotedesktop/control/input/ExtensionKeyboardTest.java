@@ -12,6 +12,7 @@ import net.pgaskin.remotedesktop.control.harness.Harness;
 
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -460,6 +461,89 @@ public class ExtensionKeyboardTest {
         assertTrue(before > 1000);
     }
 
+    // ---- clicks ------------------------------------------------------------
+
+    /**
+     * A click consumes the armed modifiers exactly as a key does — Ctrl+click is
+     * the same chord Ctrl+C is, and this row is the only half of either that can
+     * be armed — and the release comes <em>after</em> the click has gone out, or
+     * the far end would be told to let go of Ctrl in the middle of one.
+     */
+    @Test
+    public void aClickConsumesTheArmedModifiers() {
+        final Harness h = kbd();
+        tapKey(h, CTRL_X);
+        h.reset().tap(PAD[0], PAD[1]);
+        assertEquals(List.of("down LEFT", "up LEFT", "key up Ctrl"), merged(h));
+        assertEquals(ExtensionKeyboard.Sticky.OFF, sticky(h, "Ctrl"));
+    }
+
+    @Test
+    public void aLockedModifierSurvivesAClick() {
+        final Harness h = kbd();
+        tapKey(h, CTRL_X);
+        tapKey(h, CTRL_X);   // locked
+        h.reset().tap(PAD[0], PAD[1]);
+        assertEquals(List.of(), h.keys);
+        assertEquals(ExtensionKeyboard.Sticky.LOCKED, sticky(h, "Ctrl"));
+    }
+
+    /**
+     * Why the release is the button's <em>up</em>: a drag starts as a tap, so a
+     * modifier let go of at the press would be gone for the whole of the
+     * Shift+drag it was armed for.
+     */
+    @Test
+    public void aDragKeepsTheModifierUntilTheButtonComesUp() {
+        final Harness h = kbd();
+        tapKey(h, SHIFT_X);
+        h.reset();
+
+        h.down(0, PAD[0], PAD[1]).up(0);        // tap …
+        h.down(0, PAD[0], PAD[1]);              // … and hold: LEFT stays down
+        for (int i = 1; i <= 10; i++) {
+            h.move(0, PAD[0] + i * 20, PAD[1]);
+        }
+        assertEquals("still held for the drag", List.of("down LEFT"), merged(h));
+        assertEquals(ExtensionKeyboard.Sticky.ONESHOT, sticky(h, "Shift"));
+
+        h.up(0);
+        assertEquals(List.of("down LEFT", "up LEFT", "key up Shift"), merged(h));
+    }
+
+    /**
+     * A scroll is not a click. Ctrl+scroll zooms and Shift+scroll goes sideways,
+     * and both are many notches of one gesture: consuming the modifier on the
+     * first would leave the rest of it unmodified.
+     */
+    @Test
+    public void scrollingDoesNotConsumeTheModifiers() {
+        final Harness h = kbd();
+        tapKey(h, CTRL_X);
+        h.reset();
+        h.down(0, PAD[0], PAD[1]).down(1, PAD[0] + 200, PAD[1]);
+        for (int i = 1; i <= 4; i++) {
+            h.move(0, PAD[0], PAD[1] + 10 * i, 1, PAD[0] + 200, PAD[1] + 10 * i);
+        }
+        h.up(1).up(0).advance(300);
+
+        assertTrue(Harness.count(h.mouse, "down WHEEL_DOWN") > 0);
+        assertEquals(List.of(), h.keys);
+        assertEquals(ExtensionKeyboard.Sticky.ONESHOT, sticky(h, "Ctrl"));
+    }
+
+    /** Any producer of buttons, not just the touchpad: the union is the funnel. */
+    @Test
+    public void aRealMousesClickConsumesThemToo() {
+        final Harness h = Harness.improved().withKeyboard().withMouse().reset();
+        tapKey(h, CTRL_X);
+        h.reset();
+        h.physicalMouse.buttonState(1);
+        assertEquals(List.of(), h.keys);
+        h.physicalMouse.buttonState(0);
+        assertEquals(List.of("key up Ctrl"), h.keys);
+    }
+
     // ---- sharing the touch surface ----------------------------------------
 
     @Test
@@ -673,5 +757,21 @@ public class ExtensionKeyboardTest {
 
     private static int presses(Harness h) {
         return Harness.count(h.keys, "key down BackSpace");
+    }
+
+    /**
+     * The buttons and the keys in one list, in the order they went out, with the
+     * harness's timestamps dropped. What a click does to a modifier is a
+     * question about ordering as much as about state.
+     */
+    private static List<String> merged(Harness h) {
+        final List<String> out = new ArrayList<>();
+        for (String l : h.all) {
+            final String line = l.substring(l.indexOf(' ') + 1);
+            if (line.startsWith("down ") || line.startsWith("up ") || line.startsWith("key ")) {
+                out.add(line);
+            }
+        }
+        return out;
     }
 }

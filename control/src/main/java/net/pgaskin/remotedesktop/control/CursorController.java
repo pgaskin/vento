@@ -40,6 +40,19 @@ public final class CursorController implements MouseSink {
 
     public interface Listener {
         void onCursorChanged();
+
+        /**
+         * Every button somebody clicks with has just been let go, whichever
+         * source was holding them — so a click, or a drag, has ended. The
+         * wheel's pseudo-buttons are not among them: a scroll is not a click.
+         *
+         * <p>Separate from {@link #onCursorChanged} because that one fires for
+         * every movement as well, and because this is an <em>edge</em>: the host
+         * acts on the moment, not on the state. Defaulted, since a host with
+         * nothing to consume never asks.
+         */
+        default void onButtonsReleased() {
+        }
     }
 
     private final Config cfg;
@@ -50,6 +63,7 @@ public final class CursorController implements MouseSink {
     private float x, y; // desktop coords
 
     private int buttons; // the union of every source's mask: what the remote is told
+    private int clicking; // the same, wheel excluded, for the edge in clickEdge
     private final List<int[]> sources = new ArrayList<>();
     private final int[] own = newSourceMask();
 
@@ -289,6 +303,7 @@ public final class CursorController implements MouseSink {
         source[0] |= mask;
         union();
         flush();
+        clickEdge();
         changed();
     }
 
@@ -296,7 +311,20 @@ public final class CursorController implements MouseSink {
         source[0] &= ~mask;
         union();
         flush();
+        clickEdge();
         changed();
+    }
+
+    // After the flush, so that whatever the host does about the click — letting
+    // go of a modifier it was holding for it — reaches the far end after the
+    // click itself rather than in the middle of it.
+    private void clickEdge() {
+        final int now = buttons & Button.CLICK_MASK;
+        final int was = clicking;
+        clicking = now;
+        if (was != 0 && now == 0 && listener != null) {
+            listener.onButtonsReleased();
+        }
     }
 
     private void union() {

@@ -229,6 +229,19 @@ public final class Harness implements ZoomSink, CursorController.PointerSink, Mo
         });
         keyboard.setVisible(true);
         router.addClaim(keyboard);
+        // The rest of the wiring both real screens do: a click consumes the
+        // armed modifiers the way a key does, and the cursor is the only place
+        // every source of buttons meets.
+        cursor.setListener(new CursorController.Listener() {
+            @Override
+            public void onCursorChanged() {
+            }
+
+            @Override
+            public void onButtonsReleased() {
+                keyboard.externalClick();
+            }
+        });
         return this;
     }
 

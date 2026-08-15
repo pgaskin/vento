@@ -41,6 +41,12 @@ public enum Button {
      */
     public static final int DRAG_MASK = LEFT.mask | MIDDLE.mask | RIGHT.mask;
 
+    /**
+     * Buttons somebody clicks with: everything but the wheel, whose four are an
+     * axis reported as presses rather than something anybody holds down.
+     */
+    public static final int CLICK_MASK = DRAG_MASK | BACK.mask | FORWARD.mask;
+
     private static final Button[] ALL = values();
 
     private static final int KNOWN_MASK = maskOfAll();
