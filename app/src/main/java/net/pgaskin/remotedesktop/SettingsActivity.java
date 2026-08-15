@@ -64,6 +64,9 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
     public static final String SECTION_BACKEND = "backend";
     public static final String SECTION_TRANSFER = "transfer";
 
+    /** The host of this is also the source row's summary, in strings.xml. */
+    private static final String SOURCE_URL = "https://github.com/pgaskin/vento";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -211,14 +214,9 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             screen.addPreference(link(R.string.settings_licenses,
                     R.string.settings_licenses_summary,
                     () -> startActivity(new Intent(requireContext(), LicensesActivity.class))));
-            screen.addPreference(about());
-            // Last, and about everything above it: the scope of "all settings"
-            // is this screen, which is the one place it can be offered without
-            // meaning something narrower than it says. On its own, and under no
-            // heading, because it is the one row here that destroys something.
-            screen.addPreference(heading(0));
-            screen.addPreference(link(R.string.settings_reset_all,
-                    R.string.settings_reset_all_summary, this::confirmResetAll));
+            screen.addPreference(link(R.string.settings_source,
+                    R.string.settings_source_summary, this::openSource));
+            screen.addPreference(version());
         }
 
         /** A heading over the group that follows, or with no title, a break. */
@@ -231,17 +229,28 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             return c;
         }
 
+        /** Caught rather than guarded: a phone with nothing to open a link with
+         *  cannot be asked about one either, since resolving an https intent
+         *  needs a package-visibility declaration to answer at all. */
+        private void openSource() {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(SOURCE_URL)));
+            } catch (android.content.ActivityNotFoundException e) {
+                Log.w(TAG, "no browser for " + SOURCE_URL, e);
+            }
+        }
+
         /**
-         * What the app is called and what it is for, under the licences that
-         * say what it is made of. Not selectable rather than disabled, which is
-         * how the library is asked for an informational row: it draws the title
-         * in the summary's colour, so the name and the description read as one
-         * statement rather than as an action that has been greyed out.
+         * Which build this is, under the licences and the source it was built
+         * from. Not selectable rather than disabled, which is how the library is
+         * asked for an informational row: it draws the title in the summary's
+         * colour, so the two lines read as one statement rather than as an
+         * action that has been greyed out.
          */
-        private Preference about() {
+        private Preference version() {
             final Preference p = new Preference(requireContext());
-            p.setTitle(R.string.app_name);
-            p.setSummary(R.string.app_description);
+            p.setTitle(R.string.settings_version);
+            p.setSummary(BuildConfig.VERSION_NAME);
             p.setIconSpaceReserved(false);
             p.setSingleLineTitle(false);
             p.setPersistent(false);
@@ -421,6 +430,12 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                     // service decided on, and the only check worth trusting is
                     // of what is inside it.
                     () -> importFile.launch(new String[]{"*/*"})));
+            // Beside the import and the export because it is the third thing
+            // that acts on the whole of the settings at once, and in a group of
+            // its own because it is the only one that destroys something.
+            screen.addPreference(heading(0));
+            screen.addPreference(link(R.string.settings_reset_all,
+                    R.string.settings_reset_all_summary, this::confirmResetAll));
         }
 
         /**

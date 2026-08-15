@@ -37,6 +37,11 @@ android {
         }
     }
 
+    // For VERSION_NAME, which the settings tree shows.
+    buildFeatures {
+        buildConfig true
+    }
+
     // Everything of RealVNC's is one dependency and one flavour leaves it out,
     // so `freeDebug` contains none of it and a dependency line is the whole of
     // the enforcement. Neither flavour has any source of its own.

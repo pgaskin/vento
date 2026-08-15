@@ -5,7 +5,6 @@
 -->
 <resources>
     <string name="app_name">Vento</string>
-    <string name="app_description">Fast, fluid VNC/RDP remote desktop client.</string>
     <string name="nav_back">Back</string>
 
     <!-- home -->
@@ -61,6 +60,9 @@
     <string name="settings_playground_summary">Fake desktop for testing input.</string>
     <string name="settings_licenses">Licences</string>
     <string name="settings_licenses_summary">Licences and third-party libraries.</string>
+    <string name="settings_source">Source code</string>
+    <string name="settings_source_summary">github.com/pgaskin/vento</string>
+    <string name="settings_version">Version</string>
     <string name="settings_hud">Debug overlay</string>
     <string name="settings_hud_summary">Show cursor, viewport, gesture, and rendering debug information.</string>
     <string name="settings_keep_awake">Keep screen on</string>
