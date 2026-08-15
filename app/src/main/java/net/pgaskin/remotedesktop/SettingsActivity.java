@@ -198,10 +198,6 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             for (String id : Backends.ids()) {
                 final Preference p = link(0, 0, () -> a.openBackend(id));
                 p.setTitle(Backends.name(id));
-                // What the client is for, in the backend's own words — the same
-                // sentences the protocol dialog offers it by. A row saying what
-                // is behind it was saying what every one of these rows is.
-                p.setSummary(Backends.description(id));
                 screen.addPreference(p);
             }
             screen.addPreference(heading(R.string.settings_group_app));
