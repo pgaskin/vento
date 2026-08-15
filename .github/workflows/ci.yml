@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - run: rustup toolchain install # install the toolchain pinned by rust-toolchain.toml
+      - run: cargo check --locked --workspace --verbose
+      - run: cargo build --locked --workspace --verbose
+      - run: cargo test --locked --workspace --verbose
+      - run: cargo clippy --locked --workspace --verbose
+
+  control:
+    name: Control
+    runs-on: ubuntu-latest
+    steps:
+      # self-contained, doesn't need ndk/rust/third_party
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: gradle
+      - run: ./gradlew :control:test
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: control-test-report
+          path: control/build/reports/tests/
+      - run: ./gradlew :control:assembleRelease
+      - uses: actions/upload-artifact@v7
+        with:
+          name: control-release-aar
+          path: control/build/outputs/aar/control-release.aar
+
+  app:
+    name: App
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: gradle
+      - run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses; ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager 'cmake;3.30.5' 'ndk;28.2.13676358' 'build-tools;36.0.0'
+      - run: ./patch.sh -n
+      - run: ./gradlew :backends:fetchCryptoSources
+      - run: ./gradlew :realvnc-jni:downloadVncApk
+      - run: rustup toolchain install
+      - run: cargo install cargo-ndk@4.1.2
+      - run: ./gradlew :app:assembleFreeDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: app-free-debug
+          path: app/build/outputs/apk/free/debug/app-free-debug.apk
+      - run: ./gradlew :app:assembleNonfreeDebug
+      #- run: ./scripts/check-jni-symbols.sh

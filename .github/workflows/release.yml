@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    environment:
+      name: release
+      deployment: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Check version
+        id: version
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs')
+            const dryRun = context.eventName === 'workflow_dispatch'
+            const fail = (message) => { if (dryRun) core.warning(message); else throw new Error(message) }
+            const gradle = fs.readFileSync('app/build.gradle', 'utf8')
+            const versionName = gradle.match(/^\s*versionName\s+(['"])([^'"]+)\1/m)?.[2]
+            const versionCode = gradle.match(/^\s*versionCode\s+([0-9]+)/m)?.[1]
+            if (!versionName) fail('missing versionName in app/build.gradle')
+            if (!versionCode) fail('missing versionCode in app/build.gradle')
+            const tag = context.ref.replace(/^refs\/tags\//, '')
+            if (versionName !== versionCode) fail(`versionName (${versionName}) does not match versionCode (${versionCode})`)
+            if (tag !== `v${versionName}`) fail(`tag (${tag}) does not match versionName (${versionName})`)
+            if (!fs.existsSync(`metadata/en-US/changelogs/${versionCode}.txt`)) fail(`missing changelog for versionCode ${versionCode}`)
+            core.setOutput('name', versionName)
+            core.setOutput('code', versionCode)
+            core.setOutput('tag', tag)
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          # must match app/build.gradle's Java toolchain and F-Droid's
+          # buildserver JDK: javac's lambda naming (and thus the dex) differs
+          # between JDK <=21 and 22+, so a mismatch breaks reproducibility.
+          java-version: '21'
+          cache: gradle
+      - run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses; ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager 'cmake;3.30.5' 'ndk;28.2.13676358' 'build-tools;36.0.0'
+      - run: ./patch.sh -n
+      - run: ./gradlew :backends:fetchCryptoSources
+      - run: rustup toolchain install # install the toolchain pinned by rust-toolchain.toml
+      - run: cargo install cargo-ndk@4.1.2
+      - run: ./gradlew :app:assembleFreeRelease
+
+      - name: Write keystore
+        run: echo "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/keystore.jks
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      - name: Sign APKs
+        # v1 (JAR) signing off: minSdk 34 never uses it, and it only adds dead
+        # META-INF entries. The APK Signing Block (v2/v3) is the whole signature.
+        # --alignment-preserved: keep AGP's existing zip alignment instead of
+        # letting apksigner re-align (its default), so the signed APK's entry
+        # layout stays identical to the unsigned build F-Droid rebuilds and
+        # apksigcopier reattaches the signature to.
+        run: |
+          set -euo pipefail
+          for abi in arm64-v8a x86_64; do
+            $ANDROID_HOME/build-tools/36.0.0/apksigner sign \
+              --v1-signing-enabled false --alignment-preserved \
+              --ks "$KEYSTORE_PATH" --ks-pass env:KEYSTORE_PASSWORD \
+              --in "app/build/outputs/apk/free/release/app-free-$abi-release-unsigned.apk" \
+              --out "Vento-$abi.apk"
+          done
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      - name: Verify APK signatures
+        run: |
+          set -euo pipefail
+          for abi in arm64-v8a x86_64; do
+            $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs "Vento-$abi.apk"
+          done
+
+      - name: Verify reproducible build
+        # Rebuild from a copy at a different absolute path (a reproducible build
+        # must not depend on the checkout location), then confirm both the two
+        # independent unsigned builds and the signed APK we're about to publish
+        # reproduce.
+        run: |
+          set -euo pipefail
+          rebuild=/tmp/vento-rebuild-at-a-different-path
+          rsync -a --delete \
+            --exclude='/target/' \
+            --exclude='build/' \
+            --exclude='.cxx/' \
+            --exclude='.gradle/' \
+            ./ "$rebuild/"
+          ( cd "$rebuild" && ./gradlew --no-daemon :app:assembleFreeRelease )
+          for abi in arm64-v8a x86_64; do
+            unsigned="app/build/outputs/apk/free/release/app-free-$abi-release-unsigned.apk"
+            rebuilt="$rebuild/app/build/outputs/apk/free/release/app-free-$abi-release-unsigned.apk"
+            # the two independent builds must be bit-for-bit identical
+            go run scripts/check-reproducible.go "$unsigned" "$rebuilt"
+            # the signed APK must reproduce from that build (differing only in the signature)
+            go run scripts/check-reproducible.go "Vento-$abi.apk" "$rebuilt"
+          done
+
+      - name: Create release
+        id: create-release
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/github-script@v8
+        with:
+          retries: 3
+          script: |
+            const tag = ${{ toJSON(steps.version.outputs.tag) }}
+            const versionCode = ${{ toJSON(steps.version.outputs.code) }}
+            const {data: {id: id}} = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              target_commitish: context.sha,
+              name: tag,
+              body: require('fs').readFileSync(`metadata/en-US/changelogs/${versionCode}.txt`, 'utf8'),
+              draft: true,
+            })
+            core.setOutput('id', id)
+      - name: Upload release assets
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/github-script@v9
+        with:
+          retries: 3
+          script: |
+            const fs = require('fs')
+            for (const abi of ['arm64-v8a', 'x86_64']) {
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: ${{ toJSON(steps.create-release.outputs.id) }},
+                data: fs.readFileSync(`Vento-${abi}.apk`),
+                name: `Vento-${abi}.apk`,
+              })
+            }
