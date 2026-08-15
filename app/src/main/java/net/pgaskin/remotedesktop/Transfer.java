@@ -171,11 +171,8 @@ final class Transfer {
         root.put("app", app);
 
         final JSONObject input = new JSONObject();
-        final SharedPreferences ip = InputSettings.prefs(ctx);
-        input.put(InputSettings.KEY_PRESET,
-                ip.getString(InputSettings.KEY_PRESET, InputSettings.PRESET_IMPROVED));
-        // The preset with this phone's overrides on top, which is what a tunable
-        // nobody has touched answers. A Config cannot be built without a
+        // The defaults with this phone's overrides on top, which is what a
+        // tunable nobody has touched answers. A Config cannot be built without a
         // density and no tunable is derived from one, so nothing written here is
         // a fact about this screen rather than a choice about the feel.
         final Config config =
@@ -507,10 +504,6 @@ final class Transfer {
         if (!plain(v, MAX_VALUE)) {
             return false;
         }
-        if (InputSettings.KEY_PRESET.equals(key)) {
-            return InputSettings.PRESET_IMPROVED.equals(v)
-                    || InputSettings.PRESET_FAITHFUL.equals(v);
-        }
         for (InputSettings.Tunable t : InputSettings.tunables()) {
             if (!t.key().equals(key)) {
                 continue;
@@ -521,7 +514,7 @@ final class Transfer {
             try {
                 // Dropped here rather than where it lands: an override that will
                 // not parse is silently ignored by the stack, so a screen full
-                // of preset values would be showing an import that did nothing.
+                // of default values would be showing an import that did nothing.
                 // Finite because "NaN" parses, and a NaN threshold compares
                 // false against everything it is asked about.
                 return Float.isFinite(Float.parseFloat(v.trim()));
@@ -546,15 +539,6 @@ final class Transfer {
     }
 
     // ---- plumbing -----------------------------------------------------------
-
-    private static List<String> inputKeys() {
-        final List<String> keys = new ArrayList<>();
-        keys.add(InputSettings.KEY_PRESET);
-        for (InputSettings.Tunable t : InputSettings.tunables()) {
-            keys.add(t.key());
-        }
-        return keys;
-    }
 
     private static int count(JSONObject o) {
         return o == null ? 0 : o.length();

@@ -370,48 +370,19 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             return s;
         }
 
-        /**
-         * The input stack. The preset is a list, the tunables below it default to
-         * whatever that preset says, and changing the preset clears them — a
-         * half-faithful stack is not a comparison of anything.
-         */
+        /** The input stack: its tunables, and a way back to their defaults. */
         private void input() {
             final OptionScreen.Store store =
                     OptionScreen.store(InputSettings.prefs(requireContext()));
             getPreferenceManager().setPreferenceDataStore(store);
             final PreferenceScreen screen = newScreen();
 
-            final ListPreference preset = new ListPreference(requireContext());
-            preset.setKey(InputSettings.KEY_PRESET);
-            preset.setTitle(R.string.settings_preset);
-            preset.setDialogTitle(R.string.settings_preset);
-            preset.setIconSpaceReserved(false);
-            preset.setSingleLineTitle(false);
-            preset.setEntryValues(new CharSequence[]{
-                    InputSettings.PRESET_IMPROVED, InputSettings.PRESET_FAITHFUL});
-            preset.setEntries(new CharSequence[]{
-                    getString(R.string.settings_preset_improved),
-                    getString(R.string.settings_preset_faithful)});
-            preset.setDefaultValue(InputSettings.PRESET_IMPROVED);
-            preset.setSummaryProvider(p -> ((ListPreference) p).getEntry()
-                    + "\n" + getString(R.string.settings_preset_summary));
-            preset.setOnPreferenceChangeListener((p, v) -> {
-                // Returning true is what persists it, through the same store;
-                // clearing the overrides is what makes a preset mean something.
-                InputSettings.clearOverrides(requireContext());
-                rebuild();
-                return true;
-            });
-            screen.addPreference(preset);
+            OptionScreen.addTunables(screen, InputSettings.tunables(),
+                    InputSettings.defaults(getResources().getDisplayMetrics().density));
 
-            final PreferenceCategory tuning = new PreferenceCategory(requireContext());
-            tuning.setTitle(R.string.settings_tunables);
-            tuning.setIconSpaceReserved(false);
-            screen.addPreference(tuning);
-            OptionScreen.addTunables(tuning, InputSettings.tunables(),
-                    InputSettings.preset(requireContext(),
-                            getResources().getDisplayMetrics().density));
-
+            // On a break of its own: an action among the values it acts on
+            // reads as one more of them.
+            screen.addPreference(heading(0));
             final Preference reset = new Preference(requireContext());
             reset.setTitle(R.string.settings_reset);
             reset.setSummary(R.string.settings_reset_summary);
@@ -422,7 +393,7 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                 rebuild();
                 return true;
             });
-            tuning.addPreference(reset);
+            screen.addPreference(reset);
             store.built();
         }
 
@@ -754,8 +725,8 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
 
         /**
          * Redraw the screen from the stored values. Every row here defaults to
-         * something computed — the preset's value — so clearing an override has
-         * to rebuild the rows rather than just refresh them.
+         * something computed — the stack's own value — so clearing an override
+         * has to rebuild the rows rather than just refresh them.
          */
         private void rebuild() {
             requireActivity().getSupportFragmentManager().beginTransaction()

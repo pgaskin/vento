@@ -65,7 +65,7 @@
 
             Unlike the original we keep configChanges, so rotating resizes the
             view in place instead of recreating the activity: the cursor
-            position, the preset toggles and an armed fixture recording all
+            position, the option squares and an armed fixture recording all
             survive a rotation, which they must for this to be usable as a test
             harness.
         -->

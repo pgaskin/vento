@@ -95,13 +95,8 @@
     <string name="settings_previews">Store desktop previews</string>
     <string name="settings_previews_summary">Locally save encrypted preview screenshots of the remote desktop. Disabling this deletes all existing screenshots.</string>
     <string name="settings_connection_defaults">Connection defaults</string>
-    <string name="settings_preset">Preset</string>
-    <string name="settings_preset_improved">Improved</string>
-    <string name="settings_preset_faithful">RealVNC</string>
-    <string name="settings_preset_summary">Changing this resets all settings below.</string>
-    <string name="settings_tunables">Tuning</string>
     <string name="settings_reset">Reset</string>
-    <string name="settings_reset_summary">Set all values to the preset default.</string>
+    <string name="settings_reset_summary">Set all values above back to their defaults.</string>
     <string name="settings_reset_all">Restore defaults</string>
     <string name="settings_reset_all_summary">Reset all session, backend, and app settings. Saved connections are not touched.</string>
     <string name="settings_reset_all_confirm">Reset all settings?</string>

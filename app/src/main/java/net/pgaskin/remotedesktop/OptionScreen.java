@@ -211,15 +211,15 @@ final class OptionScreen {
     }
 
     /**
-     * The input stack's tunables, defaulting to whatever the current preset says
-     * — so a switch that has never been touched shows the preset's answer rather
-     * than a fixed one, and changing the preset visibly moves them all.
+     * The input stack's tunables, each showing what {@code defaults} says until
+     * it is overridden — the stack's own answer rather than a copy of it kept on
+     * this screen.
      */
     static void addTunables(PreferenceGroup group, List<InputSettings.Tunable> tunables,
-                            Config preset) {
+                            Config defaults) {
         final Context ctx = group.getContext();
         for (InputSettings.Tunable t : tunables) {
-            final String def = t.read().apply(preset);
+            final String def = t.read().apply(defaults);
             final Preference p;
             if (t.kind() == InputSettings.Kind.BOOL) {
                 final SwitchPreferenceCompat s = new SwitchPreferenceCompat(ctx);

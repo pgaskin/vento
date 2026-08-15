@@ -27,20 +27,12 @@ import java.util.function.Function;
  * one layer up — except that here the app owns both ends, so a tunable is a
  * pair of lambdas onto a field rather than a string key into a map.
  *
- * <h2>Presets and defaults</h2>
- * A preference that has never been touched is <em>absent</em>, and the preset
- * answers for it. So switching {@code preset} from {@code improved} to
- * {@code faithful} moves everything that has not been explicitly overridden,
- * which is what makes the A/B square the playground has meaningful as a
- * setting. Changing the preset clears the overrides, because a half-faithful
- * stack is not a comparison of anything.
+ * <p>A preference that has never been touched is <em>absent</em>, and
+ * {@link #defaults} answers for it.
  */
 public final class InputSettings {
 
     public static final String FILE = "settings_input";
-    public static final String KEY_PRESET = "preset";
-    public static final String PRESET_IMPROVED = "improved";
-    public static final String PRESET_FAITHFUL = "faithful";
 
     /**
      * One field of {@link Config}, in both directions.
@@ -74,7 +66,7 @@ public final class InputSettings {
                     try {
                         set.accept(c, Float.parseFloat(v.trim()));
                     } catch (NumberFormatException ignored) {
-                        // A field left empty or full of nonsense keeps the preset's
+                        // A field left empty or full of nonsense keeps the default
                         // value; refusing to start over a typo would be worse.
                     }
                 });
@@ -157,16 +149,14 @@ public final class InputSettings {
         return ctx.getApplicationContext().getSharedPreferences(FILE, Context.MODE_PRIVATE);
     }
 
-    /** The preset, before any override. */
-    public static Config preset(Context ctx, float density) {
-        return PRESET_FAITHFUL.equals(prefs(ctx).getString(KEY_PRESET, PRESET_IMPROVED))
-                ? Config.faithful(density)
-                : Config.improved(density);
+    /** What the stack runs on before any override. */
+    public static Config defaults(float density) {
+        return Config.improved(density);
     }
 
-    /** The preset with the stored overrides applied — what a session runs on. */
+    /** The defaults with the stored overrides applied — what a session runs on. */
     public static Config config(Context ctx, float density) {
-        final Config c = preset(ctx, density);
+        final Config c = defaults(density);
         final SharedPreferences p = prefs(ctx);
         for (Tunable t : TUNABLES) {
             final String v = p.getString(t.key(), null);
@@ -177,7 +167,7 @@ public final class InputSettings {
         return c;
     }
 
-    /** Forget every override, so the preset answers for all of them again. */
+    /** Forget every override, so the defaults answer for all of them again. */
     public static void clearOverrides(Context ctx) {
         final SharedPreferences.Editor e = prefs(ctx).edit();
         for (Tunable t : TUNABLES) {

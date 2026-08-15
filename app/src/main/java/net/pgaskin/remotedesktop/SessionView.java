@@ -234,7 +234,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     /**
      * @param cfg the input stack's settings, which the app builds from its
      *            preferences ({@link InputSettings}) rather than this view
-     *            choosing a preset — the preset is one of those preferences.
+     *            deciding anything about the feel.
      */
     public SessionView(Context ctx, Backend backend, Host host, Config cfg) {
         super(ctx);
@@ -1267,7 +1267,6 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
                         ? "on ime " + imeHeight + " mod " + keyboard.heldModifierCount()
                         : "off")
                         + "   region " + lastRegion
-                        + "   cfg " + (cfg.faithfulPreset ? "FAITHFUL" : "IMPROVED")
                         + (backend.viewOnly() ? "   VIEW ONLY" : ""),
                 // The physical pair. "cap" is worth a column because an
                 // uncaptured mouse looks identical until it reaches the edge of
