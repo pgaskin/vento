@@ -1,0 +1,22 @@
+From 0a9a27b7e1ee1a0f512674a07bee2a73d0a96c56 Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Wed, 12 Aug 2026 12:13:58 -0400
+Subject: [PATCH 2/5] rfb: an Android H.264 decoder context
+
+The context class itself is in the shim, where a build's own code belongs;
+this is only the branch that selects it, beside the two upstream has.
+
+diff --git a/common/rfb/H264DecoderContext.cxx b/common/rfb/H264DecoderContext.cxx
+index 3ad8c343..c65de828 100644
+--- a/common/rfb/H264DecoderContext.cxx
++++ b/common/rfb/H264DecoderContext.cxx
+@@ -30,6 +30,9 @@
+ #elif H264_WIN
+ #include <rfb/H264WinDecoderContext.h>
+ #define H264DecoderContextType H264WinDecoderContext
++#elif H264_ANDROID
++#include <H264AndroidDecoderContext.h>
++#define H264DecoderContextType H264AndroidDecoderContext
+ #endif
+ 
+ using namespace rfb;

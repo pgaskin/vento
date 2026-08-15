@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    A group of rows: contiguous rows on a container with large corners, which is
+    what the phone's own settings have looked like for several versions and what
+    androidx.preference has no idea about.
+
+    Measured off a Pixel 8's Settings at 365 dpi rather than taken from a
+    document, since there is no published one: the radii by fitting a circle to
+    the corner's alpha profile, the rest by finding the edges of the container in
+    a screenshot. What came back was 15.8 dp and 14.9 dp for the two ends of a
+    group, 3.95 dp between rows, 2.19 dp of gap, 20.6 dp between groups and
+    15.78 dp either side.
+-->
+<resources>
+
+    <dimen name="group_radius">16dp</dimen>
+    <dimen name="group_radius_inner">4dp</dimen>
+    <dimen name="group_inset">16dp</dimen>
+    <dimen name="group_gap">2dp</dimen>
+    <dimen name="group_spacing">20dp</dimen>
+    <!-- Either side of a row that is its own container: a text field's box does
+         not want a card behind it, and 2 dp from one reads as a mistake. -->
+    <dimen name="group_gap_field">8dp</dimen>
+
+    <!--
+        A screen's header, which is a heading over the groups under it and is
+        inset like one: 24 dp, where a container's own edge is 16. Flush with
+        the container reads as unaligned, because a 16 dp corner means the
+        content inside it starts further in than the edge does.
+
+        A button in a header is the phone's own: a 40 dp filled circle in the
+        middle of the 48 dp that can be hit. Which is why what a header is told
+        about its buttons is 4 dp less — the circle carries the alignment, and
+        the touch target is larger than it.
+    -->
+    <dimen name="header_inset">24dp</dimen>
+    <dimen name="header_inset_button">20dp</dimen>
+
+    <!-- Above and below it. A header is a bar's height wherever it appears —
+         on a screen, where it is one, and over a sheet, where it is not — so
+         this is what is left either side of the 48 dp a button takes. -->
+    <dimen name="header_padding">4dp</dimen>
+
+    <!-- Inside a row, and inside a heading over a group of them. -->
+    <dimen name="row_padding">16dp</dimen>
+    <dimen name="row_min_height">56dp</dimen>
+    <dimen name="heading_inset">24dp</dimen>
+    <dimen name="heading_padding_top">24dp</dimen>
+    <dimen name="heading_padding_bottom">12dp</dimen>
+
+</resources>

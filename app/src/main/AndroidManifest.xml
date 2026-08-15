@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        A backend opens sockets from native code, where a missing permission
+        surfaces as "socket: Operation not permitted" from inside the library
+        rather than as a SecurityException.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+        A session has to survive the screen showing it going away, and about
+        five seconds in the background is all it takes for Android to freeze a
+        cached process and drop its sockets. A foreground service is the only
+        answer, and its notification is the
+        price: POST_NOTIFICATIONS is what makes that notification visible and
+        therefore dismissible-by-disconnecting.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+        The lock screen in front of an export that carries the saved passwords
+        in the clear. Not about biometrics: what is asked for is a device
+        credential, and a fingerprint is only the quick way to give one.
+    -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
+    <application
+        android:name=".RemoteDesktopApp"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:hardwareAccelerated="true"
+        android:theme="@style/Theme.RemoteDesktop">
+
+        <!-- The saved connections, and the way in to everything else. -->
+        <activity
+            android:name=".HomeActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
+
+        <!-- The licence page the build generates into the assets. -->
+        <activity
+            android:name=".LicensesActivity"
+            android:exported="false" />
+
+        <!--
+            The fake desktop the input stack was built against — the whole
+            app before there was a protocol to speak, and now a screen
+            reachable from settings.
+
+            Unlike the original we keep configChanges, so rotating resizes the
+            view in place instead of recreating the activity: the cursor
+            position, the preset toggles and an armed fixture recording all
+            survive a rotation, which they must for this to be usable as a test
+            harness.
+        -->
+        <activity
+            android:name=".PlaygroundActivity"
+            android:exported="true"
+            android:theme="@style/Theme.RemoteDesktop.Session"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density" />
+
+        <!--
+            One connection, on screen. Launched from the home screen with a
+            connection id, or straight from adb with an address (session.sh).
+            A rotation must not drop a live connection, hence configChanges.
+
+            A window per session, which is what documentLaunchMode buys: the
+            home screen gives each launch the connection's own URI, so a second
+            machine opens beside the first and both are live, while opening one
+            that is already running — from the list or from its notification —
+            lands in the window it already has. `intoExisting` rather than
+            `always` is the whole of that rule. autoRemoveFromRecents because a
+            session deliberately ended has no window left to go back to; one
+            that ended by itself keeps its window, and the reason on it.
+
+            Exported for that second way in, and the trade is worth stating:
+            any app on the phone can make this one open a session to an address
+            of its choosing. It cannot reach a saved connection's password
+            without its id, which it would have to guess, and it cannot see what
+            arrives — but it can start a connection, and that is the cost of
+            being drivable from a script.
+        -->
+        <activity
+            android:name=".SessionActivity"
+            android:exported="true"
+            android:documentLaunchMode="intoExisting"
+            android:autoRemoveFromRecents="true"
+            android:theme="@style/Theme.RemoteDesktop.Session"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density" />
+
+        <!--
+            The session's keeper. `specialUse` because none of the defined types
+            is this: it is not a data sync (which Android 15 caps at six hours,
+            and a session is as long as somebody is working), not a connected
+            device, not media. The subtype below is the declaration that goes
+            with it.
+        -->
+        <service
+            android:name=".SessionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="remote_desktop_session" />
+        </service>
+
+    </application>
+
+</manifest>

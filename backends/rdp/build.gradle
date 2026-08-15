@@ -1,0 +1,68 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+plugins {
+    id 'com.android.library'
+}
+
+// Both halves of the RDP backend: `src/main/java` implements `Backend` on
+// `src/main/rust`, IronRDP in the RFB client's shape, and the AAR carries the
+// library it compiles to.
+android {
+    namespace = 'net.pgaskin.remotedesktop.backend.rdp'
+    compileSdk 36
+    ndkVersion = project(':backends').nativeNdkVersion
+
+    defaultConfig {
+        minSdk 34
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    // The AAR carries the library as well as the Java, so whether a build
+    // speaks RDP is a dependency line.
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+        }
+    }
+}
+
+dependencies {
+    // The seam, and the only thing of the app's this module may name. `api`
+    // because `RdpBackend` is a `Backend` and whoever holds one says so.
+    api project(':backends')
+}
+
+// `libremotedesktop_rdp.so`, compiled by cargo-ndk into a generated jniLibs
+// directory the AAR packages. Every variant: both flavours get this client.
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        final cap = variant.name.substring(0, 1).toUpperCase(Locale.ROOT) + variant.name.substring(1)
+        final seam = project(':backends')
+
+        final cargoBuild = tasks.register("cargoBuild${cap}Native", CargoBuildTask) {
+            workspaceDir.set(seam.cargoWorkspace)
+            cargoPackage.set('remotedesktop-rdp')
+            ndkDirectory.set(androidComponents.sdkComponents.ndkDirectory)
+            rustToolchainFile.set(seam.cargoRustToolchain)
+            cargoNdkVersion.set(seam.cargoNdkVersion)
+            abiFilters.set(seam.nativeAbis)
+            minSdkVersion.set(provider {
+                final v = android.defaultConfig.minSdk
+                (v instanceof com.android.build.api.variant.AndroidVersion) ? v.apiLevel : v
+            })
+            outputDir.set(layout.buildDirectory.dir("generated/rustNativeLibs/${variant.name}"))
+        }
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(cargoBuild) { it.outputDir }
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

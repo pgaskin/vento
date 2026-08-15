@@ -1,0 +1,35 @@
+# `ignore = all` is load-bearing, not tidiness. A gitlink here always names the
+# pristine upstream commit; the working tree sits on that commit plus whatever
+# is in patches/, applied by patch.sh. Without this, `git add -A` records the
+# *patched* commit as the pin, after which the patches apply to themselves and
+# a fresh clone gets them twice. patch.sh check catches it; this stops it.
+[submodule "third_party/libvncserver"]
+	path = third_party/libvncserver
+	url = https://github.com/LibVNC/libvncserver.git
+	shallow = true
+	ignore = all
+[submodule "third_party/libjpeg-turbo"]
+	path = third_party/libjpeg-turbo
+	url = https://github.com/libjpeg-turbo/libjpeg-turbo.git
+	shallow = true
+	ignore = all
+[submodule "third_party/tigervnc"]
+	path = third_party/tigervnc
+	url = https://github.com/TigerVNC/tigervnc.git
+	shallow = true
+	ignore = all
+[submodule "third_party/pixman"]
+	path = third_party/pixman
+	url = https://gitlab.freedesktop.org/pixman/pixman.git
+	shallow = true
+	ignore = all
+[submodule "third_party/openssl"]
+	path = third_party/openssl
+	url = https://github.com/openssl/openssl.git
+	shallow = true
+	ignore = all
+[submodule "third_party/freerdp"]
+	path = third_party/freerdp
+	url = https://github.com/FreeRDP/FreeRDP.git
+	shallow = true
+	ignore = all

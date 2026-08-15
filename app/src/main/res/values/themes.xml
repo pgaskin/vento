@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    Material You, which on minSdk 34 needs no fallback path: the dynamic palette
+    has been there since API 31. The colours themselves are
+    applied per activity by RemoteDesktopApp; this is the rest of the theme.
+-->
+<resources>
+
+    <style name="Theme.RemoteDesktop" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- The action bar is a toolbar in the layout, over a transparent
+             system bar, so the home screen's cards scroll under the clock. -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
+        <!--
+            The page a group of rows sits on, which is two steps up from the
+            plain surface a Material 3 window is given: the phone's own settings
+            put its containers on tone 9 and this lands on the same one, against
+            the tone 4 that was here before.
+
+            The window rather than `colorBackground`, which cannot be set from
+            here at all — the dynamic palette arrives as a theme overlay over
+            this one and names that attribute itself. Anything that wanted the
+            page's colour asks for the role.
+        -->
+        <item name="android:windowBackground">?attr/colorSurfaceContainer</item>
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay.RemoteDesktop</item>
+    </style>
+
+    <!--
+        The settings tree, drawn as groups of rows.
+
+        androidx.preference has one row background and a divider between
+        categories, and no attribute anywhere that says a run of rows is one
+        thing. What the phone does comes from SettingsLib, which is internal to
+        AOSP, so this is reproduced rather than adopted: our own layouts here,
+        and an adapter in SettingsActivity that picks each row's background from
+        where it sits in its group.
+    -->
+    <style name="PreferenceThemeOverlay.RemoteDesktop" parent="PreferenceThemeOverlay">
+        <item name="preferenceStyle">@style/Widget.RemoteDesktop.Preference</item>
+        <item name="preferenceScreenStyle">@style/Widget.RemoteDesktop.Preference</item>
+        <item name="dialogPreferenceStyle">@style/Widget.RemoteDesktop.Preference.Dialog</item>
+        <item name="editTextPreferenceStyle">@style/Widget.RemoteDesktop.Preference.EditText</item>
+        <item name="switchPreferenceCompatStyle">@style/Widget.RemoteDesktop.Preference.Switch</item>
+        <item name="preferenceCategoryStyle">@style/Widget.RemoteDesktop.Preference.Category</item>
+    </style>
+
+    <!-- One layout for every kind of row, and the dividers off: a group's ends
+         are what separate it now, and a rule through one would cross it. -->
+    <style name="Widget.RemoteDesktop.Preference" parent="Preference.Material">
+        <item name="android:layout">@layout/preference_row</item>
+        <item name="allowDividerAbove">false</item>
+        <item name="allowDividerBelow">false</item>
+        <item name="iconSpaceReserved">false</item>
+        <item name="singleLineTitle">false</item>
+    </style>
+
+    <!-- The parents differ by what each type puts in the dialog it opens, so
+         they are inherited from rather than restated. -->
+    <style name="Widget.RemoteDesktop.Preference.Dialog" parent="Preference.DialogPreference.Material">
+        <item name="android:layout">@layout/preference_row</item>
+        <item name="allowDividerAbove">false</item>
+        <item name="allowDividerBelow">false</item>
+        <item name="iconSpaceReserved">false</item>
+        <item name="singleLineTitle">false</item>
+    </style>
+
+    <style name="Widget.RemoteDesktop.Preference.EditText"
+        parent="Preference.DialogPreference.EditTextPreference.Material">
+        <item name="android:layout">@layout/preference_row</item>
+        <item name="android:dialogLayout">@layout/dialog_option_text</item>
+        <item name="allowDividerAbove">false</item>
+        <item name="allowDividerBelow">false</item>
+        <item name="iconSpaceReserved">false</item>
+        <item name="singleLineTitle">false</item>
+    </style>
+
+    <style name="Widget.RemoteDesktop.Preference.Switch"
+        parent="Preference.SwitchPreferenceCompat.Material">
+        <item name="android:layout">@layout/preference_row</item>
+        <item name="android:widgetLayout">@layout/preference_row_switch</item>
+        <item name="allowDividerAbove">false</item>
+        <item name="allowDividerBelow">false</item>
+        <item name="iconSpaceReserved">false</item>
+        <item name="singleLineTitle">false</item>
+    </style>
+
+    <style name="Widget.RemoteDesktop.Preference.Category" parent="Preference.Category.Material">
+        <item name="android:layout">@layout/preference_heading</item>
+        <item name="allowDividerAbove">false</item>
+        <item name="allowDividerBelow">false</item>
+        <item name="iconSpaceReserved">false</item>
+    </style>
+
+    <!--
+        A session is somebody else's desktop and nothing else: no action bar, no
+        system bars, and a black background so the letterboxing around a desktop
+        that does not match the phone's aspect ratio is not grey.
+    -->
+    <style name="Theme.RemoteDesktop.Session" parent="Theme.RemoteDesktop">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+
+    <!--
+        A dialog on one surface rather than two.
+
+        Material 3's alert dialog paints its window with colorSurfaceContainerHigh,
+        but the title block inherits the plain floating-window background — so a
+        dialog arrives in two tones with a hard edge across it under the title,
+        which is visible on any dark theme and obvious over a remote desktop.
+        Pinning both to the same container colour is the whole fix; everything
+        else about the dialog is already what Material 3 wants.
+    -->
+    <style name="ThemeOverlay.RemoteDesktop.Dialog"
+        parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="android:colorBackgroundFloating">?attr/colorSurfaceContainerHigh</item>
+        <item name="android:colorBackground">?attr/colorSurfaceContainerHigh</item>
+    </style>
+
+    <!--
+        The connection editor's window. The one dialog here that fills the
+        screen: it is a form with a soft keyboard under it, and a sheet that
+        holds a keyboard, a heading and a footer has nothing left in the middle
+        for the form itself.
+
+        `windowIsFloating` false is what makes a dialog a window rather than a
+        card; without it the rest of this is ignored and the layout's
+        match_parent means the height of its own content.
+
+        The palette is in the parent because a dialog does not inherit the one
+        the activity was given: `applyToActivitiesIfAvailable` overlays an
+        activity's theme object, and a dialog built with a theme of its own
+        starts from that resource instead — which is how this one screen had
+        been in Material 3's default purple all along.
+    -->
+    <style name="Theme.RemoteDesktop.EditorDialog"
+        parent="Theme.Material3.DynamicColors.DayNight.NoActionBar">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <!--
+            A window with `windowIsFloating` false gets no animation of its own,
+            and a form that simply appears reads as a glitch. The sheet's own
+            slide, because that is the gesture this replaced and the direction
+            it comes from is still the bottom.
+        -->
+        <item name="android:windowAnimationStyle">@style/Animation.Design.BottomSheetDialog</item>
+    </style>
+
+    <!--
+        A header's icon button: back, close. The phone's own is a 40 dp filled
+        circle in the middle of the 48 dp that can be hit, which is the whole of
+        what this style is — the insets are what makes the drawn circle smaller
+        than the target, and they are why the button is a button rather than a
+        background of ours behind an image.
+
+        Neutral rather than the filled icon button's primary: it is a way out of
+        a screen, and the accent on these screens means something is live.
+    -->
+    <style name="Widget.RemoteDesktop.HeaderButton" parent="Widget.Material3.Button.IconButton.Filled">
+        <item name="backgroundTint">?attr/colorSurfaceContainerHighest</item>
+        <item name="iconTint">?attr/colorOnSurfaceVariant</item>
+        <item name="iconSize">24dp</item>
+        <item name="android:insetLeft">4dp</item>
+        <item name="android:insetTop">4dp</item>
+        <item name="android:insetRight">4dp</item>
+        <item name="android:insetBottom">4dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <!-- Beside the text rather than at the button's leading edge, which for
+             a button with no text is the difference between an icon in the
+             middle of the circle and an icon against the side of it: the first
+             is positioned, the second is a compound drawable at the padding. -->
+        <item name="iconGravity">textStart</item>
+        <item name="iconPadding">0dp</item>
+        <item name="android:paddingStart">0dp</item>
+        <item name="android:paddingEnd">0dp</item>
+    </style>
+
+    <!-- The thumbnail on a home row, whose corners are its own: it sits inside
+         a container with much larger ones and would otherwise be the one square
+         thing on the screen. -->
+    <style name="ShapeAppearance.RemoteDesktop.Thumbnail" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+
+    <!--
+        The editor's two scroll boundaries: what a hairline is left for, now
+        that a group of rows separates itself. It marks where the form stops
+        moving — the heading above it and the footer below it stay put — which
+        a gap cannot say.
+    -->
+    <style name="Widget.RemoteDesktop.PanelDivider" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:layout_marginTop">4dp</item>
+        <item name="android:layout_marginBottom">4dp</item>
+        <item name="android:background">?attr/colorOutlineVariant</item>
+    </style>
+
+</resources>

@@ -1,0 +1,249 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+plugins {
+    id 'com.android.application'
+}
+
+// What ships, and whether it ships as one APK or one per architecture. Release
+// splits, debug does not — an emulator and a phone are then the same file,
+// which is what `scripts/session.sh` and every `installDebug` assume — and
+// `splits` has no per-build-type form, so the build type is read off the
+// invocation.
+final shippedAbis = ['arm64-v8a', 'x86_64']
+final splitByAbi = gradle.startParameter.taskNames.any { it.contains('Release') }
+
+android {
+    namespace = 'net.pgaskin.remotedesktop'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "net.pgaskin.remotedesktop"
+        minSdk 34
+        targetSdk 36
+        versionCode 1
+        versionName "1"
+
+        // The last word on what ships: packaging drops any ABI a module
+        // supplies and this does not name, so it must be a subset of every
+        // backend's — a library with no RealVNC one beside it fails at
+        // System.loadLibrary on a device nobody here has. The build rejects
+        // this being set at the same time as the split filter below, so a
+        // release says it there instead.
+        if (!splitByAbi) {
+            ndk {
+                abiFilters(*shippedAbis)
+            }
+        }
+    }
+
+    // Everything of RealVNC's is one dependency and one flavour leaves it out,
+    // so `freeDebug` contains none of it and a dependency line is the whole of
+    // the enforcement. Neither flavour has any source of its own.
+    flavorDimensions += 'licensing'
+    productFlavors {
+        free {
+            dimension 'licensing'
+        }
+        nonfree {
+            dimension 'licensing'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            // Otherwise the git HEAD is stamped into the APK, so the same
+            // sources at two commits differ.
+            vcsInfo.include = false
+        }
+    }
+
+    // A Google-signed blob of the dependency tree, in a signing block of its
+    // own. It is not reproducible from the sources, and F-Droid rejects a
+    // signing block it does not recognise.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
+    splits {
+        abi {
+            enable = splitByAbi
+            reset()
+            include(*shippedAbis)
+            universalApk false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    packaging {
+        jniLibs {
+            // Unpacked at install time rather than mapped out of the APK, which
+            // costs disk and makes a library's own alignment the loader's
+            // problem instead of the packager's — one of these is somebody
+            // else's build and cannot be rebuilt to suit ours.
+            useLegacyPackaging = true
+        }
+    }
+}
+
+dependencies {
+    // The input stack, from `control/`. Its tests live with it, which is why
+    // this module has none.
+    implementation project(':control')
+
+    // The seam, and the protocols this build has: each carries its own native
+    // library and declares itself as a `BackendProvider` service, so these
+    // lines are the whole of what this app can connect with. Nothing in the
+    // app names a protocol.
+    implementation project(':backends')
+    implementation project(':backends:rfb')
+    implementation project(':backends:libvnc')
+    implementation project(':backends:tigervnc')
+    implementation project(':backends:rdp')
+    implementation project(':backends:freerdp')
+
+    // Their backend, and behind it the JNI surface and libvncviewer.so itself.
+    nonfreeImplementation project(':backends:realvnc')
+
+    implementation 'androidx.recyclerview:recyclerview:1.4.0'
+    implementation 'androidx.preference:preference:1.2.1'
+    implementation 'com.google.android.material:material:1.13.0'
+}
+
+// The licence page, as an asset: what this build is made of and what that means
+// for handing it on. The crates are resolved from the Cargo workspace rather
+// than named, per ABI, so a protocol added or deleted changes nothing here.
+def rustAbiFilters = provider { shippedAbis as Set }
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        final cap = variant.name.substring(0, 1).toUpperCase(Locale.ROOT) + variant.name.substring(1)
+
+        final nonfree = variant.flavorName == 'nonfree'
+        final backends = project(':backends')
+        final genLicenses = tasks.register("generate${cap}Licenses", GenerateLicensesTask) {
+            cargoLock.set(rootProject.file('Cargo.lock'))
+            workspaceDir.set(backends.cargoWorkspace)
+            abiFilters.set(rustAbiFilters)
+            firstParty.set(provider {
+                final modules = [[
+                        name: 'control — the input stack',
+                        spdx: 'MIT',
+                        text: rootProject.file('control/LICENSE').getText('UTF-8'),
+                ], [
+                        name: 'the app and its protocol clients',
+                        spdx: 'GPL-3.0-or-later',
+                        text: rootProject.file('LICENSE').getText('UTF-8'),
+                ]]
+                if (nonfree) {
+                    modules << [
+                            name: 'realvnc-jni — RealVNC\'s JNI surface',
+                            spdx: 'CC0-1.0',
+                            text: rootProject.file('realvnc/LICENSE').getText('UTF-8'),
+                    ]
+                }
+                modules
+            })
+            // The Cargo lock accounts for every Rust protocol module and for
+            // nothing under a CMake one nor anything in `dependencies` above,
+            // so what those are built from is named here or the page would not
+            // know it is in the build.
+            otherComponents.set(provider {
+                // Read through a helper rather than getText directly: on a
+                // clean clone the submodules are empty and the two crypto trees
+                // are not there at all, and the first thing that says so should
+                // be an instruction rather than a FileNotFoundException from a
+                // provider halfway through configuration.
+                final Closure<String> licenceText = { String path ->
+                    final File f = rootProject.file(path)
+                    if (!f.isFile()) {
+                        throw new GradleException(
+                                "${path} is missing. Run `git submodule update --init` and, for "
+                                        + "the gnutls and nettle trees, `./gradlew :backends:fetchCryptoSources`.")
+                    }
+                    f.getText('UTF-8')
+                }
+                [[
+                        name: 'LibVNCServer — libvncclient',
+                        spdx: 'GPL-2.0-or-later',
+                        text: licenceText('third_party/libvncserver/COPYING'),
+                ], [
+                        name: 'TigerVNC',
+                        spdx: 'GPL-2.0-or-later',
+                        text: licenceText('third_party/tigervnc/LICENCE.TXT'),
+                ], [
+                        // The library half, which is all this build compiles;
+                        // their command-line tools are GPL-3.0 and are not here.
+                        name: 'GnuTLS',
+                        spdx: 'LGPL-2.1-or-later',
+                        text: licenceText('third_party/gnutls/COPYING.LESSERv2'),
+                ], [
+                        // Dual licensed; either arm covers a GPL-2.0-or-later
+                        // build, and the second is the one that also covers a
+                        // build under no other terms.
+                        name: 'Nettle',
+                        spdx: 'LGPL-3.0-or-later OR GPL-2.0-or-later',
+                        text: licenceText('third_party/nettle/COPYING.LESSERv3')
+                                + '\n\n' + licenceText('third_party/nettle/COPYINGv2'),
+                ], [
+                        name: 'pixman',
+                        spdx: 'MIT',
+                        text: licenceText('third_party/pixman/COPYING'),
+                ], [
+                        name: 'libjpeg-turbo',
+                        spdx: 'IJG AND BSD-3-Clause AND Zlib',
+                        text: licenceText('third_party/libjpeg-turbo/LICENSE.md')
+                                + '\n\n' + licenceText('third_party/libjpeg-turbo/README.ijg'),
+                ], [
+                        name: 'FreeRDP',
+                        spdx: 'Apache-2.0',
+                        text: licenceText('third_party/freerdp/LICENSE'),
+                ], [
+                        // FreeRDP's crypto, and the only library here with two
+                        // licences in one file: the Apache-2.0 this build is
+                        // under, and the old dual licence for versions before
+                        // 3.0, which this is not.
+                        name: 'OpenSSL',
+                        spdx: 'Apache-2.0',
+                        text: licenceText('third_party/openssl/LICENSE.txt'),
+                ], [
+                        // The Java side, which arrives from Maven rather than
+                        // from a submodule and so is in no lock file this page
+                        // reads. It is one entry because it is one licence and
+                        // one text; the versions are in `dependencies` above.
+                        // The text is spelled out rather than read from a file
+                        // because there is nowhere honest to read it from: of
+                        // the three artifacts only RecyclerView's carries a
+                        // copy, and that one stops at END OF TERMS AND
+                        // CONDITIONS with the appendix cut off.
+                        name: 'androidx (RecyclerView, Preference) and Material Components',
+                        spdx: 'Apache-2.0',
+                        text: '\n                                 Apache License\n                           Version 2.0, January 2004\n                        http://www.apache.org/licenses/\n\n   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION\n\n   1. Definitions.\n\n      "License" shall mean the terms and conditions for use, reproduction,\n      and distribution as defined by Sections 1 through 9 of this document.\n\n      "Licensor" shall mean the copyright owner or entity authorized by\n      the copyright owner that is granting the License.\n\n      "Legal Entity" shall mean the union of the acting entity and all\n      other entities that control, are controlled by, or are under common\n      control with that entity. For the purposes of this definition,\n      "control" means (i) the power, direct or indirect, to cause the\n      direction or management of such entity, whether by contract or\n      otherwise, or (ii) ownership of fifty percent (50%) or more of the\n      outstanding shares, or (iii) beneficial ownership of such entity.\n\n      "You" (or "Your") shall mean an individual or Legal Entity\n      exercising permissions granted by this License.\n\n      "Source" form shall mean the preferred form for making modifications,\n      including but not limited to software source code, documentation\n      source, and configuration files.\n\n      "Object" form shall mean any form resulting from mechanical\n      transformation or translation of a Source form, including but\n      not limited to compiled object code, generated documentation,\n      and conversions to other media types.\n\n      "Work" shall mean the work of authorship, whether in Source or\n      Object form, made available under the License, as indicated by a\n      copyright notice that is included in or attached to the work\n      (an example is provided in the Appendix below).\n\n      "Derivative Works" shall mean any work, whether in Source or Object\n      form, that is based on (or derived from) the Work and for which the\n      editorial revisions, annotations, elaborations, or other modifications\n      represent, as a whole, an original work of authorship. For the purposes\n      of this License, Derivative Works shall not include works that remain\n      separable from, or merely link (or bind by name) to the interfaces of,\n      the Work and Derivative Works thereof.\n\n      "Contribution" shall mean any work of authorship, including\n      the original version of the Work and any modifications or additions\n      to that Work or Derivative Works thereof, that is intentionally\n      submitted to Licensor for inclusion in the Work by the copyright owner\n      or by an individual or Legal Entity authorized to submit on behalf of\n      the copyright owner. For the purposes of this definition, "submitted"\n      means any form of electronic, verbal, or written communication sent\n      to the Licensor or its representatives, including but not limited to\n      communication on electronic mailing lists, source code control systems,\n      and issue tracking systems that are managed by, or on behalf of, the\n      Licensor for the purpose of discussing and improving the Work, but\n      excluding communication that is conspicuously marked or otherwise\n      designated in writing by the copyright owner as "Not a Contribution."\n\n      "Contributor" shall mean Licensor and any individual or Legal Entity\n      on behalf of whom a Contribution has been received by Licensor and\n      subsequently incorporated within the Work.\n\n   2. Grant of Copyright License. Subject to the terms and conditions of\n      this License, each Contributor hereby grants to You a perpetual,\n      worldwide, non-exclusive, no-charge, royalty-free, irrevocable\n      copyright license to reproduce, prepare Derivative Works of,\n      publicly display, publicly perform, sublicense, and distribute the\n      Work and such Derivative Works in Source or Object form.\n\n   3. Grant of Patent License. Subject to the terms and conditions of\n      this License, each Contributor hereby grants to You a perpetual,\n      worldwide, non-exclusive, no-charge, royalty-free, irrevocable\n      (except as stated in this section) patent license to make, have made,\n      use, offer to sell, sell, import, and otherwise transfer the Work,\n      where such license applies only to those patent claims licensable\n      by such Contributor that are necessarily infringed by their\n      Contribution(s) alone or by combination of their Contribution(s)\n      with the Work to which such Contribution(s) was submitted. If You\n      institute patent litigation against any entity (including a\n      cross-claim or counterclaim in a lawsuit) alleging that the Work\n      or a Contribution incorporated within the Work constitutes direct\n      or contributory patent infringement, then any patent licenses\n      granted to You under this License for that Work shall terminate\n      as of the date such litigation is filed.\n\n   4. Redistribution. You may reproduce and distribute copies of the\n      Work or Derivative Works thereof in any medium, with or without\n      modifications, and in Source or Object form, provided that You\n      meet the following conditions:\n\n      (a) You must give any other recipients of the Work or\n          Derivative Works a copy of this License; and\n\n      (b) You must cause any modified files to carry prominent notices\n          stating that You changed the files; and\n\n      (c) You must retain, in the Source form of any Derivative Works\n          that You distribute, all copyright, patent, trademark, and\n          attribution notices from the Source form of the Work,\n          excluding those notices that do not pertain to any part of\n          the Derivative Works; and\n\n      (d) If the Work includes a "NOTICE" text file as part of its\n          distribution, then any Derivative Works that You distribute must\n          include a readable copy of the attribution notices contained\n          within such NOTICE file, excluding those notices that do not\n          pertain to any part of the Derivative Works, in at least one\n          of the following places: within a NOTICE text file distributed\n          as part of the Derivative Works; within the Source form or\n          documentation, if provided along with the Derivative Works; or,\n          within a display generated by the Derivative Works, if and\n          wherever such third-party notices normally appear. The contents\n          of the NOTICE file are for informational purposes only and\n          do not modify the License. You may add Your own attribution\n          notices within Derivative Works that You distribute, alongside\n          or as an addendum to the NOTICE text from the Work, provided\n          that such additional attribution notices cannot be construed\n          as modifying the License.\n\n      You may add Your own copyright statement to Your modifications and\n      may provide additional or different license terms and conditions\n      for use, reproduction, or distribution of Your modifications, or\n      for any such Derivative Works as a whole, provided Your use,\n      reproduction, and distribution of the Work otherwise complies with\n      the conditions stated in this License.\n\n   5. Submission of Contributions. Unless You explicitly state otherwise,\n      any Contribution intentionally submitted for inclusion in the Work\n      by You to the Licensor shall be under the terms and conditions of\n      this License, without any additional terms or conditions.\n      Notwithstanding the above, nothing herein shall supersede or modify\n      the terms of any separate license agreement you may have executed\n      with Licensor regarding such Contributions.\n\n   6. Trademarks. This License does not grant permission to use the trade\n      names, trademarks, service marks, or product names of the Licensor,\n      except as required for reasonable and customary use in describing the\n      origin of the Work and reproducing the content of the NOTICE file.\n\n   7. Disclaimer of Warranty. Unless required by applicable law or\n      agreed to in writing, Licensor provides the Work (and each\n      Contributor provides its Contributions) on an "AS IS" BASIS,\n      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or\n      implied, including, without limitation, any warranties or conditions\n      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A\n      PARTICULAR PURPOSE. You are solely responsible for determining the\n      appropriateness of using or redistributing the Work and assume any\n      risks associated with Your exercise of permissions under this License.\n\n   8. Limitation of Liability. In no event and under no legal theory,\n      whether in tort (including negligence), contract, or otherwise,\n      unless required by applicable law (such as deliberate and grossly\n      negligent acts) or agreed to in writing, shall any Contributor be\n      liable to You for damages, including any direct, indirect, special,\n      incidental, or consequential damages of any character arising as a\n      result of this License or out of the use or inability to use the\n      Work (including but not limited to damages for loss of goodwill,\n      work stoppage, computer failure or malfunction, or any and all\n      other commercial damages or losses), even if such Contributor\n      has been advised of the possibility of such damages.\n\n   9. Accepting Warranty or Additional Liability. While redistributing\n      the Work or Derivative Works thereof, You may choose to offer,\n      and charge a fee for, acceptance of support, warranty, indemnity,\n      or other liability obligations and/or rights consistent with this\n      License. However, in accepting such obligations, You may act only\n      on Your own behalf and on Your sole responsibility, not on behalf\n      of any other Contributor, and only if You agree to indemnify,\n      defend, and hold each Contributor harmless for any liability\n      incurred by, or claims asserted against, such Contributor by reason\n      of your accepting any such warranty or additional liability.\n\n   END OF TERMS AND CONDITIONS\n\n   APPENDIX: How to apply the Apache License to your work.\n\n      To apply the Apache License to your work, attach the following\n      boilerplate notice, with the fields enclosed by brackets "[]"\n      replaced with your own identifying information. (Don\'t include\n      the brackets!)  The text should be enclosed in the appropriate\n      comment syntax for the file format. We also recommend that a\n      file or class name and description of purpose be included on the\n      same "printed page" as the copyright notice for easier\n      identification within third-party archives.\n\n   Copyright [yyyy] [name of copyright owner]\n\n   Licensed under the Apache License, Version 2.0 (the "License");\n   you may not use this file except in compliance with the License.\n   You may obtain a copy of the License at\n\n       http://www.apache.org/licenses/LICENSE-2.0\n\n   Unless required by applicable law or agreed to in writing, software\n   distributed under the License is distributed on an "AS IS" BASIS,\n   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n   See the License for the specific language governing permissions and\n   limitations under the License.\n',
+                ]]
+            })
+            // One line per paragraph: the page wraps it, and a line break here
+            // is a line break on the phone.
+            notice.set(nonfree ? [
+                    'This build contains RealVNC\'s libvncviewer.so, extracted from their ' +
+                            'published Android viewer. It is theirs, no licence here covers it, ' +
+                            'and nothing grants a right to pass it on: this build may be used, ' +
+                            'and may not be redistributed.',
+                    'The free flavour of this app contains none of it.',
+            ].join('\n\n') : '')
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(genLicenses) { it.assetsOutputDir }
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

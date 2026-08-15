@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    The connection panel: what the `information` tap region opens.
+
+    One sheet, no nesting. The order is deliberate and is the reverse of the
+    original's information fragment: the controls come first because this is
+    opened to *change* something — picture quality, nearly always — and the
+    facts underneath are what you read after deciding something is wrong. Both
+    lists are generated (the backend's live options, the backend's facts), so
+    what is fixed here is the frame around them.
+-->
+<androidx.core.widget.NestedScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingBottom="8dp">
+
+        <!--
+            The desktop's own name is the heading, not a row — it is what the
+            whole panel is about. Under it, the state and the size: the one
+            thing that is always known locally and instantly.
+        -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:minHeight="?attr/actionBarSize"
+            android:orientation="horizontal"
+            android:paddingStart="@dimen/header_inset"
+            android:paddingTop="@dimen/header_padding"
+            android:paddingEnd="@dimen/header_inset_button"
+            android:paddingBottom="@dimen/header_padding">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textAppearance="?attr/textAppearanceTitleLarge" />
+
+                <TextView
+                    android:id="@+id/subtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?android:attr/textColorSecondary" />
+
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/close"
+                style="@style/Widget.RemoteDesktop.HeaderButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:contentDescription="@string/panel_close"
+                app:icon="@drawable/ic_close" />
+
+        </LinearLayout>
+
+        <!--
+            Four groups, held apart by the gap between them rather than by a
+            rule through them: each is a container of rows with large corners,
+            and one that has nothing in it takes its margin with it when it
+            goes.
+        -->
+
+        <!-- Backends.options(id).filter(live), rendered by ConnectionPanel. -->
+        <LinearLayout
+            android:id="@+id/controls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/group_spacing"
+            android:orientation="vertical" />
+
+        <!--
+            The desktop size, which is a control and not an option: whether it
+            can be offered at all is a fact about the live connection, so the
+            row appears and disappears while the panel is open and is built by
+            ConnectionPanel out of what the session says it is now.
+        -->
+        <LinearLayout
+            android:id="@+id/resize"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/group_spacing"
+            android:orientation="vertical" />
+
+        <LinearLayout
+            android:id="@+id/facts"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/group_spacing"
+            android:orientation="vertical" />
+
+        <!--
+            The diagnostics. They used to be behind a chevron, on the grounds
+            that a pixel format is only worth reading when something is wrong.
+            That was backwards: they are how a quality change is *checked* —
+            the viewer format going to `depth 3 (8 bpp) rgb111` is the only
+            proof on screen that the control did anything — and a fold turns
+            the one readout that answers a question into one more tap.
+        -->
+        <LinearLayout
+            android:id="@+id/diagnostics"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <!--
+            Two buttons: Log always, Reconnect only when the session is over.
+
+            The footer used to hold two others. "Connection settings" opened the
+            editor, which edits the *saved* connection — none of which reaches
+            the session in front of you until the next one, so a link to it from
+            a live session's panel says something untrue about what it does. And
+            Disconnect was a third way to do what the disconnect tap region and
+            the back gesture already do, in a panel opened to change the
+            picture. Neither of these is that: nothing else on this screen offers
+            a reconnection, and nothing anywhere offers the log, which is where
+            the reason a connection failed actually is.
+        -->
+        <LinearLayout
+            android:id="@+id/action_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical|end"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingTop="@dimen/group_spacing"
+            android:paddingEnd="16dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/log"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="@string/panel_log" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/action"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/panel_reconnect" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</androidx.core.widget.NestedScrollView>

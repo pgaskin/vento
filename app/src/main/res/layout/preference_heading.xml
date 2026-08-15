@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    A PreferenceCategory: the heading over a group, and nothing else.
+
+    The padding is on the text rather than on the row, which is what lets a
+    category with no title be a group break with no heading — androidx hides an
+    empty title, and an empty row of no height is exactly what a break is. The
+    gap it leaves is the adapter's, so that a break and a heading space a group
+    the same way.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@android:id/title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="@dimen/heading_inset"
+        android:paddingTop="@dimen/heading_padding_top"
+        android:paddingEnd="@dimen/heading_inset"
+        android:paddingBottom="@dimen/heading_padding_bottom"
+        android:textAppearance="?attr/textAppearanceTitleSmall"
+        android:textColor="?attr/colorPrimary" />
+
+</LinearLayout>

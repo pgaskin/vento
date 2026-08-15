@@ -1,0 +1,58 @@
+From d6161af2072a293f2864c9eea6e59a3f1dd5975e Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Fri, 14 Aug 2026 04:14:14 -0400
+Subject: [PATCH 5/5] libvncclient: count what the two socket funnels carry
+
+
+diff --git a/include/rfb/rfbclient.h b/include/rfb/rfbclient.h
+index 21ef0ac..a149f81 100644
+--- a/include/rfb/rfbclient.h
++++ b/include/rfb/rfbclient.h
+@@ -517,6 +517,15 @@ typedef struct _rfbClient {
+          */
+         rfbExtDesktopScreen* screens;
+         int numScreens;
++
++        /**
++         * What this connection has read off the socket and written to it,
++         * counted in ReadFromRFBServer() and WriteToRFBServer() — the two
++         * places every byte of the protocol passes through, and inside TLS
++         * rather than under it. Cumulative, and never reset.
++         */
++        uint64_t bytesRcvd;
++        uint64_t bytesSent;
+ } rfbClient;
+ 
+ /* cursor.c */
+diff --git a/src/libvncclient/sockets.c b/src/libvncclient/sockets.c
+index d914f07..303ad1f 100644
+--- a/src/libvncclient/sockets.c
++++ b/src/libvncclient/sockets.c
+@@ -176,6 +176,7 @@ ReadFromRFBServer(rfbClient* client, char *out, unsigned int n)
+ 	}
+       }
+       client->buffered += i;
++      client->bytesRcvd += i;
+     }
+ 
+     memcpy(out, client->bufoutptr, n);
+@@ -226,6 +227,7 @@ ReadFromRFBServer(rfbClient* client, char *out, unsigned int n)
+       }
+       out += i;
+       n -= i;
++      client->bytesRcvd += i;
+     }
+   }
+ 
+@@ -262,6 +264,11 @@ WriteToRFBServer(rfbClient* client, const char *buf, unsigned int n)
+   if (client->serverPort==-1)
+     return TRUE; /* vncrec playing */
+ 
++  /* Before the write rather than after it: this function does not return
++     until everything is out or the connection has failed, and a connection
++     that has failed is not one anybody is going to read a counter off. */
++  client->bytesSent += n;
++
+   if (client->tlsSession) {
+     /* WriteToTLS() will guarantee either everything is written, or error/eof returns */
+     i = WriteToTLS(client, buf, n);

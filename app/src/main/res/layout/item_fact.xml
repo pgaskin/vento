@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    One fact about the connection: what it is on the left, what it says on the
+    right. Deliberately not the original's value-over-label with an icon —
+    that shape is for a full screen with six rows of breathing space, and this
+    is a sheet over somebody's desktop.
+
+    Tighter than a row that can be touched, and on purpose: a fact is read, and
+    the eight of them are read together. The container around them is what says
+    they are one thing; the 56 dp a target needs would make the readout twice as
+    tall as the controls above it.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:baselineAligned="true"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/row_padding"
+    android:paddingTop="7dp"
+    android:paddingEnd="@dimen/row_padding"
+    android:paddingBottom="7dp">
+
+    <TextView
+        android:id="@+id/label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textColor="?android:attr/textColorSecondary" />
+
+    <TextView
+        android:id="@+id/value"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:gravity="end"
+        android:maxLines="2"
+        android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+</LinearLayout>

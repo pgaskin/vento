@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<!-- The last row of a group: small where the row above is, large at the bottom. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?attr/colorControlHighlight">
+
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/colorSurfaceBright" />
+            <corners
+                android:bottomLeftRadius="@dimen/group_radius"
+                android:bottomRightRadius="@dimen/group_radius"
+                android:topLeftRadius="@dimen/group_radius_inner"
+                android:topRightRadius="@dimen/group_radius_inner" />
+        </shape>
+    </item>
+
+    <item android:id="@android:id/mask">
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/white" />
+            <corners
+                android:bottomLeftRadius="@dimen/group_radius"
+                android:bottomRightRadius="@dimen/group_radius"
+                android:topLeftRadius="@dimen/group_radius_inner"
+                android:topRightRadius="@dimen/group_radius_inner" />
+        </shape>
+    </item>
+
+</ripple>

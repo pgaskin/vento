@@ -1,0 +1,35 @@
+From cf7604255d3d2b48763779360342014a823d869f Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Wed, 12 Aug 2026 04:12:07 -0400
+Subject: [PATCH 2/5] libvncclient: no handshake deadline over a question for a
+ person
+
+The TLS handshake's 15-second timeout also covers the certificate
+prompt, which is asked from inside gnutls' verify callback: a person who
+reads the fingerprint before answering loses the connection, and the
+error they get is a timeout rather than anything about a certificate.
+
+A deadline over the network is still worth having; it belongs to
+whatever owns the socket, which can close it, rather than to a clock
+that cannot tell a stalled server from a person thinking.
+
+diff --git a/src/libvncclient/tls_gnutls.c b/src/libvncclient/tls_gnutls.c
+index 4501ebf..c0b469b 100644
+--- a/src/libvncclient/tls_gnutls.c
++++ b/src/libvncclient/tls_gnutls.c
+@@ -370,7 +370,14 @@ InitializeTLSSession(rfbClient* client, rfbBool anonTLS)
+   gnutls_transport_set_pull_function((gnutls_session_t)client->tlsSession, PullTLS);
+ 
+   gnutls_transport_set_pull_timeout_function((gnutls_session_t)client->tlsSession, PullTimeout);
+-  gnutls_handshake_set_timeout((gnutls_session_t)client->tlsSession, 15000);
++  /* No deadline on the handshake, because the certificate check inside it
++     asks a person: GetX509CertFingerprintMismatchDecision is called from the
++     verify callback, and any timeout that covers the handshake also covers
++     however long somebody takes to read a fingerprint and answer. A client
++     that wants to bound this has to be able to break the socket, which is a
++     thing it can do and gnutls' clock is not. */
++  gnutls_handshake_set_timeout((gnutls_session_t)client->tlsSession,
++                               GNUTLS_INDEFINITE_TIMEOUT);
+ 
+   INIT_MUTEX(client->tlsRwMutex);
+ 

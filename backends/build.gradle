@@ -1,0 +1,89 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+plugins {
+    id 'com.android.library'
+}
+
+// The seam and nothing else: five files, no androidx, no app class, no
+// protocol. A protocol is a module under this one, depending on this and on
+// nothing else of the app's — so the compiler is what says the seam survived
+// another implementation unchanged.
+android {
+    namespace = 'net.pgaskin.remotedesktop.backend'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 34
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+// What every protocol module's native build needs, so that a protocol's own
+// build file says only what that protocol needs. `nativeAbis` is what a module
+// *can* build; what a build *ships* is the app's `ndk.abiFilters`, a subset.
+ext {
+    cargoWorkspace = project.file('..')
+    cargoRustToolchain = project.file('../rust-toolchain.toml')
+    cargoNdkVersion = '4.1.2'
+    // The linker's pin, taken by CargoBuildTask from each module's `ndkVersion`
+    // rather than from the environment. r27 and later align to 16 KB by default.
+    nativeNdkVersion = '28.2.13676358'
+    nativeAbis = ['arm64-v8a', 'x86_64']
+}
+
+/*
+ * The two upstreams that arrive as a release rather than as a submodule, both
+ * of them the encryption the borrowed VNC clients reach TLS through. Their git
+ * trees have no `configure` — it is an autotools bootstrap output, and gnutls'
+ * bootstrap wants gnulib and four host tools — so what a release carries is
+ * what upstream *is* here, named by a hash rather than by a gitlink.
+ *
+ * Nothing in a build fetches these; `./gradlew fetchCryptoSources` does, and a
+ * tree that is not there is a message from CMake saying so.
+ */
+ext.cryptoSources = [
+        nettle: [
+                version: '3.10.2',
+                sha256 : 'fe9ff51cb1f2abb5e65a6b8c10a92da0ab5ab6eaf26e7fc2b675c45f1fb519b5',
+                urls   : [
+                        'https://ftp.gnu.org/gnu/nettle/nettle-3.10.2.tar.gz',
+                        'https://www.lysator.liu.se/~nisse/archive/nettle-3.10.2.tar.gz',
+                ],
+        ],
+        gnutls: [
+                version: '3.8.13',
+                sha256 : 'ffed8ec1bf09c2426d4f14aae377de4753b53e537d685e604e99a8b16ca9c97e',
+                urls   : [
+                        'https://www.gnupg.org/ftp/gcrypt/gnutls/v3.8/gnutls-3.8.13.tar.xz',
+                        'https://mirrors.dotsrc.org/gcrypt/gnutls/v3.8/gnutls-3.8.13.tar.xz',
+                ],
+        ],
+]
+
+def fetchTasks = cryptoSources.collect { name, pin ->
+    tasks.register("fetch${name.capitalize()}Sources", DownloadSourceTarball) {
+        group = 'build setup'
+        description = "Unpacks ${name} ${pin.version} into third_party/${name}/."
+        urls.set(pin.urls)
+        sha256.set(pin.sha256)
+        stripComponents.set(1)
+        outputDir.set(rootProject.layout.projectDirectory.dir("third_party/${name}"))
+    }
+}
+
+tasks.register('fetchCryptoSources') {
+    group = 'build setup'
+    description = 'Unpacks every upstream that arrives as a release tarball.'
+    dependsOn fetchTasks
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

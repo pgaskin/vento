@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: Google
+    SPDX-License-Identifier: Apache-2.0
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <!--
+        Half size, centred: an adaptive icon's outer quarter can be masked away
+        by the launcher, and the monochrome layer is cropped harder still.
+
+        The glyph's own grid is Material's, which runs y from -960 to 0, so
+        centring it costs 240 across and 240 + 480 down.
+    -->
+    <group
+        android:scaleX="0.50"
+        android:scaleY="0.50"
+        android:translateX="240"
+        android:translateY="720">
+        <path
+            android:fillColor="#F2B8B5"
+            android:pathData="M155-83q-35-35-35-85t35-85q35-35 85-35 14 0 28 3.5t27 9.5l55-69q-29-31-42.5-70.5T302-496l-76-23q-15 29-44 46t-62 17q-50 0-85-35T0-576q0-51 34.5-85.5T120-696q51 0 85.5 34.5T240-576v11l76 23q20-42 57-70t83-35v-75q-42-8-69-41t-27-77q0-50 35-85t85-35q50 0 85 35t35 85q0 44-27 77t-69 41v75q47 6 83.5 34t56.5 71l76-23v-11q0-50 35-85t85-35q50 0 85 35t35 85q0 50-35 85t-85 35q-33 0-62-16.5T734-519l-76 23q8 42-5.5 81.5T610-344l55 69q13-6 27-9.5t28-3.5q50 0 85 35t35 85q0 50-35 85t-85 35q-50 0-85-35t-35-85q0-21 7.5-40.5T628-245l-55-68q-43 26-93 26t-93-26l-55 68q13 17 20.5 36.5T360-168q0 50-35 85t-85 35q-50 0-85-35Zm-35-445q20 0 34-14t14-34q0-20-14-34t-34-14q-20 0-34 14t-14 34q0 20 14 34t34 14Zm154 394q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm240-672q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm-34 446q45 0 76.5-31.5T588-468q0-45-31.5-76.5T480-576q-45 0-76.5 31.5T372-468q0 45 31.5 76.5T480-360Zm274 226q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14Zm120-408q14-14 14-34t-14-34q-14-14-34-14t-34 14q-14 14-14 34t14 34q14 14 34 14t34-14ZM480-840ZM120-576Zm360 108Zm360-108ZM240-168Zm480 0Z"
+            tools:ignore="VectorPath" />
+        <!-- Material Symbols Outlined (hub FILL:0 wght:400 GRAD:0 opsz:20) -->
+    </group>
+</vector>

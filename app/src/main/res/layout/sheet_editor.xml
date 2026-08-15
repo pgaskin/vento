@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    The connection editor.
+
+    A form rather than a panel, which is why it is the one thing here that is a
+    full-screen dialog and not a sheet: nothing in it takes effect until Save,
+    leaving it with changes asks, and a form with a keyboard under it wants the
+    whole window rather than the top of one.
+
+    So the frame is fixed heading, scrolling rows, fixed footer — the heading
+    says what is being edited and carries the pin, and Save is reachable without
+    scrolling to the end of a backend's options. The rows are all PanelOptions',
+    the record's own fields included, so the renderer never learns which half of
+    the form it is drawing.
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/colorSurfaceContainerLow"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:minHeight="?attr/actionBarSize"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/header_inset"
+        android:paddingTop="@dimen/header_padding"
+        android:paddingEnd="@dimen/header_inset_button"
+        android:paddingBottom="@dimen/header_padding">
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textAppearance="?attr/textAppearanceTitleLarge" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/close"
+            style="@style/Widget.RemoteDesktop.HeaderButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:contentDescription="@string/panel_close"
+            app:icon="@drawable/ic_close" />
+
+    </LinearLayout>
+
+    <com.google.android.material.divider.MaterialDivider
+        style="@style/Widget.RemoteDesktop.PanelDivider" />
+
+    <!--
+        The only thing that scrolls. Zero height plus a weight, so it takes what
+        the heading and the footer leave and no more — a form shorter than the
+        window must not push the footer off the bottom of it.
+    -->
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="8dp">
+
+            <!-- What this connection is. -->
+            <LinearLayout
+                android:id="@+id/fields"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:orientation="vertical" />
+
+            <!--
+                What is left of the two fields that used to be here. A user name
+                and a password are learnt by connecting — the prompt that asks
+                for them is the one that offers to keep them — so the editor's
+                job is not to set one but to take one away, and a form that
+                cannot show a password has one less place to leak it from.
+            -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/credentials"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="@string/editor_credentials_clear" />
+
+            <TextView
+                android:id="@+id/credentials_summary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="@dimen/heading_inset"
+                android:paddingEnd="@dimen/heading_inset"
+                android:paddingBottom="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?android:attr/textColorSecondary" />
+
+            <!--
+                What speaks to it, under what is kept for it: the picker is last
+                of the three because it is the one a person sets once, and
+                because everything under the heading below belongs to whatever
+                it says. Absent, rather than empty, in a build with one backend.
+            -->
+            <LinearLayout
+                android:id="@+id/protocol"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <!-- The same heading a settings screen's category is, since what
+                 is under it is the same list of options. -->
+            <TextView
+                android:id="@+id/options_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="@dimen/heading_inset"
+                android:paddingTop="@dimen/heading_padding_top"
+                android:paddingEnd="@dimen/heading_inset"
+                android:paddingBottom="@dimen/heading_padding_bottom"
+                android:text="@string/editor_options"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <!-- Backends.options(id) at Scope.CONNECTION, rendered by PanelOptions. -->
+            <LinearLayout
+                android:id="@+id/options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+    <com.google.android.material.divider.MaterialDivider
+        style="@style/Widget.RemoteDesktop.PanelDivider" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/delete"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/home_delete"
+            android:textColor="?attr/colorError" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!--
+            Pinned is a state rather than an action, so the control is a toggle
+            that shows it and not a button that inverts it. Down here beside
+            Save because it is the other thing this sheet writes, even though
+            it writes straight through and Save does not.
+        -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/pin"
+            style="@style/Widget.Material3.Button.IconButton.Outlined"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:checkable="true"
+            app:icon="@drawable/ic_pin" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/save"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/editor_save" />
+
+    </LinearLayout>
+
+</LinearLayout>

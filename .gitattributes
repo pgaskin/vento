@@ -1,0 +1,4 @@
+# The ports' gen/ directories are somebody else's build system's output, put
+# under version control so that no build has to run it. Neither a review nor a
+# language count has any business reading them.
+backends/ports/*/gen/** linguist-generated linguist-vendored

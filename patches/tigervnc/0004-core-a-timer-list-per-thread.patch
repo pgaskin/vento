@@ -1,0 +1,51 @@
+From d2f494d6a97c500502c1e0cd36da764563fbc8c6 Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Wed, 12 Aug 2026 22:36:41 -0400
+Subject: [PATCH 4/5] core: a timer list per thread
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The list of pending timers is a global with no lock, and the thread
+which calls checkTimeouts() runs whichever timer is due — so a process
+with two connections on two threads races on the list and fires one
+connection's callbacks on the other's thread.
+
+Per thread instead.  A Timer must then be started, checked and
+destroyed on one thread, which is what a connection running on a
+thread of its own does anyway.
+
+diff --git a/common/core/Timer.cxx b/common/core/Timer.cxx
+index 77e98daf..81e8c8f9 100644
+--- a/common/core/Timer.cxx
++++ b/common/core/Timer.cxx
+@@ -38,7 +38,7 @@ using namespace core;
+ static LogWriter vlog("Timer");
+ #endif
+ 
+-std::list<Timer*> Timer::pending;
++thread_local std::list<Timer*> Timer::pending;
+ 
+ int Timer::checkTimeouts() {
+   timeval start;
+diff --git a/common/core/Timer.h b/common/core/Timer.h
+index cde672b2..8315ffaa 100644
+--- a/common/core/Timer.h
++++ b/common/core/Timer.h
+@@ -114,8 +114,14 @@ namespace core {
+ 
+     static void insertTimer(Timer* t);
+     // The list of currently active Timers, ordered by time left until
+-    // timeout.
+-    static std::list<Timer*> pending;
++    // timeout.  Per thread, so that a process running more than one
++    // connection at a time has one list per connection rather than one
++    // shared by all of them: the list is not guarded, and the thread
++    // that calls checkTimeouts() would otherwise fire another
++    // connection's callbacks on its own thread.  A Timer must therefore
++    // be started, checked and destroyed on one thread, which is what a
++    // connection that lives on its own thread does anyway.
++    static thread_local std::list<Timer*> pending;
+   };
+ 
+   template<class T> class MethodTimer

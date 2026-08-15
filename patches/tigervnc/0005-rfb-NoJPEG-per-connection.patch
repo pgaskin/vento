@@ -1,0 +1,98 @@
+From 0e1f1eb7bf1f26b734e56e50a52c647acbe7af11 Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Wed, 12 Aug 2026 22:37:59 -0400
+Subject: [PATCH 5/5] rfb: NoJPEG per connection
+
+NoJPEG is a global parameter read while the encoding list is built, so
+a process with two connections has each one deciding for the other
+whether the next SetEncodings offers JPEG at all.
+
+Keep the parameter as the starting value and make the decision a member
+beside the compression and quality levels it belongs with.
+
+diff --git a/common/rfb/CConnection.cxx b/common/rfb/CConnection.cxx
+index 042e0d83..0290f476 100644
+--- a/common/rfb/CConnection.cxx
++++ b/common/rfb/CConnection.cxx
+@@ -69,7 +69,7 @@ CConnection::CConnection()
+     shared(false),
+     state_(RFBSTATE_UNINITIALISED),
+     pendingPFChange(false), preferredEncoding(encodingTight),
+-    compressLevel(2), qualityLevel(-1),
++    compressLevel(2), qualityLevel(-1), jpegDisabled(noJpeg),
+     formatChange(false), encodingChange(false),
+     firstUpdate(true), pendingUpdate(false), continuousUpdates(false),
+     forceNonincremental(true),
+@@ -940,6 +940,20 @@ int CConnection::getQualityLevel()
+   return qualityLevel;
+ }
+ 
++void CConnection::setNoJpeg(bool disable)
++{
++  if (jpegDisabled == disable)
++    return;
++
++  jpegDisabled = disable;
++  encodingChange = true;
++}
++
++bool CConnection::getNoJpeg()
++{
++  return jpegDisabled;
++}
++
+ void CConnection::setPF(const PixelFormat& pf)
+ {
+   if (server.pf() == pf && !formatChange)
+@@ -1042,7 +1056,7 @@ void CConnection::updateEncodings()
+   encodings.push_back(pseudoEncodingExtendedMouseButtons);
+ 
+   if (Decoder::supported(preferredEncoding) && offerEncoding(preferredEncoding)) {
+-    if (!noJpeg || preferredEncoding != encodingJPEG)
++    if (!jpegDisabled || preferredEncoding != encodingJPEG)
+       encodings.push_back(preferredEncoding);
+   }
+ 
+@@ -1050,7 +1064,7 @@ void CConnection::updateEncodings()
+ 
+   for (int i = encodingMax; i >= 0; i--) {
+     if ((i != preferredEncoding) && Decoder::supported(i) && offerEncoding(i)) {
+-      if (noJpeg && i == encodingJPEG)
++      if (jpegDisabled && i == encodingJPEG)
+         continue;
+       encodings.push_back(i);
+     }
+@@ -1059,7 +1073,7 @@ void CConnection::updateEncodings()
+   if (compressLevel >= 0 && compressLevel <= 9)
+       encodings.push_back(pseudoEncodingCompressLevel0 + compressLevel);
+   // Tight JPEG is enabled by setting a quality level
+-  if (!noJpeg) {
++  if (!jpegDisabled) {
+     if (qualityLevel >= 0 && qualityLevel <= 9)
+       encodings.push_back(pseudoEncodingQualityLevel0 + qualityLevel);
+   }
+diff --git a/common/rfb/CConnection.h b/common/rfb/CConnection.h
+index e3f1ce0b..8c8a7625 100644
+--- a/common/rfb/CConnection.h
++++ b/common/rfb/CConnection.h
+@@ -153,6 +153,12 @@ namespace rfb {
+     int getCompressLevel();
+     void setQualityLevel(int level);
+     int getQualityLevel();
++    // setNoJpeg()/getNoJpeg() controls whether lossy JPEG encodings are
++    // offered to the server at all.  It starts out at the NoJPEG
++    // parameter, and is per connection so that a process holding more
++    // than one does not have them decide it for each other.
++    void setNoJpeg(bool disable);
++    bool getNoJpeg();
+     // setPF() controls the pixel format requested from the server.
+     // server.pf() will automatically be adjusted once the new format
+     // is active.
+@@ -340,6 +346,7 @@ namespace rfb {
+     int preferredEncoding;
+     int compressLevel;
+     int qualityLevel;
++    bool jpegDisabled;
+ 
+     bool formatChange;
+     rfb::PixelFormat nextPF;

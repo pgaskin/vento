@@ -1,0 +1,1297 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+package net.pgaskin.remotedesktop;
+
+import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.os.SystemClock;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
+import android.text.InputType;
+import android.view.HapticFeedbackConstants;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowMetrics;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
+
+import net.pgaskin.remotedesktop.backend.Backend;
+import net.pgaskin.remotedesktop.backend.Monitor;
+import net.pgaskin.remotedesktop.control.CursorController;
+import net.pgaskin.remotedesktop.control.Viewport;
+import net.pgaskin.remotedesktop.control.input.AndroidScheduler;
+import net.pgaskin.remotedesktop.control.input.Button;
+import net.pgaskin.remotedesktop.control.input.Config;
+import net.pgaskin.remotedesktop.control.input.ExtensionKeyboard;
+import net.pgaskin.remotedesktop.control.input.GestureRecognizer;
+import net.pgaskin.remotedesktop.control.input.KeySink;
+import net.pgaskin.remotedesktop.control.input.Keysym;
+import net.pgaskin.remotedesktop.control.input.MouseOverlay;
+import net.pgaskin.remotedesktop.control.input.PhysicalKeyboard;
+import net.pgaskin.remotedesktop.control.input.PhysicalMouse;
+import net.pgaskin.remotedesktop.control.input.RegionSink;
+import net.pgaskin.remotedesktop.control.input.TapRegions;
+import net.pgaskin.remotedesktop.control.input.TouchRouter;
+import net.pgaskin.remotedesktop.control.input.ZoomSink;
+import net.pgaskin.remotedesktop.control.ui.Chrome;
+import net.pgaskin.remotedesktop.control.ui.Hud;
+import net.pgaskin.remotedesktop.control.ui.TextInput;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * The same stack the playground drives, with a real desktop at the far end:
+ *
+ * <pre>
+ *   MotionEvent → TouchRouter → GestureRecognizer → CursorController → Backend
+ *                                     │                    │
+ *                                     └── ZoomSink ──→ Viewport ←┘
+ * </pre>
+ *
+ * <p>The framebuffer is mirrored into a grid of tiles ({@link Mirror}), of
+ * which only the ones that changed are re-read and only the ones on screen are
+ * read at all, and drawn through the viewport transform. Why it is a grid and
+ * not the one desktop-sized bitmap it used to be is a measurement rather than a
+ * preference: hwui re-uploads a whole bitmap whenever any of it changes, which
+ * put the size of the desktop into the cost of every frame.
+ */
+public final class SessionView extends View implements ZoomSink, CursorController.Listener,
+        CursorController.PointerSink, RegionSink, Backend.Listener, KeySink,
+        MouseOverlay.Listener, ExtensionKeyboard.Listener, PhysicalMouse.Listener,
+        PhysicalKeyboard.Listener {
+
+    public interface Host {
+        /** A tap in the {@code disconnect} region. */
+        void disconnectRequested();
+
+        /** A tap in the {@code information} region. */
+        void informationRequested();
+
+        /**
+         * The connection came up. The one piece of backend state the activity
+         * needs for itself: credentials typed into a prompt are only known to
+         * be right at this moment, and that is when they may be saved.
+         */
+        void connected();
+
+        /** ... and it is over, for whatever reason. Terminal. */
+        void disconnected();
+
+        /**
+         * The paste key, with something worth asking about first: a lot of text,
+         * or a locked modifier that would turn all of it into shortcuts. Run
+         * {@code proceed} if the answer is yes.
+         *
+         * @param heldModifiers the locked ones, "Ctrl + Shift", or empty
+         */
+        void confirmPaste(int characters, String heldModifiers, Runnable proceed);
+
+        /** The paste key, with an empty clipboard. Worth saying so. */
+        void nothingToPaste();
+
+        /**
+         * What this session has to say for itself, and whether it is over.
+         *
+         * <p>Reported rather than drawn here because it is the one thing on this
+         * screen a person may need to <em>act</em> on — read a failure, try
+         * again, look at the log — and an action needs a real button with a real
+         * touch target, which a canvas does not have.
+         *
+         * @param text  empty while a session is running normally
+         * @param ended whether there is a connection left to act on
+         */
+        void status(String text, boolean ended);
+
+        /**
+         * The first frame of this session's desktop is on screen.
+         *
+         * <p>Which is the earliest moment there is anything to point at, and so
+         * the moment the tap regions can be explained: before it there is a
+         * black screen, and possibly a password dialog over it.
+         */
+        void firstFrame();
+    }
+
+    /**
+     * How often the live session is asked the two things it cannot announce:
+     * how its desktop is divided, and — where this connection has asked for it
+     * — whether it will now take the shape of this window.
+     */
+    private static final long SESSION_POLL_MS = 1000;
+
+    /**
+     * How soon after the window changes shape the same question is asked. A
+     * rotation is one event and a split screen dragged about is dozens; a
+     * resize is a round trip and, on RDP, a whole reactivation.
+     */
+    private static final long FOLLOW_DEBOUNCE_MS = 600;
+
+    private final AndroidScheduler scheduler = new AndroidScheduler();
+    private final Config cfg;
+    private final Viewport viewport;
+    private final CursorController cursor;
+    private final GestureRecognizer gestures;
+    private final TouchRouter router;
+    private final TapRegions tapRegions = TapRegions.toolbar();
+    private final MouseOverlay overlay;
+    private final ExtensionKeyboard keyboard;
+    private final PhysicalMouse mouse;
+    private final PhysicalKeyboard keys;
+    private final Chrome chrome;
+    private final Backend backend;
+    private final SessionClipboard clipboard;
+    private final Host host;
+
+    private final boolean subtleHaptics;      // or only a buzz
+    private boolean overlayHiddenByKeyboard;  // put it back when the keyboard goes
+    private boolean overlayShown;
+    private boolean keyboardShown;
+    private int imeHeight;                    // the system IME's, from the window insets
+    private boolean imeUp;                    // ... which is not the same as it being up
+    private boolean imeRequested;             // asked for and not arrived yet
+
+    // Volatile because damaged() is the one thing here that arrives on the
+    // protocol's thread; everything that replaces the mirror is the main
+    // thread's, which is also the thread onDraw runs on.
+    private volatile Mirror mirror;
+    private int tileSize; // 0 is Mirror.DEFAULT_TILE
+
+    private Bitmap cursorShape;
+    private int cursorHotX, cursorHotY;
+
+    private final Paint bitmapPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF box = new RectF();
+
+    private float baseScale = 1.0f;
+    private boolean placed;
+    // Whether the far end has said how big it is. Not the same question as
+    // viewport.desktopWidth() == 0, which is never true: Viewport starts at 1×1
+    // so that nothing divides by zero, and placing against that sentinel opens
+    // every session at maxScale on the desktop's top-left corner.
+    private boolean desktopKnown;
+    private Backend.State backendState = Backend.State.IDLE;
+
+    /**
+     * How the far end says its desktop is divided, last time it was asked.
+     * Polled rather than announced, because that is what the seam offers and
+     * why is written there; kept so the ladder is not rebuilt every second for
+     * a layout that has not moved.
+     */
+    private List<Monitor> monitors = List.of();
+
+    /**
+     * Whether this connection asks the far end for a desktop the shape of this
+     * phone's window. Off unless somebody has said so per connection: resizing
+     * a desktop is a change to somebody else's machine, and one that happens
+     * because a phone was turned over is not one they asked for.
+     */
+    private boolean followWindow;
+    /** The size last asked for, so an unchanged window asks for nothing. */
+    private int followedW, followedH;
+    /** The window at the previous tick: two the same means it has settled. */
+    private int settledW, settledH;
+
+    // The HUD, off unless asked for: the switch is in the settings tree, and an
+    // intent extra overrides it for one session (SessionActivity).
+    private final Hud hud;
+    private boolean hudVisible;
+
+    /**
+     * What each tap region is called, while the hints are up; null when they
+     * are not. The words are the app's, because {@code control} names its
+     * regions and says nothing about what they are for.
+     */
+    private Map<String, String> regionHints;
+    private boolean firstFrameSeen;
+    /**
+     * What is behind a desktop that has not arrived yet. Black is the letterbox
+     * around one that has, and the two are different questions: an empty window
+     * during a connection is a screen of this app rather than the edges of
+     * somebody else's picture. Black until the app says otherwise.
+     */
+    private int emptyColor = 0xff000000;
+    private final Hud.Rate frameRate = new Hud.Rate();
+    private final Hud.Rate eventRate = new Hud.Rate();
+    private final Hud.Rate damageRate = new Hud.Rate();
+    private long frames;
+    private String lastRegion = "-";
+
+    /**
+     * @param cfg the input stack's settings, which the app builds from its
+     *            preferences ({@link InputSettings}) rather than this view
+     *            choosing a preset — the preset is one of those preferences.
+     */
+    public SessionView(Context ctx, Backend backend, Host host, Config cfg) {
+        super(ctx);
+        this.backend = backend;
+        this.host = host;
+        this.cfg = cfg;
+        viewport = new Viewport(cfg.density);
+        cursor = new CursorController(cfg, viewport, this, scheduler);
+        cursor.setListener(this);
+        gestures = new GestureRecognizer(cfg, cursor, this, scheduler);
+        gestures.setRegions(tapRegions, this);
+        router = new TouchRouter(gestures);
+        // Its own button source, so a tap on the touchpad during an
+        // overlay-held drag cannot release what the overlay is holding.
+        overlay = new MouseOverlay(cfg, cursor.newButtonSource(), scheduler);
+        overlay.setListener(this);
+        router.addClaim(overlay);
+        keyboard = new ExtensionKeyboard(cfg, this, scheduler, ExtensionKeyboard.standardKeys());
+        keyboard.setListener(this);
+        router.addClaim(keyboard);
+        // A third button source, for the same reason the overlay has the second:
+        // a mouse holding LEFT while a finger taps the touchpad must not have
+        // its button released by the tap's own 250 ms window.
+        mouse = new PhysicalMouse(cfg, cursor.newButtonSource());
+        mouse.setListener(this);
+        keys = new PhysicalKeyboard(this);
+        keys.setListener(this);
+        chrome = new Chrome(cfg);
+        chrome.attach(keyboard);
+        clipboard = new SessionClipboard(ctx, backend::clipboardToRemote);
+        hud = new Hud(cfg);
+        subtleHaptics = canTick(ctx);
+        textPaint.setColor(0xffe8f0ff);
+        textPaint.setTextSize(cfg.dp(14));
+        setFocusable(true);
+        setFocusableInTouchMode(true);
+    }
+
+    public Config config() {
+        return cfg;
+    }
+
+    public void setHudVisible(boolean show) {
+        hudVisible = show;
+        invalidate();
+    }
+
+    /** @see #emptyColor */
+    public void setEmptyColor(int argb) {
+        emptyColor = argb;
+        invalidate();
+    }
+
+    /** Show the tap regions with these labels, or {@code null} to stop. */
+    public void setRegionHints(Map<String, String> labels) {
+        regionHints = labels;
+        invalidate();
+    }
+
+    /**
+     * Override {@link Mirror#DEFAULT_TILE} for this session, so the tile size can
+     * be swept from the command line rather than by rebuilding.
+     */
+    public void setTileSize(int px) {
+        tileSize = px;
+    }
+
+    // ---- Backend.Listener --------------------------------------------------
+
+    @Override
+    public void state(Backend.State state, String detail) {
+        if (state == Backend.State.CONNECTED && backendState != Backend.State.CONNECTED) {
+            host.connected();
+        }
+        final boolean wasClosed = backendState == Backend.State.CLOSED;
+        backendState = state;
+        // A detail is what a state says *about itself*, so it cannot outrank the
+        // state: a connected session shows its desktop and nothing over it,
+        // whatever the last message was. Without that rule a screen re-attaching
+        // to a session whose remembered detail is still "Connecting to …" — the
+        // one the backend sent on the way in — puts that over an hour-old
+        // desktop, which is what a phone coming back from a long sleep did.
+        host.status(switch (state) {
+            case IDLE, CONNECTED -> "";
+            case CONNECTING -> detail != null ? detail
+                    : getContext().getString(R.string.session_connecting);
+            case CLOSED -> detail != null ? detail
+                    : getContext().getString(R.string.session_disconnected);
+        }, state == Backend.State.CLOSED);
+        if (state == Backend.State.CLOSED && !wasClosed) {
+            host.disconnected();
+        }
+        // A connection saved view-only arrives that way rather than being
+        // switched to it, and a screen re-attaching to one has to catch up.
+        if (state == Backend.State.CONNECTED) {
+            optionsChanged();
+        }
+        invalidate();
+    }
+
+    @Override
+    public void desktopSize(int width, int height) {
+        if (mirror != null && mirror.desktopWidth() == width && mirror.desktopHeight() == height) {
+            return;
+        }
+        if (mirror != null) {
+            mirror.release();
+        }
+        // Every tile starts dirty, so the far end having been drawing since
+        // before we knew how big it was needs no damage of its own here.
+        mirror = new Mirror(width, height,
+                tileSize > 0 ? tileSize : Mirror.DEFAULT_TILE);
+        viewport.setDesktopSize(width, height);
+        desktopKnown = true;
+        place();
+        frameEnd();
+    }
+
+    @Override
+    public void damaged(int x, int y, int width, int height) {
+        final Mirror m = mirror;
+        if (m != null) {
+            m.damaged(x, y, width, height);
+        }
+    }
+
+    @Override
+    public void frameEnd() {
+        postInvalidateOnAnimation();
+    }
+
+    @Override
+    public void cursor(Bitmap shape, int hotX, int hotY) {
+        cursorShape = shape;
+        cursorHotX = hotX;
+        cursorHotY = hotY;
+        invalidate();
+    }
+
+    /**
+     * The far end has taken the cursor over, or given it back. Both halves stop
+     * at once: the controller stops integrating deltas into a position, and
+     * nothing is drawn here for a pointer whose position is unknown — the
+     * picture arriving from the far end has one drawn into it.
+     */
+    @Override
+    public void pointerMode(boolean relative) {
+        cursor.setRelative(relative);
+        gestures.setRelative(relative);
+        invalidate();
+    }
+
+    @Override
+    public void bell() {
+        performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+    }
+
+    @Override
+    public void clipboardFromRemote(String text) {
+        clipboard.fromRemote(text);
+    }
+
+    /**
+     * Called inline on the protocol's thread, so it answers from the cache the
+     * main thread keeps filled — see {@link SessionClipboard}.
+     */
+    @Override
+    public String clipboardForRemote() {
+        return clipboard.forRemote();
+    }
+
+    // ---- CursorController.PointerSink --------------------------------------
+
+    @Override
+    public void pointerEvent(float x, float y, int buttons) {
+        backend.pointer(Math.round(x), Math.round(y), buttons);
+    }
+
+    @Override
+    public void pointerEventRelative(int dx, int dy, int buttons) {
+        backend.pointerRelative(dx, dy, buttons);
+    }
+
+    // ---- the view ----------------------------------------------------------
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        clipboard.start();
+        scheduler.postDelayed(sessionTick, 0);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        clipboard.stop();
+        scheduler.removeCallbacks(sessionTick);
+    }
+
+    /**
+     * The two things on this screen that have to be asked for rather than
+     * waited for, on one timer because they are the same kind of question. A
+     * monitor layout arrives in a rectangle that may carry no size change with
+     * it, so there is no callback to hang it on; and whether the far end will
+     * take a size becomes true some time after the connection, so a one-shot
+     * that fired too early would never fire again. The connection panel polls
+     * the same class of fact at the same rate.
+     */
+    private final Runnable sessionTick = new Runnable() {
+        @Override
+        public void run() {
+            final List<Monitor> now = backend.monitors();
+            if (!now.equals(monitors)) {
+                monitors = now;
+                viewport.setFitSizes(fitSizes(now));
+            }
+            followWindow();
+            scheduler.postDelayed(this, SESSION_POLL_MS);
+        }
+    };
+
+    /**
+     * Ask the far end for a desktop the shape of this window, if this
+     * connection has asked for that and the window has stopped moving.
+     *
+     * <p>"Stopped moving" is two ticks the same, which is the debounce: a
+     * split screen being dragged is a new size every frame and a resize is a
+     * round trip. Nothing is asked twice — the same window is the same
+     * question, and a far end that refused it will refuse it again — so a
+     * refusal costs one request rather than one a second.
+     */
+    private void followWindow() {
+        if (!followWindow) {
+            return;
+        }
+        final int[] size = deviceSize(activity());
+        if (size == null) {
+            return;
+        }
+        final boolean settled = size[0] == settledW && size[1] == settledH;
+        settledW = size[0];
+        settledH = size[1];
+        if (!settled || (size[0] == followedW && size[1] == followedH)
+                || !backend.canResize()) {
+            return;
+        }
+        followedW = size[0];
+        followedH = size[1];
+        backend.requestDesktopSize(size[0], size[1]);
+    }
+
+    /**
+     * One zoom rung per monitor <em>size</em>, so a pair of matched screens is
+     * one step rather than two that stop in the same place. Nothing at all for
+     * a desktop that is one screen, which is not a layout.
+     */
+    private static int[] fitSizes(List<Monitor> monitors) {
+        if (monitors.size() < 2) {
+            return new int[0];
+        }
+        final List<Integer> flat = new ArrayList<>();
+        for (Monitor m : monitors) {
+            boolean seen = false;
+            for (int i = 0; i + 1 < flat.size(); i += 2) {
+                seen |= flat.get(i) == m.width() && flat.get(i + 1) == m.height();
+            }
+            if (!seen) {
+                flat.add(m.width());
+                flat.add(m.height());
+            }
+        }
+        final int[] sizes = new int[flat.size()];
+        for (int i = 0; i < sizes.length; i++) {
+            sizes[i] = flat.get(i);
+        }
+        return sizes;
+    }
+
+    /**
+     * The clipboard is only readable while we have focus, so a copy made in
+     * another app is picked up on the way back rather than when it happened —
+     * and the core asks for ours the moment it is told about the focus, so this
+     * has to run <em>before</em> {@code Backend.focus(true)}. That ordering is
+     * why the activity calls it rather than this view overriding
+     * {@code onWindowFocusChanged}.
+     */
+    void refreshClipboard() {
+        clipboard.read();
+    }
+
+    /**
+     * The session has left the screen. Everything we are holding the remote to
+     * is let go of first, because "held" here means held <em>there</em>: a
+     * finger down when the app is switched away never gets an up, the click
+     * window's button and a locked Ctrl are real state at the far end, and a
+     * glide would keep moving somebody's cursor around a desktop they are no
+     * longer looking at. The original does none of this, which is why switching
+     * away from it mid-drag leaves the button down.
+     */
+    void suspendInput() {
+        cancelPaste();
+        final long now = SystemClock.uptimeMillis();
+        router.cancel(now);
+        gestures.cancelAll(now);
+        keyboard.clearModifiers();
+        // The two that are not touches: a mouse button and a key held when the
+        // session leaves the screen never get their edge either.
+        mouse.cancel();
+        keys.releaseAll();
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        viewport.setViewSize(w, h);
+        gestures.setViewSize(w, h);
+        overlay.setViewSize(w, h);
+        keyboard.setViewSize(w, h);
+        place();
+        // The window changing shape rather than the orientation changing: a
+        // split screen dragged about asks the same question, and this activity
+        // handles its own configuration changes so there is no recreation to
+        // hang it on either.
+        // Bringing the tick forward rather than starting a second timer, so
+        // there is one place the question is asked.
+        if (followWindow) {
+            scheduler.removeCallbacks(sessionTick);
+            scheduler.postDelayed(sessionTick, FOLLOW_DEBOUNCE_MS);
+        }
+    }
+
+    /**
+     * Whether this session asks the far end to make its desktop the shape of
+     * this phone's window. Set from the connection's own answer, and asked
+     * again as soon as it is turned on rather than at the next rotation.
+     */
+    public void setFollowWindow(boolean follow) {
+        followWindow = follow;
+    }
+
+    private Activity activity() {
+        return getContext() instanceof Activity a ? a : null;
+    }
+
+    /**
+     * The window this session gets on this phone, less the status and
+     * navigation bars — the rectangle the desktop is actually drawn in, so a
+     * desktop of this size is one pixel to a pixel at scale 1. Bars hidden at
+     * this instant are still subtracted: they come back, and a desktop that is
+     * a few pixels short is better than one that changed size for a gesture.
+     *
+     * <p>Deliberately not the content rect the viewport works in, which shrinks
+     * for the extension keyboard and the IME: those come and go several times a
+     * minute, and a desktop that resized for each of them would be unusable.
+     */
+    public static int[] deviceSize(Activity activity) {
+        if (activity == null) {
+            return null;
+        }
+        final WindowMetrics metrics = activity.getWindowManager().getCurrentWindowMetrics();
+        final android.graphics.Insets bars = metrics.getWindowInsets().getInsetsIgnoringVisibility(
+                WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+        final int w = metrics.getBounds().width() - bars.left - bars.right;
+        final int h = metrics.getBounds().height() - bars.top - bars.bottom;
+        // A sanity check on the rectangle rather than the protocol's limit:
+        // anything outside this is not a window somebody is looking at a
+        // desktop in, and offering it as a size would be offering nonsense.
+        return w < 200 || h < 200 || w > 16384 || h > 16384 ? null : new int[]{w, h};
+    }
+
+    /**
+     * First fit, or a re-fit after a rotation. The remote desktop does not
+     * rotate with the phone, so the cursor keeps its desktop position and only
+     * the window onto the desktop changes — but the fit-the-desktop minimum
+     * moves with the aspect ratio, so the scale is re-snapped either way.
+     */
+    private void place() {
+        if (getWidth() == 0 || !desktopKnown) {
+            return;
+        }
+        if (!placed) {
+            placed = true;
+            final float w = viewport.desktopWidth(), h = viewport.desktopHeight();
+            viewport.setFocus(w / 2, h / 2);
+            viewport.centreOn(w / 2, h / 2, viewport.snapScale(1.0f));
+            cursor.setPosition(w / 2, h / 2);
+        } else {
+            viewport.centreOn(cursor.x(), cursor.y(), viewport.snapScale(viewport.getScale()));
+        }
+        baseScale = viewport.getScale();
+        invalidate();
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    @Override
+    public boolean onTouchEvent(MotionEvent ev) {
+        // An uncaptured mouse with a button down arrives as touch, and must not
+        // reach the gesture layer: its buttons are already unambiguous.
+        if (PhysicalMouse.isMouse(ev) && mouse.onTouchEvent(ev)) {
+            return true;
+        }
+        return router.onTouchEvent(ev);
+    }
+
+    // ---- the physical mouse ------------------------------------------------
+
+    /** An uncaptured mouse: hovering, and its wheel. */
+    @Override
+    public boolean onGenericMotionEvent(MotionEvent ev) {
+        return mouse.onGenericMotionEvent(ev) || super.onGenericMotionEvent(ev);
+    }
+
+    /** A captured one, where the coordinates are already the deltas. */
+    @Override
+    public boolean onCapturedPointerEvent(MotionEvent ev) {
+        return mouse.onCapturedPointerEvent(ev) || super.onCapturedPointerEvent(ev);
+    }
+
+    @Override
+    public void onPointerCaptureChange(boolean hasCapture) {
+        super.onPointerCaptureChange(hasCapture);
+        if (!hasCapture) {
+            // The pointer went back to the system with a button held down, and
+            // the far end is the one holding it.
+            mouse.cancel();
+        }
+        invalidate();
+    }
+
+    /**
+     * Capture, and the two things that go with losing focus.
+     *
+     * <p>Asked on every focus gain rather than once: capture ends whenever the
+     * window loses focus — a sheet, a dialog, the notification shade — and
+     * nothing says "and now you may have it back". Asking when there is no
+     * mouse costs nothing.
+     */
+    @Override
+    public void onWindowFocusChanged(boolean hasWindowFocus) {
+        super.onWindowFocusChanged(hasWindowFocus);
+        if (hasWindowFocus) {
+            requestFocus();
+            syncPointerCapture();
+            // Both directions, and unconditionally. Shown: the IME went with the
+            // app switch and does not come back on its own, so the row would
+            // have nothing under it. Hidden: something hid the row while another
+            // window held the focus — turning on view-only from the connection
+            // panel — and an IMM call made then is dropped, leaving a soft
+            // keyboard up under a row that is gone.
+            syncKeyboardChrome();
+        } else {
+            // Held there, not here — the same argument as suspendInput().
+            mouse.cancel();
+            keys.releaseAll();
+        }
+    }
+
+    void syncPointerCapture() {
+        if (cfg.mouseCapture && hasWindowFocus() && isFocused()) {
+            requestPointerCapture();
+        } else if (hasPointerCapture()) {
+            releasePointerCapture();
+        }
+    }
+
+    @Override
+    public void mouseActivity() {
+        invalidate();
+    }
+
+    // ---- the physical keyboard ---------------------------------------------
+
+    /**
+     * Every key event the focused session sees. {@link PhysicalKeyboard} refuses
+     * the ones this client keeps for itself — Back above all, since it is how a
+     * session is left — and those fall through to Android. Here rather than on
+     * the activity, which is dispatched first and would take the keys belonging
+     * to whatever sheet is open over this screen.
+     */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent ev) {
+        if (keys.onKeyEvent(ev, this::externalKeyTyped)) {
+            return true;
+        }
+        return super.dispatchKeyEvent(ev);
+    }
+
+    @Override
+    public void keyboardActivity() {
+        invalidate();
+    }
+
+    /**
+     * A key from somewhere other than the extension row — the system IME or a
+     * real keyboard. The row is told so that a one-shot modifier armed on it is
+     * consumed by it and its info bar has something to read.
+     */
+    private void externalKeyTyped(int keysym) {
+        keyboard.externalKey(keysym);
+        invalidate();
+    }
+
+    // ---- ZoomSink ----------------------------------------------------------
+
+    @Override
+    public void zoomBegan() {
+        baseScale = viewport.getScale();
+    }
+
+    @Override
+    public void zoomChanged(float factor) {
+        viewport.setScale(baseScale * factor);
+        if (cfg.recentreCursorOnZoom) {
+            cursor.centreCursor(true);
+        }
+        invalidate();
+    }
+
+    /**
+     * A pinch pans as well, and only where the far end owns the cursor: there
+     * is no centre-follow there, so a desktop bigger than the window is
+     * otherwise navigated blind. With the cursor ours the desktop is already
+     * wherever the cursor is, and a pan there would drag the pointer across
+     * somebody's desktop for a gesture that is about looking.
+     */
+    @Override
+    public void zoomPanned(float screenDx, float screenDy) {
+        if (cursor.isRelative()) {
+            viewport.panBy(screenDx, screenDy);
+            invalidate();
+        }
+    }
+
+    @Override
+    public void zoomEnded() {
+        baseScale = viewport.getScale();
+    }
+
+    @Override
+    public void scaleCentre(float screenX, float screenY) {
+        viewport.setFocus(viewport.toDesktopX(screenX), viewport.toDesktopY(screenY));
+    }
+
+    @Override
+    public void onCursorChanged() {
+        invalidate();
+    }
+
+    // ---- KeySink -----------------------------------------------------------
+
+    /**
+     * Straight through: {@link KeySink} and {@link Backend} agree on what a key
+     * event is, and for the same reason — a release is tied to its press by the
+     * id rather than by the keysym ({@code KeySink} §"the key id").
+     */
+    @Override
+    public void keyDown(int keysym, int keyId) {
+        backend.keyDown(keysym, keyId);
+    }
+
+    @Override
+    public void keyUp(int keyId) {
+        backend.keyUp(keyId);
+    }
+
+    // ---- the system IME ----------------------------------------------------
+
+    @Override
+    public boolean onCheckIsTextEditor() {
+        return true;
+    }
+
+    /**
+     * {@code TYPE_NULL} with no extract UI: there is no text field here, only a
+     * remote machine to send keys to, and declaring that makes an IME send key
+     * events rather than trying to manage a document.
+     *
+     * <p>And, unless the preference says otherwise, a password field as well.
+     * {@code TYPE_NULL} does not stop a keyboard learning the words, offering
+     * them back as suggestions, or shipping them off to improve itself — and
+     * this field is a whole remote machine, so a password typed at it looks like
+     * everything else. There is no way to mark only part of it, which is the
+     * argument for marking all of it.
+     */
+    @Override
+    public InputConnection onCreateInputConnection(EditorInfo out) {
+        final boolean privateIme = AppSettings.privateIme(getContext());
+        out.inputType = privateIme
+                ? InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD
+                : InputType.TYPE_NULL;
+        out.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                | EditorInfo.IME_FLAG_NO_FULLSCREEN
+                | EditorInfo.IME_ACTION_NONE
+                | (privateIme ? EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING : 0);
+        return new TextInput(this, this, new TextInput.Watcher() {
+            @Override
+            public void sent(int keysym) {
+                externalKeyTyped(keysym);
+            }
+
+            @Override
+            public void pasteRequested() {
+                pasteClipboard();
+            }
+
+            @Override
+            public Set<Integer> heldModifiers() {
+                return keyboard.heldModifiers();
+            }
+        });
+    }
+
+    /**
+     * The IME's height, so the extension keyboard sits on top of it rather than
+     * behind it and the desktop insets by the pair. A soft keyboard dismissed
+     * with the back gesture takes the extension row with it — the two are one
+     * keyboard as far as the user is concerned.
+     */
+    @Override
+    public WindowInsets onApplyWindowInsets(WindowInsets insets) {
+        final int ime = insets.getInsets(WindowInsets.Type.ime()).bottom;
+        // Whether it is up, asked separately from how much of this window it
+        // covers. In multi-window the two part company: the window is resized
+        // around the IME rather than overlapped by it, so the inset is 0 the
+        // whole time one is showing, and a height that never rises is a height
+        // that never falls. Reading the dismissal off the height alone left the
+        // extension row up after a back gesture had taken the system keyboard.
+        final boolean up = insets.isVisible(WindowInsets.Type.ime());
+        if (ime != imeHeight || up != imeUp) {
+            // Only while this window has focus, and only while we are not asking
+            // for the IME back. An IME also closes when the app is switched away
+            // from, and a sheet over this screen takes the focus and the IME with
+            // it; either read as a dismissal hides the extension row, and the
+            // second one is a race between two windows — so closing the
+            // connection panel would put the system keyboard back with no row.
+            // The back gesture this rule is for happens with the session in
+            // front and no request outstanding.
+            final boolean closed = imeUp && !up && hasWindowFocus() && !imeRequested;
+            if (up) {
+                imeRequested = false;
+            }
+            imeHeight = ime;
+            imeUp = up;
+            keyboard.setBottomOffset(ime);
+            if (closed && keyboard.visible()) {
+                setKeyboardVisible(false);
+            }
+            applyInsets();
+            invalidate();
+        }
+        return super.onApplyWindowInsets(insets);
+    }
+
+    /** Showing one overlay hides the other, and a displaced one comes back. */
+    private void setKeyboardVisible(boolean show) {
+        if (show == keyboard.visible()) {
+            return;
+        }
+        if (show) {
+            overlayHiddenByKeyboard = overlay.visible();
+            overlay.setVisible(false);
+        }
+        // Everything else follows from the model changing, in keyboardChanged()
+        // — because the model can also hide itself, from its own ✕.
+        keyboard.setVisible(show);
+    }
+
+    private void syncKeyboardChrome() {
+        final InputMethodManager imm = getContext().getSystemService(InputMethodManager.class);
+        if (keyboard.visible()) {
+            requestFocus();
+            // Asked for and not yet seen: until the insets say it is up, an
+            // inset saying it is down is this window's own stale state.
+            imeRequested = true;
+            imm.showSoftInput(this, 0);
+        } else {
+            imeRequested = false;
+            imm.hideSoftInputFromWindow(getWindowToken(), 0);
+            if (overlayHiddenByKeyboard) {
+                overlayHiddenByKeyboard = false;
+                overlay.setVisible(true);
+            }
+        }
+    }
+
+    private void toggleOverlay() {
+        if (overlay.visible()) {
+            overlay.setVisible(false);
+        } else {
+            setKeyboardVisible(false);
+            overlay.setVisible(true);
+        }
+    }
+
+    // ---- MouseOverlay.Listener ---------------------------------------------
+
+    @Override
+    public void overlayChanged() {
+        // Bump scroll arms for a drag started while the overlay holds a button,
+        // the same as it does inside the 250 ms click window.
+        gestures.setExternalButtonHeld((overlay.heldMask() & Button.DRAG_MASK) != 0);
+        if (overlayShown != overlay.visible()) {
+            overlayShown = overlay.visible();
+            applyInsets();
+        }
+        invalidate();
+    }
+
+    // ---- ExtensionKeyboard.Listener ----------------------------------------
+
+    @Override
+    public void keyboardChanged() {
+        if (keyboardShown != keyboard.visible()) {
+            keyboardShown = keyboard.visible();
+            syncKeyboardChrome();
+            applyInsets();
+        }
+        chrome.keyboardChanged(keyboard);
+        invalidate();
+    }
+
+    /**
+     * Send the soft keyboard back to its letters, which is what the original
+     * does and what makes the two rows feel like one keyboard: a chord is a
+     * modifier here and a letter down there, and reaching for Ctrl while the
+     * IME is showing symbols otherwise means going back for the letters by hand.
+     *
+     * <p>{@code restartInput} is the whole of it: there is no API for "show the
+     * alphabetic page", only a way to tell the IME its target has changed, which
+     * every IME answers by starting again at its default page.
+     */
+    @Override
+    public void modifierPressed(ExtensionKeyboard.Key key) {
+        if (!AppSettings.modifierResetsIme(getContext())) {
+            return;
+        }
+        final InputMethodManager imm = getContext().getSystemService(InputMethodManager.class);
+        if (imm != null && imm.isActive(this)) {
+            imm.restartInput(this);
+        }
+    }
+
+    @Override
+    public void keyFeedback(ExtensionKeyboard.Feedback what) {
+        performHapticFeedback(switch (what) {
+            case LOCK -> HapticFeedbackConstants.LONG_PRESS;
+            case PRESS -> HapticFeedbackConstants.KEYBOARD_TAP;
+            case REPEAT -> subtleHaptics
+                    ? HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
+                    : HapticFeedbackConstants.NO_HAPTICS;
+        });
+    }
+
+    /**
+     * The row's one action key. Pasting is <b>typing</b>: the clipboard's
+     * characters go to the remote one at a time as key presses, rather than as a
+     * Ctrl+V that assumes the far end can reach a clipboard of its own and that
+     * its desktop pastes with that shortcut. Long text is worth a question
+     * first — this cannot be undone from here.
+     */
+    @Override
+    public void keyAction(String name) {
+        if (!ExtensionKeyboard.ACTION_PASTE.equals(name)) {
+            return;
+        }
+        pasteClipboard();
+    }
+
+    /**
+     * Type the clipboard out. Two things ask for this: the row's own Paste key,
+     * and an IME with a clipboard key of its own, which asks the editor to paste
+     * rather than committing any text ({@link TextInput#performContextMenuAction}).
+     */
+    private void pasteClipboard() {
+        clipboard.read();
+        final String text = clipboard.current();
+        if (text == null || text.isEmpty()) {
+            host.nothingToPaste();
+            return;
+        }
+        // A locked modifier is held at the far end for as long as it is locked,
+        // so every character of the paste would arrive as a shortcut — worth a
+        // question at any length. One-shot modifiers are not: the row consumes
+        // those the moment this key fires.
+        final String locked = lockedModifiers();
+        final int chars = text.codePointCount(0, text.length());
+        if (chars > PASTE_CONFIRM_CHARS || !locked.isEmpty()) {
+            host.confirmPaste(chars, locked, () -> typeOut(text));
+        } else {
+            typeOut(text);
+        }
+    }
+
+    /** The locked modifiers, in row order, as "Ctrl + Shift"; empty if none. */
+    private String lockedModifiers() {
+        final StringBuilder sb = new StringBuilder();
+        for (ExtensionKeyboard.Key m : keyboard.modifiers()) {
+            if (keyboard.sticky(m) == ExtensionKeyboard.Sticky.LOCKED) {
+                if (sb.length() > 0) {
+                    sb.append(" + ");
+                }
+                sb.append(m.label());
+            }
+        }
+        return sb.toString();
+    }
+
+    private static final int PASTE_CONFIRM_CHARS = 250; // longer is worth confirming first
+
+    private static final long PASTE_CHAR_MS = 8;        // so a long paste is not a burst
+
+    private String pasting;
+    private int pasteAt;
+
+    /**
+     * Type {@code text} out, a character per tick. On a clock rather than in a
+     * loop for two reasons: a thousand key events posted in one go is a burst
+     * the far end has no reason to survive in order, and a paste in progress has
+     * to be abandonable, which {@link #suspendInput()} does.
+     */
+    private void typeOut(String text) {
+        pasting = text;
+        pasteAt = 0;
+        scheduler.removeCallbacks(pasteTick);
+        scheduler.postDelayed(pasteTick, 0);
+    }
+
+    private final Runnable pasteTick = new Runnable() {
+        @Override
+        public void run() {
+            if (pasting == null) {
+                return;
+            }
+            if (pasteAt >= pasting.length()) {
+                pasting = null;
+                return;
+            }
+            final int cp = pasting.codePointAt(pasteAt);
+            pasteAt += Character.charCount(cp);
+            // A newline is Return, a tab is Tab: the characters a text field
+            // holds but a keyboard does not have as characters.
+            final int keysym = Keysym.forCharacter(cp);
+            if (keysym != 0) {
+                keyDown(keysym, KeySink.ID_TEXT);
+                keyUp(KeySink.ID_TEXT);
+            }
+            scheduler.postDelayed(this, PASTE_CHAR_MS);
+        }
+    };
+
+    private void cancelPaste() {
+        pasting = null;
+        scheduler.removeCallbacks(pasteTick);
+    }
+
+    private static boolean canTick(Context ctx) {
+        final VibratorManager vm = ctx.getSystemService(VibratorManager.class);
+        if (vm == null) {
+            return false;
+        }
+        final Vibrator v = vm.getDefaultVibrator();
+        return v != null && v.hasVibrator()
+                && v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK);
+    }
+
+    /**
+     * What the viewport clamps inside: whatever the overlay or the keyboard is
+     * covering. Through the cursor rather than the viewport directly, because
+     * the desktop must not jump when a widget appears over it — see
+     * {@link CursorController#setInsets}.
+     */
+    private void applyInsets() {
+        final int right = (int) overlay.insetRightPx();
+        int bottom = (int) Math.max(overlay.insetBottomPx(), keyboard.insetBottomPx());
+        // The IME on its own, in case it outlives the row that asked for it.
+        bottom = Math.max(bottom, imeHeight);
+        cursor.setInsets(0, 0, right, bottom);
+        baseScale = viewport.getScale();
+        invalidate();
+    }
+
+    // ---- RegionSink --------------------------------------------------------
+
+    @Override
+    public boolean regionTapped(TapRegions.Region region, float x, float y) {
+        lastRegion = region.name();
+        switch (region.name()) {
+            case TapRegions.DISCONNECT -> host.disconnectRequested();
+            case TapRegions.INFORMATION -> host.informationRequested();
+            // The two input regions are not there at all on a view-only session.
+            // Refused rather than consumed, so the tap clicks as usual and does
+            // visibly nothing, like a tap anywhere else on a view-only desktop
+            // (TapRegions §"the handler decides").
+            case TapRegions.MOUSE -> {
+                if (backend.viewOnly()) {
+                    return false;
+                }
+                toggleOverlay();
+            }
+            case TapRegions.KEYBOARD -> {
+                if (backend.viewOnly()) {
+                    return false;
+                }
+                setKeyboardVisible(!keyboard.visible());
+            }
+            default -> {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Something about the connection changed that this screen shows — today,
+     * only whether it is view-only, which is a control on the connection panel
+     * and so can be turned on with the keyboard and the overlay already open.
+     * Both are put away rather than left inert: a row of keys that types nothing
+     * is indistinguishable from a session that has stopped answering.
+     */
+    void optionsChanged() {
+        if (backend.viewOnly()) {
+            setKeyboardVisible(false);
+            overlay.setVisible(false);
+            overlayHiddenByKeyboard = false;
+        }
+        invalidate();
+    }
+
+    // ---- drawing -----------------------------------------------------------
+
+    @Override
+    protected void onDraw(Canvas c) {
+        c.drawColor(mirror != null ? 0xff000000 : emptyColor);
+
+        if (mirror != null) {
+            // Pull whatever changed where we are looking, on the drawing thread,
+            // because a fetch must never queue behind connection work. What is
+            // off screen keeps its damage until it is looked at.
+            mirror.update(backend,
+                    viewport.toDesktopX(0), viewport.toDesktopY(0),
+                    viewport.toDesktopX(getWidth()), viewport.toDesktopY(getHeight()));
+            final int save = c.save();
+            c.translate(viewport.originX(), viewport.originY());
+            c.scale(viewport.getScale(), viewport.getScale());
+            mirror.draw(c, bitmapPaint);
+            c.restoreToCount(save);
+            drawCursor(c);
+            // Here rather than on the backend's frame notification, which is
+            // also sent for the desktop size arriving — before there are any
+            // pixels. "On screen" is this line having run.
+            if (!firstFrameSeen) {
+                firstFrameSeen = true;
+                post(host::firstFrame);
+            }
+        }
+
+        if (overlay.visible()) {
+            chrome.drawOverlay(c, overlay);
+        }
+        if (keyboard.visible() && chrome.drawKeyboard(c, keyboard, getWidth(), cursor.screenY())) {
+            postInvalidateOnAnimation();
+        }
+
+        // Over the desktop, and under the status panel, which is a view rather
+        // than ink and is above everything here.
+        if (regionHints != null) {
+            chrome.drawRegionHints(c, tapRegions, getWidth(), getHeight(), 1f, regionHints::get);
+        }
+        frames++;
+        if (hudVisible) {
+            drawHud(c);
+            // The rates are only meaningful if there is a next frame to compare
+            // against, and a still desktop produces none.
+            postInvalidateOnAnimation();
+        }
+    }
+
+    /**
+     * The playground's readout, on a real connection: the same lines in the same
+     * order so the two screens can be read against each other, plus a fifth for
+     * the pixel path — which is the one the playground cannot have, and the only
+     * place "is the mirror keeping up" is answered.
+     */
+    private void drawHud(Canvas c) {
+        final long now = System.nanoTime();
+        final Mirror m = mirror;
+        final long rects = m == null ? 0 : m.damageRects();
+        final String[] lines = {
+                "state " + backendState
+                        + "  desktop " + backend.desktopWidth() + "x" + backend.desktopHeight()
+                        + "  fps " + frameRate.sample(frames, now)
+                        + "  dmg " + rects + " (" + damageRate.sample(rects, now) + "/s)"
+                        // The pixel path, in the order it happens.
+                        + "  tile " + (m == null ? "-" : m.tileWidth() + "x" + m.tileHeight()
+                        + " " + m.visibleTiles() + "/" + m.allocatedTiles() + "/" + m.tileCount()
+                        + " rd " + m.lastRead() + " dty " + m.dirtyCount())
+                        + "  clip " + clipboard.summary(),
+                "cursor " + (cursor.isRelative() ? "theirs"
+                        : (int) cursor.x() + "," + (int) cursor.y())
+                        + "  btn " + cursor.buttonsName()
+                        + "  scale " + String.format(Locale.ROOT, "%.3f", viewport.getScale())
+                        + " [" + (viewport.zoomIndex() + 1) + "/" + viewport.zoomLadder().length + "]"
+                        + "  origin " + (int) viewport.originX() + "," + (int) viewport.originY()
+                        + "  content " + viewport.contentWidth() + "x" + viewport.contentHeight(),
+                "down " + gestures.downCount() + "  max " + gestures.maxDownCount()
+                        + "  mode " + gestures.mode()
+                        + "  moving " + (gestures.moving() ? "Y" : "N")
+                        + "  held " + (gestures.heldButton() == null ? "-" : gestures.heldButton())
+                        + "  accel x" + String.format(Locale.ROOT, "%.2f", gestures.accelFactor())
+                        // dp/ms, so it can be read against the Config thresholds
+                        + "  spd " + String.format(Locale.ROOT, "%.2f", gestures.accelSpeed() / cfg.density)
+                        + "  lock " + gestures.axisLock()
+                        + "  events " + cursor.eventCount()
+                        + " (" + eventRate.sample(cursor.eventCount(), now) + "/s)",
+                "ovl " + (overlay.visible()
+                        ? Button.maskName(overlay.heldMask())
+                        + " rate " + String.format(Locale.ROOT, "%.1f", overlay.scrollRate())
+                        : "off")
+                        + "   kbd " + (keyboard.visible()
+                        ? "on ime " + imeHeight + " mod " + keyboard.heldModifierCount()
+                        : "off")
+                        + "   region " + lastRegion
+                        + "   cfg " + (cfg.faithfulPreset ? "FAITHFUL" : "IMPROVED")
+                        + (backend.viewOnly() ? "   VIEW ONLY" : ""),
+                // The physical pair. "cap" is worth a column because an
+                // uncaptured mouse looks identical until it reaches the edge of
+                // the screen and stops.
+                "mouse " + (hasPointerCapture() ? "captured"
+                        : mouse.seen() ? "hover" : "-")
+                        + " btn " + Button.maskName(mouse.heldMask())
+                        + "   keys " + keys.heldCount() + " held",
+        };
+        // heightPx(), not insetBottomPx(): the desktop is meant to run under the
+        // info bar and the HUD is not, so the two want different answers.
+        hud.draw(c, lines, getWidth(), getHeight(),
+                Math.max(Math.max(overlay.insetBottomPx(), keyboard.heightPx()), imeHeight));
+    }
+
+    /**
+     * The remote cursor, capped at 32 logical pixels as the original caps it,
+     * with the hotspot already un-negated by the backend.
+     */
+    private void drawCursor(Canvas c) {
+        if (cursor.isRelative()) {
+            // Drawing a shape at a position nobody knows would put a second,
+            // wrong pointer on a picture that already has the real one in it.
+            return;
+        }
+        chrome.drawCursor(c, cursorShape, cursorHotX, cursorHotY,
+                cursor.screenX(), cursor.screenY(), bitmapPaint);
+    }
+
+    /** Let go of the bitmaps; the backend outlives the view only briefly. */
+    public void release() {
+        if (mirror != null) {
+            mirror.release();
+            mirror = null;
+        }
+    }
+}

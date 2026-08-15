@@ -18,6 +18,14 @@ dependencyResolutionManagement {
 
 rootProject.name = "vento"
 
+include ':app'
+include ':backends'
+include ':backends:rfb'
+include ':backends:libvnc'
+include ':backends:tigervnc'
+include ':backends:rdp'
+include ':backends:freerdp'
+include ':backends:realvnc'
 include ':control'
 
 include ':realvnc-jni'

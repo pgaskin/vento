@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    One connection: the desktop as it last looked, its name, its address.
+
+    Filled rather than outlined: a Material 3 card separates itself from the
+    background by its container colour, not by a line around it. The preview
+    band sits one step down the surface ladder from the card, so a card with no
+    thumbnail yet still reads as a picture well rather than as a flat block.
+
+    The card's colour and corner are a group of rows', so that a connection here
+    and an option on a settings screen are the same shape on the same page.
+-->
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/card"
+    style="@style/Widget.Material3.CardView.Filled"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="8dp"
+    android:clickable="true"
+    android:focusable="true"
+    app:cardBackgroundColor="?attr/colorSurfaceBright"
+    app:cardCornerRadius="@dimen/group_radius"
+    app:contentPadding="0dp"
+    app:strokeWidth="0dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!--
+            A fixed ratio rather than the desktop's own: see PreviewImageView.
+            Cropped to fill, so a preview is a recognisable corner of the desktop
+            rather than a letterboxed postage stamp.
+        -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <net.pgaskin.remotedesktop.PreviewImageView
+                android:id="@+id/preview"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/colorSurfaceContainerHigh"
+                android:contentDescription="@null"
+                android:scaleType="centerCrop" />
+
+            <!--
+                Which backend this connection is on. Over the preview rather
+                than beside the address, because it is a property of the card
+                and not a second line of text to read: there are four or five
+                of them depending on the build, and they behave differently
+                enough that "which one is this?" is worth answering at a glance.
+            -->
+            <TextView
+                android:id="@+id/badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:layout_margin="8dp"
+                android:background="@drawable/bg_badge"
+                android:paddingStart="6dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="6dp"
+                android:paddingBottom="2dp"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:textColor="#e8ffffff" />
+
+            <!--
+                Live right now, which is the one thing on this card that is not
+                a property of the saved connection. The accent rather than the
+                scrim the other two wear: it is the only colour on the screen
+                that means something is happening, and the corner opposite the
+                text block is where it does not cover the desktop's own.
+            -->
+            <TextView
+                android:id="@+id/connected"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|start"
+                android:layout_margin="8dp"
+                android:background="@drawable/bg_badge"
+                android:paddingStart="6dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="6dp"
+                android:paddingBottom="2dp"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:visibility="gone" />
+
+            <!--
+                Pinned, at the other end of the same band. The same scrim as the
+                badge, for the same reason: whatever is behind it is somebody's
+                desktop and may be any colour.
+            -->
+            <ImageView
+                android:id="@+id/pin"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|end"
+                android:layout_margin="8dp"
+                android:background="@drawable/bg_badge"
+                android:contentDescription="@string/home_pinned"
+                android:padding="3dp"
+                android:src="@drawable/ic_pin"
+                android:tint="#e8ffffff"
+                android:visibility="gone" />
+
+        </FrameLayout>
+
+        <!--
+            The inset is the text block's padding, not margins on the two
+            labels. A connection with no name puts its address in the title and
+            hides the subtitle, and a bottom margin that lives on the subtitle
+            goes with it — leaving the title jammed against the bottom of the
+            card on exactly the cards that have one line instead of two.
+        -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="12dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="10dp">
+
+            <TextView
+                android:id="@+id/title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+            <TextView
+                android:id="@+id/subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?android:attr/textColorSecondary" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

@@ -1,0 +1,25 @@
+# Every crate is under `backends/`, inside the Gradle module that packages it,
+# but the workspace root is here because that is where cargo and rust-analyzer
+# look for one. Members are globs: adding a protocol is adding a directory.
+[workspace]
+resolver = "2"
+members = [
+    "backends/common",
+    "backends/*/src/main/rust",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[workspace.dependencies]
+remotedesktop-common = { path = "backends/common", version = "0.0.1" }
+log = "0.4"
+# One version across the crates: a `Callbacks` built in one is used in another.
+jni = "0.22"
+android_logger = "0.15"
+
+[profile.release]
+panic = "abort" # cannot unwind across jni

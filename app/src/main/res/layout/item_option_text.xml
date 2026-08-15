@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    A BackendOption.Type.TEXT or INT, and the shape the connection editor's own
+    fields take too.
+
+    A field rather than a row that opens a dialog to type in: the rule for a
+    sheet is that nothing in it opens a second window over the first, and an
+    editor made of rows-that-open-dialogs is the androidx preference screen this
+    replaced — where the value being typed is in a window that hides the form it
+    belongs to.
+
+    The one row that is not on a group's container: an outlined box has corners
+    of its own, and a card behind it is a second set. RowGroups leaves it alone
+    and ends the run either side of it.
+-->
+<com.google.android.material.textfield.TextInputLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/field"
+    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/value"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:singleLine="true" />
+
+</com.google.android.material.textfield.TextInputLayout>

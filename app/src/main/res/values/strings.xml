@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    House style:
+
+      * Second person for what you do, present indicative for what the app does.
+      * Titles and choices are noun phrases with no full stop; summaries and
+        dialog bodies are sentences with one; buttons are a verb or a noun.
+      * A summary says what the setting does and what the other state does, in
+        at most two sentences, with the unit and the default where there is one.
+      * The machine at the other end is "the remote machine" and its screen is
+        "the desktop". Not "the far end", not "the core", not "the original".
+      * No internal vocabulary: no note or stage numbers, no class names.
+-->
+<resources>
+    <!-- The name is the launcher's and the toolbar's; the description has one
+         reader, the row at the bottom of the settings tree, and is written to
+         be the sentence a store listing would open with. -->
+    <string name="app_name">Vento</string>
+    <string name="app_description">Fast, fluid VNC/RDP remote desktop client.</string>
+    <string name="nav_back">Back</string>
+
+    <!-- home -->
+    <string name="home_empty_title">No connections</string>
+    <string name="home_empty">Add the address of a machine you can reach, and this is where it
+        will be. Press the + button to add a connection.</string>
+    <!-- The one thing this app can do with nothing to connect to, offered where
+         having nothing to connect to is the situation. -->
+    <string name="home_empty_playground">Try the controls in the playground</string>
+    <string name="home_add">Add a connection</string>
+    <string name="home_settings">Settings</string>
+    <!-- The two states of one toolbar button, each naming what tapping it
+         gives you rather than what is on screen. -->
+    <string name="home_view_list">List view</string>
+    <string name="home_view_grid">Grid view</string>
+    <string name="home_delete">Delete</string>
+    <string name="home_pin">Pin</string>
+    <string name="home_unpin">Unpin</string>
+    <string name="home_pinned">Pinned</string>
+    <string name="home_connected">Connected</string>
+    <string name="home_delete_title">Delete %1$s?</string>
+    <string name="home_delete_message">The saved connection and its preview are deleted from
+        this phone.</string>
+
+    <!-- editor -->
+    <string name="editor_new">New connection</string>
+    <string name="editor_edit">Edit connection</string>
+    <string name="editor_name">Name</string>
+    <string name="editor_address">Address (host[:port])</string>
+    <!-- The credentials are not edited here, only forgotten: they are saved by
+         connecting, so the summary says which of the two states this connection
+         is in rather than describing a field. -->
+    <string name="editor_credentials_clear">Clear saved credentials</string>
+    <string name="editor_credentials_saved">What you chose to keep is saved for this connection
+        and used the next time you connect. A saved password is encrypted with AES-256-GCM under
+        a key held by this phone\'s keystore.</string>
+    <string name="editor_credentials_none">Nothing is saved for this connection. The server
+        asks for what it needs, and you can keep the answer then.</string>
+    <string name="editor_credentials_title">Clear saved credentials?</string>
+    <string name="editor_credentials_message">The saved user name and password are deleted from
+        this phone. The server asks for them the next time you connect.</string>
+    <string name="editor_credentials_confirm">Clear</string>
+    <string name="editor_backend">Protocol</string>
+    <string name="editor_options">Options</string>
+    <!-- The unset answer to an option this connection may override. Named for
+         where the answer comes from, since "Automatic" on the same row means
+         the remote machine or the client decides. -->
+    <string name="editor_option_default">App default: %1$s</string>
+    <string name="editor_option_on">On</string>
+    <string name="editor_option_off">Off</string>
+    <string name="editor_save">Save</string>
+    <string name="editor_discard">Discard</string>
+    <string name="editor_keep_editing">Keep editing</string>
+    <string name="editor_keep_title">Keep your changes?</string>
+    <string name="editor_keep_message">These changes have not been saved.</string>
+    <string name="editor_discard_title">Discard this connection?</string>
+    <string name="editor_address_required">Enter an address</string>
+
+    <!-- settings -->
+    <string name="settings_title">Settings</string>
+    <!-- The three headings on the root screen. Grouping is what that screen
+         says: what a session does, what each protocol does, and what is done to
+         the app itself. -->
+    <string name="settings_group_sessions">Sessions</string>
+    <string name="settings_group_protocols">Protocols</string>
+    <string name="settings_group_app">This app</string>
+    <string name="settings_general">General</string>
+    <string name="settings_general_summary">Heads-up display, screen and system bars.</string>
+    <string name="settings_input">Touch and cursor</string>
+    <string name="settings_input_summary">Acceleration, momentum, scrolling, keyboard and
+        physical mouse.</string>
+    <string name="settings_playground">Playground</string>
+    <string name="settings_playground_summary">A fake desktop for trying these settings against
+        known geometry.</string>
+    <string name="settings_backend_summary">Options for every connection that uses it.</string>
+    <string name="settings_licenses">Licences</string>
+    <string name="settings_licenses_summary">What this build is made of, and what it may be used
+        for.</string>
+    <string name="settings_hud">Heads-up display</string>
+    <string name="settings_hud_summary">Five lines of cursor, viewport, gesture and frame state
+        are drawn over the session. Default: off.</string>
+    <string name="settings_keep_awake">Keep the screen on</string>
+    <string name="settings_keep_awake_summary">The screen does not time out while a session is
+        open. Default: on.</string>
+    <string name="settings_immersive">Full screen</string>
+    <string name="settings_immersive_summary">The status and navigation bars are hidden during a
+        session. Default: on.</string>
+    <string name="settings_private_ime">Treat the desktop as a password field</string>
+    <string name="settings_private_ime_summary">The keyboard is told the session is a password,
+        so it does not learn, suggest or correct what you type at the remote machine. Default:
+        on.</string>
+    <string name="settings_modifier_resets_ime">Modifiers return to letters</string>
+    <string name="settings_modifier_resets_ime_summary">Pressing Ctrl, Alt or Shift on the key row
+        sends the keyboard below it back to its letters, so a chord does not need a trip through
+        the symbols. Default: on.</string>
+    <string name="settings_clipboard_out">Send the clipboard</string>
+    <string name="settings_clipboard_out_summary">Text copied on this phone is offered to the
+        remote machine. The Paste key still types it out either way. Default: on.</string>
+    <string name="settings_clipboard_in">Receive the clipboard</string>
+    <string name="settings_clipboard_in_summary">Text copied on the remote machine is put on this
+        phone\'s clipboard. Default: on.</string>
+    <string name="settings_release_keys">Release keys when leaving</string>
+    <string name="settings_release_keys_summary">Keys still held at the remote machine are let go
+        of when a session leaves the screen, so a modifier held as you switch away does not stay
+        down over there. Default: on.</string>
+    <string name="settings_region_hints">Show where the controls are</string>
+    <string name="settings_region_hints_summary">A session explains its four tap regions the
+        first time it draws a desktop, until you dismiss it. Default: on.</string>
+    <string name="settings_previews">Keep desktop previews</string>
+    <string name="settings_previews_summary">Each connection\'s card shows its last screenful,
+        encrypted on this phone. Turning this off deletes the ones already kept. Default:
+        on.</string>
+    <string name="settings_connection_defaults">Connection defaults</string>
+    <string name="settings_preset">Preset</string>
+    <string name="settings_preset_improved">Improved</string>
+    <string name="settings_preset_faithful">Faithful</string>
+    <string name="settings_preset_summary">Faithful reproduces RealVNC Viewer\'s input stack bug
+        for bug, and Improved applies the deliberate changes. Changing this clears every value
+        below.</string>
+    <string name="settings_tunables">Tuning</string>
+    <string name="settings_reset">Reset to the preset</string>
+    <string name="settings_reset_summary">Every tuning value goes back to the preset\'s. Changing
+        the preset does the same.</string>
+    <string name="settings_reset_all">Reset all settings</string>
+    <string name="settings_reset_all_summary">Every setting here, the input tuning and each
+        protocol\'s options go back to their defaults. Saved connections are not touched.</string>
+    <string name="settings_reset_all_confirm">Reset every setting?</string>
+    <string name="settings_reset_all_do">Reset</string>
+    <string name="settings_reset_all_done">Settings reset</string>
+
+    <!-- import and export -->
+    <string name="settings_transfer">Import and export</string>
+    <string name="settings_transfer_summary">Connections and settings, into a file and back.</string>
+    <string name="transfer_export_connections">Export connections</string>
+    <string name="transfer_export_connections_summary">Every saved connection, as a file you
+        choose the place for.</string>
+    <string name="transfer_export_connections_message">Identity checks and desktop previews stay
+        on this phone. With passwords included, the file holds them as plain text: anything that
+        can read the file can read them.</string>
+    <string name="transfer_export_passwords">Include saved passwords</string>
+    <string name="transfer_export_settings">Export settings</string>
+    <string name="transfer_export_settings_summary">This app\'s settings, the input tuning and
+        each protocol\'s options.</string>
+    <string name="transfer_export">Export</string>
+    <string name="transfer_unlock_title">Unlock to export</string>
+    <string name="transfer_unlock_message">The file about to be written holds your saved
+        passwords.</string>
+    <string name="transfer_import">Import from a file</string>
+    <string name="transfer_import_summary">Read a file exported by this app. Connections are
+        added to the ones already here.</string>
+    <string name="transfer_import_apply">Import</string>
+    <string name="transfer_import_connections_title">Import connections</string>
+    <string name="transfer_import_connections_message">This file holds %1$d connections. Any that
+        name a protocol this build does not have are skipped.</string>
+    <string name="transfer_import_settings_title">Import settings</string>
+    <string name="transfer_import_settings_message">This file holds %1$d settings. Anything it
+        does not mention is left as it is.</string>
+    <string name="transfer_import_replace">Delete the connections already here first</string>
+    <string name="transfer_exported_connections">Exported %1$d connections</string>
+    <string name="transfer_exported_settings">Exported %1$d settings</string>
+    <string name="transfer_imported_connections">Imported %1$d of %2$d connections</string>
+    <string name="transfer_imported_settings">Applied %1$d of %2$d settings</string>
+    <string name="transfer_failed_title">That did not work</string>
+    <string name="transfer_bad_file">This is not a file this app exported, or it was written by a
+        newer version of it.</string>
+    <string name="transfer_write_failed">The file could not be written.</string>
+
+    <!-- session -->
+    <string name="session_no_backend">This build has no protocols.</string>
+    <string name="session_no_such_backend">This build has no %1$s support. Edit the connection
+        and choose another protocol.</string>
+    <string name="session_no_address">No address. Pass --es address host[:port].</string>
+    <string name="session_connecting">Connecting…</string>
+    <string name="session_disconnected">Disconnected</string>
+    <string name="session_disconnect">Disconnect</string>
+    <string name="session_disconnect_confirm">Disconnect?</string>
+    <string name="session_new_window">New window</string>
+    <string name="hints_title">Tapping the edges</string>
+    <string name="hints_message">A tap in one of the four bands opens what it says. Anywhere
+        else, one finger moves the cursor and taps click; two fingers scroll or zoom.</string>
+    <string name="hints_dismiss">Do not show this again</string>
+    <string name="hints_region_disconnect">Disconnect</string>
+    <string name="hints_region_information">Connection</string>
+    <string name="hints_region_keyboard">Keyboard</string>
+    <string name="hints_region_mouse">Mouse</string>
+
+    <!-- the connection panel -->
+    <string name="panel_close">Close</string>
+    <string name="panel_reconnect">Reconnect</string>
+    <string name="panel_not_set">Not set</string>
+    <string name="panel_connected">Connected</string>
+    <string name="option_follow_window">Match the desktop to this phone</string>
+    <string name="option_follow_window_summary">Ask the remote machine for a desktop the shape of this window whenever it changes — turning the phone, or resizing a split screen. Only where the remote machine allows it. Default: off.</string>
+    <string name="panel_connected_size">Connected · %1$d × %2$d</string>
+    <string name="panel_connected_monitors">Connected · %1$d × %2$d · %3$d monitors</string>
+    <string name="panel_desktop_size">Desktop size</string>
+    <string name="panel_desktop_size_value">%1$d × %2$d</string>
+    <string name="panel_desktop_size_device">%1$d × %2$d (this phone)</string>
+
+    <string name="panel_log">Log</string>
+    <string name="log_title">Log</string>
+    <string name="log_copy">Copy</string>
+    <string name="log_copied">Copied to the clipboard</string>
+    <string name="log_reading">Reading the log…</string>
+    <string name="log_unreadable">The log could not be read.</string>
+    <string name="log_empty">Nothing logged yet.</string>
+
+    <!-- the credential and certificate prompts -->
+    <string name="prompt_user_name">User name</string>
+    <string name="prompt_password">Password</string>
+    <string name="prompt_credentials_title">Authentication</string>
+    <string name="prompt_connect">Connect</string>
+    <string name="prompt_continue">Continue</string>
+    <string name="prompt_remember_password">Remember on this phone</string>
+    <string name="prompt_remember_server">Remember this server</string>
+    <string name="prompt_catchphrase">Catchphrase: %1$s</string>
+    <string name="prompt_signature">Signature: %1$s</string>
+    <string name="prompt_trust_title">Connect anyway?</string>
+    <string name="prompt_trust_changed">This server\'s identity has changed since you last
+        connected. It may not be the same machine.</string>
+    <string name="prompt_trust_another">This server\'s identity belongs to %1$s, which you have
+        connected to before.</string>
+    <string name="prompt_trust_another_address">a different address</string>
+    <string name="prompt_trust_new">You have not connected to this server before.</string>
+    <string name="prompt_trust_missing">This server offers no identity to check.</string>
+    <string name="prompt_unencrypted">The connection is not encrypted.</string>
+
+    <!-- the notification that keeps a session alive -->
+    <string name="channel_session">Connected sessions</string>
+    <string name="channel_session_description">Shown while a remote desktop is connected. Without
+        it, Android stops the connection seconds after the app leaves the screen.</string>
+
+    <!-- the extension keyboard's paste key -->
+    <string name="paste_title">Paste</string>
+    <plurals name="paste_confirm">
+        <item quantity="one">Types %1$d character into the remote machine, as a key press,
+            wherever it has the keyboard focus.</item>
+        <item quantity="other">Types %1$d characters into the remote machine, one key at a
+            time, wherever it has the keyboard focus. It cannot be stopped once it
+            starts.</item>
+    </plurals>
+    <string name="paste_modifiers">%1$s is locked, so every character arrives as a
+        shortcut.</string>
+    <string name="paste_confirm_yes">Type it</string>
+    <string name="paste_empty">Nothing on the clipboard.</string>
+</resources>

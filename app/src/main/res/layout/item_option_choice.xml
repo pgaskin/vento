@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    A BackendOption.Type.CHOICE, live: the value is a button that drops a menu
+    under itself. A menu rather than a dialog because the rule for this panel is
+    that nothing in it opens a second window over the first — and rather than a
+    segmented control because the number of choices belongs to the backend, and
+    four short ones is a coincidence of this backend's quality parameter. A
+    choice whose values carry a line each opens a dialog from the same button,
+    since there is nowhere in a menu to put one.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:minHeight="@dimen/row_min_height"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/row_padding"
+    android:paddingEnd="8dp">
+
+    <TextView
+        android:id="@+id/label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+    <com.google.android.material.button.MaterialButton
+        xmlns:app="http://schemas.android.com/apk/res-auto"
+        android:id="@+id/value"
+        style="@style/Widget.Material3.Button.TextButton.Icon"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        app:icon="@drawable/ic_dropdown"
+        app:iconGravity="textEnd" />
+
+</LinearLayout>

@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    The same connection as a row: a thumbnail on the left, and three lines
+    beside it — the name, the address, and then the pin marker followed by the
+    chips.
+
+    No background here: a run of these is one group of rows, so which of the
+    four container drawables a row wears depends on where it sits in the list,
+    and HomeActivity asks RowGroups for it. That is what makes this the
+    settings tree's row with a picture on the front rather than a shape of its
+    own.
+
+    The pin leads the third line rather than sitting at the row's far edge. A
+    card has two ends and a picture between them, so its pin can live opposite
+    the badge; a row's third line has one end, and the state somebody set is
+    not what the eye should reach last.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/card"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="8dp"
+    android:paddingTop="8dp"
+    android:paddingEnd="16dp"
+    android:paddingBottom="8dp">
+
+    <!--
+        Cropped to fill, like the card's, and a fixed size rather than a ratio:
+        a row's height is what its three lines need, so the picture is measured
+        against that instead of against a column width that is not known until
+        the screen is.
+    -->
+    <com.google.android.material.imageview.ShapeableImageView
+        android:id="@+id/preview"
+        android:layout_width="76dp"
+        android:layout_height="64dp"
+        android:layout_marginEnd="12dp"
+        android:background="?attr/colorSurfaceContainerHigh"
+        android:contentDescription="@null"
+        android:scaleType="centerCrop"
+        app:shapeAppearanceOverlay="@style/ShapeAppearance.RemoteDesktop.Thumbnail" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+        <TextView
+            android:id="@+id/subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/pin"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginEnd="6dp"
+                android:contentDescription="@string/home_pinned"
+                android:src="@drawable/ic_pin"
+                android:tint="?android:attr/textColorSecondary"
+                android:visibility="gone" />
+
+            <!--
+                The same shape as the card's badges on the surface instead of
+                on a scrim: nothing is behind these but the row, so they take
+                the theme's colours rather than carrying their own contrast.
+                The live one is tinted where it is decided, in HomeActivity.
+            -->
+            <TextView
+                android:id="@+id/badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/bg_badge"
+                android:backgroundTint="?attr/colorSurfaceContainerHighest"
+                android:paddingStart="6dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="6dp"
+                android:paddingBottom="2dp"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <TextView
+                android:id="@+id/connected"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_badge"
+                android:paddingStart="6dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="6dp"
+                android:paddingBottom="2dp"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

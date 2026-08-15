@@ -1,0 +1,101 @@
+From c9076c7ffa81c5884082672af9dd3d7c54085490 Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Wed, 12 Aug 2026 12:51:35 -0400
+Subject: [PATCH 3/5] rfb: H.264 is offered only when asked for
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Every other encoding the client can decode is offered unconditionally, which
+is right for encodings that are lossless and cost what changed. H.264 is
+neither, and the server picks from the list, so whether to offer it is the
+caller's decision — the same shape as supportsLocalCursor and the three
+beside it.
+
+diff --git a/common/rfb/CConnection.cxx b/common/rfb/CConnection.cxx
+index b7e49399..042e0d83 100644
+--- a/common/rfb/CConnection.cxx
++++ b/common/rfb/CConnection.cxx
+@@ -64,6 +64,7 @@ CConnection::CConnection()
+   : csecurity(nullptr),
+     supportsLocalCursor(false), supportsCursorPosition(false),
+     supportsDesktopResize(false), supportsLEDState(false),
++    supportsH264(false),
+     is(nullptr), os(nullptr), reader_(nullptr), writer_(nullptr),
+     shared(false),
+     state_(RFBSTATE_UNINITIALISED),
+@@ -888,6 +889,15 @@ void CConnection::refreshFramebuffer()
+     requestNewUpdate();
+ }
+ 
++void CConnection::setSupportsH264(bool on)
++{
++  if (supportsH264 == on)
++    return;
++
++  supportsH264 = on;
++  encodingChange = true;
++}
++
+ void CConnection::setPreferredEncoding(int encoding)
+ {
+   if (preferredEncoding == encoding)
+@@ -994,6 +1004,13 @@ void CConnection::requestNewUpdate()
+ // Ask for encodings based on which decoders are supported.  Assumes higher
+ // encoding numbers are more desirable.
+ 
++bool CConnection::offerEncoding(int encoding)
++{
++  if (encoding == encodingH264)
++    return supportsH264;
++  return true;
++}
++
+ void CConnection::updateEncodings()
+ {
+   std::list<uint32_t> encodings;
+@@ -1024,7 +1041,7 @@ void CConnection::updateEncodings()
+   encodings.push_back(pseudoEncodingQEMUKeyEvent);
+   encodings.push_back(pseudoEncodingExtendedMouseButtons);
+ 
+-  if (Decoder::supported(preferredEncoding)) {
++  if (Decoder::supported(preferredEncoding) && offerEncoding(preferredEncoding)) {
+     if (!noJpeg || preferredEncoding != encodingJPEG)
+       encodings.push_back(preferredEncoding);
+   }
+@@ -1032,7 +1049,7 @@ void CConnection::updateEncodings()
+   encodings.push_back(encodingCopyRect);
+ 
+   for (int i = encodingMax; i >= 0; i--) {
+-    if ((i != preferredEncoding) && Decoder::supported(i)) {
++    if ((i != preferredEncoding) && Decoder::supported(i) && offerEncoding(i)) {
+       if (noJpeg && i == encodingJPEG)
+         continue;
+       encodings.push_back(i);
+diff --git a/common/rfb/CConnection.h b/common/rfb/CConnection.h
+index c6c12e19..e3f1ce0b 100644
+--- a/common/rfb/CConnection.h
++++ b/common/rfb/CConnection.h
+@@ -301,6 +301,14 @@ namespace rfb {
+     bool supportsCursorPosition;
+     bool supportsDesktopResize;
+     bool supportsLEDState;
++    // H.264 is a decoder the client has to be *asked* for: it is lossy at every
++    // setting and it costs a whole frame's decode however little changed, so
++    // offering it because the build can decode it is not the same decision as
++    // offering Tight. Set through setSupportsH264, which marks the encoding
++    // list as changed the way every other encoding setter does — without that,
++    // switching it alone re-sends nothing and the server keeps the list it had.
++    bool supportsH264;
++    void setSupportsH264(bool on);
+ 
+   private:
+     bool processVersionMsg();
+@@ -314,6 +322,7 @@ namespace rfb {
+ 
+     void requestNewUpdate();
+     void updateEncodings();
++    bool offerEncoding(int encoding);
+ 
+     rdr::InStream* is;
+     rdr::OutStream* os;

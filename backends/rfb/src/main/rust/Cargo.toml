@@ -1,0 +1,42 @@
+# The RFB backend's native half. The client is plain Rust and `src/bindings` is
+# Android-only, so `cargo test` and `cargo run --example rfb-probe` exercise the
+# protocol on the host.
+[package]
+name = "remotedesktop-rfb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+# `lib` for the tests and the example, `cdylib` for the library the app loads —
+# one crate for one protocol. The name is the `.so`'s: librfb.so is too plain a
+# name to put in somebody's APK.
+name = "remotedesktop_rfb"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+log.workspace = true
+remotedesktop-common.workspace = true
+# Pure-Rust inflate for ZRLE's zlib stream: no C toolchain beyond the NDK's
+# linker, which is the same argument rustls makes below.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# VncAuth is DES with the key's bits reversed. Hand-rolling a cipher to get one
+# handshake right is how a subtle bug gets in.
+des = "0.9"
+cipher = "0.5"
+sha2 = "0.11"
+# TLS for VeNCrypt. `ring` because aws-lc-rs wants cmake and bindgen for
+# Android. No `webpki-roots`: a VNC server signs its own certificate, so what
+# replaces an authority is a fingerprint pinned per address (`src/transport.rs`).
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+    "logging",
+] }
+
+# The only part of this crate that knows a phone exists.
+[target.'cfg(target_os = "android")'.dependencies]
+jni.workspace = true
+android_logger.workspace = true

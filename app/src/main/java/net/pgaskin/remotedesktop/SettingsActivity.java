@@ -1,0 +1,709 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+package net.pgaskin.remotedesktop;
+
+import android.content.Context;
+import android.content.Intent;
+import android.hardware.biometrics.BiometricManager;
+import android.hardware.biometrics.BiometricPrompt;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.CancellationSignal;
+import android.text.TextUtils;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.widget.CheckBox;
+import android.widget.TextView;
+
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.preference.ListPreference;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceCategory;
+import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.PreferenceGroup;
+import androidx.preference.PreferenceGroupAdapter;
+import androidx.preference.PreferenceScreen;
+import androidx.preference.PreferenceViewHolder;
+import androidx.preference.SwitchPreferenceCompat;
+import androidx.recyclerview.widget.RecyclerView;
+
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.snackbar.Snackbar;
+
+import net.pgaskin.remotedesktop.backend.BackendOption;
+import net.pgaskin.remotedesktop.backend.Backends;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.Supplier;
+
+/**
+ * The settings tree: one activity, a section per screen, and every screen built
+ * in code from the same two descriptions the editor uses.
+ *
+ * <p>The sections keep separate preference files, which is not tidiness: a
+ * backend's settings live and die with the backend, and the input tuning can be exported or reset on its
+ * own. {@link AppSettings}, {@link InputSettings} and
+ * {@link Connections#backendPrefs} are those three files.
+ */
+public final class SettingsActivity extends AppCompatToolbarActivity {
+
+    public static final String EXTRA_SECTION = "section"; // absent means the root
+    public static final String EXTRA_BACKEND = "backend"; // for SECTION_BACKEND: which one
+
+    public static final String SECTION_GENERAL = "general";
+    public static final String SECTION_INPUT = "input";
+    public static final String SECTION_BACKEND = "backend";
+    public static final String SECTION_TRANSFER = "transfer";
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        final String section = getIntent().getStringExtra(EXTRA_SECTION);
+        setTitle(switch (section == null ? "" : section) {
+            case SECTION_GENERAL -> getString(R.string.settings_general);
+            case SECTION_INPUT -> getString(R.string.settings_input);
+            case SECTION_TRANSFER -> getString(R.string.settings_transfer);
+            case SECTION_BACKEND -> Backends.name(getIntent().getStringExtra(EXTRA_BACKEND));
+            default -> getString(R.string.settings_title);
+        });
+        show(new SettingsFragment());
+    }
+
+    private void open(String section) {
+        startActivity(new Intent(this, SettingsActivity.class)
+                .putExtra(EXTRA_SECTION, section));
+    }
+
+    private void openBackend(String id) {
+        startActivity(new Intent(this, SettingsActivity.class)
+                .putExtra(EXTRA_SECTION, SECTION_BACKEND)
+                .putExtra(EXTRA_BACKEND, id));
+    }
+
+    public static final class SettingsFragment extends PreferenceFragmentCompat {
+
+        /**
+         * Each section configures where its values are stored <em>before</em>
+         * building the screen — a preference persists through whatever the
+         * manager was pointed at when it was attached, so the order is not a
+         * matter of taste.
+         */
+        @Override
+        public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
+            final SettingsActivity a = (SettingsActivity) requireActivity();
+            final String section = a.getIntent().getStringExtra(EXTRA_SECTION);
+            switch (section == null ? "" : section) {
+                case SECTION_GENERAL -> general();
+                case SECTION_INPUT -> input();
+                case SECTION_TRANSFER -> transfer();
+                case SECTION_BACKEND -> backend(a.getIntent().getStringExtra(EXTRA_BACKEND));
+                default -> root(a);
+            }
+        }
+
+        private PreferenceScreen newScreen() {
+            final PreferenceScreen screen = getPreferenceManager()
+                    .createPreferenceScreen(requireContext());
+            setPreferenceScreen(screen);
+            return screen;
+        }
+
+        /**
+         * The rows as groups: contiguous rows on a container with large corners,
+         * a group ending wherever a category does.
+         *
+         * <p>This is the whole of the mechanism. {@code androidx.preference} has
+         * one background per row and no idea that a run of them is one thing, so
+         * where a row sits in its run is worked out here — from its neighbours,
+         * since that is what a run is — and {@link RowGroups} turns the answer
+         * into a background and the gaps around it.
+         */
+        @Override
+        protected RecyclerView.Adapter<PreferenceViewHolder> onCreateAdapter(
+                PreferenceScreen screen) {
+            return new PreferenceGroupAdapter(screen) {
+                @Override
+                public void onBindViewHolder(PreferenceViewHolder holder, int position) {
+                    super.onBindViewHolder(holder, position);
+                    final View row = holder.itemView;
+                    if (getItem(position) instanceof PreferenceCategory) {
+                        RowGroups.plain(row);
+                        return;
+                    }
+                    RowGroups.row(row,
+                            position == 0 || heading(position - 1),
+                            heading(position + 1),
+                            gapAfter(position, row));
+                }
+
+                /** A heading, or the end of the screen, which bounds a run alike. */
+                private boolean heading(int position) {
+                    return position < 0 || position >= getItemCount()
+                            || getItem(position) instanceof PreferenceCategory;
+                }
+
+                /**
+                 * Under the last row of a group there is nothing, because a
+                 * heading brings its own space — unless the next category has no
+                 * title, which is how a screen asks for a break with no heading
+                 * over it. Then this row is the only thing holding the two
+                 * groups apart.
+                 */
+                private int gapAfter(int position, View row) {
+                    if (position + 1 >= getItemCount()) {
+                        return 0;
+                    }
+                    final Preference next = getItem(position + 1);
+                    if (!(next instanceof PreferenceCategory)) {
+                        return RowGroups.gap(row);
+                    }
+                    return TextUtils.isEmpty(next.getTitle()) ? RowGroups.spacing(row) : 0;
+                }
+            };
+        }
+
+        @Override
+        public void onViewCreated(View view, Bundle savedInstanceState) {
+            super.onViewCreated(view, savedInstanceState);
+            // The rule between two rows was what said they belonged together;
+            // now the container does, and a line across it would cut a group in
+            // half.
+            setDivider(null);
+            setDividerHeight(0);
+            final RecyclerView list = getListView();
+            list.setClipToPadding(false);
+            list.setPadding(0, list.getPaddingTop(),
+                    0, getResources().getDimensionPixelSize(R.dimen.group_spacing));
+        }
+
+        // ---- the root -------------------------------------------------------
+
+        private void root(SettingsActivity a) {
+            final PreferenceScreen screen = newScreen();
+            screen.addPreference(heading(R.string.settings_group_sessions));
+            screen.addPreference(link(R.string.settings_general, R.string.settings_general_summary,
+                    () -> a.open(SECTION_GENERAL)));
+            screen.addPreference(link(R.string.settings_input, R.string.settings_input_summary,
+                    () -> a.open(SECTION_INPUT)));
+            screen.addPreference(heading(R.string.settings_group_protocols));
+            for (String id : Backends.ids()) {
+                final Preference p = link(0, R.string.settings_backend_summary,
+                        () -> a.openBackend(id));
+                p.setTitle(Backends.name(id));
+                screen.addPreference(p);
+            }
+            screen.addPreference(heading(R.string.settings_group_app));
+            screen.addPreference(link(R.string.settings_transfer,
+                    R.string.settings_transfer_summary, () -> a.open(SECTION_TRANSFER)));
+            // A test surface for the input options against known geometry,
+            // reachable from where those options are set.
+            screen.addPreference(link(R.string.settings_playground,
+                    R.string.settings_playground_summary,
+                    () -> startActivity(new Intent(requireContext(), PlaygroundActivity.class))));
+            screen.addPreference(link(R.string.settings_licenses,
+                    R.string.settings_licenses_summary,
+                    () -> startActivity(new Intent(requireContext(), LicensesActivity.class))));
+            screen.addPreference(about());
+            // Last, and about everything above it: the scope of "all settings"
+            // is this screen, which is the one place it can be offered without
+            // meaning something narrower than it says. On its own, and under no
+            // heading, because it is the one row here that destroys something.
+            screen.addPreference(heading(0));
+            screen.addPreference(link(R.string.settings_reset_all,
+                    R.string.settings_reset_all_summary, this::confirmResetAll));
+        }
+
+        /** A heading over the group that follows, or with no title, a break. */
+        private PreferenceCategory heading(int title) {
+            final PreferenceCategory c = new PreferenceCategory(requireContext());
+            if (title != 0) {
+                c.setTitle(title);
+            }
+            c.setIconSpaceReserved(false);
+            return c;
+        }
+
+        /**
+         * What the app is called and what it is for, under the licences that
+         * say what it is made of. Not selectable rather than disabled, which is
+         * how the library is asked for an informational row: it draws the title
+         * in the summary's colour, so the name and the description read as one
+         * statement rather than as an action that has been greyed out.
+         */
+        private Preference about() {
+            final Preference p = new Preference(requireContext());
+            p.setTitle(R.string.app_name);
+            p.setSummary(R.string.app_description);
+            p.setIconSpaceReserved(false);
+            p.setSingleLineTitle(false);
+            p.setPersistent(false);
+            p.setSelectable(false);
+            return p;
+        }
+
+        private Preference link(int title, int summary, Runnable go) {
+            final Preference p = new Preference(requireContext());
+            if (title != 0) {
+                p.setTitle(title);
+            }
+            p.setSummary(summary);
+            p.setIconSpaceReserved(false);
+            p.setSingleLineTitle(false);
+            p.setPersistent(false);
+            p.setOnPreferenceClickListener(x -> {
+                go.run();
+                return true;
+            });
+            return p;
+        }
+
+        // ---- the sections ---------------------------------------------------
+
+        private void general() {
+            final OptionScreen.Store store =
+                    OptionScreen.switches(AppSettings.prefs(requireContext()));
+            getPreferenceManager().setPreferenceDataStore(store);
+            final PreferenceScreen screen = newScreen();
+            screen.addPreference(switchPref(AppSettings.KEY_HUD, R.string.settings_hud,
+                    R.string.settings_hud_summary, false));
+            screen.addPreference(switchPref(AppSettings.KEY_KEEP_AWAKE,
+                    R.string.settings_keep_awake, R.string.settings_keep_awake_summary, true));
+            screen.addPreference(switchPref(AppSettings.KEY_IMMERSIVE,
+                    R.string.settings_immersive, R.string.settings_immersive_summary, true));
+            screen.addPreference(switchPref(AppSettings.KEY_PRIVATE_IME,
+                    R.string.settings_private_ime, R.string.settings_private_ime_summary, true));
+            screen.addPreference(switchPref(AppSettings.KEY_MODIFIER_RESETS_IME,
+                    R.string.settings_modifier_resets_ime,
+                    R.string.settings_modifier_resets_ime_summary, true));
+            screen.addPreference(switchPref(AppSettings.KEY_CLIPBOARD_OUT,
+                    R.string.settings_clipboard_out,
+                    R.string.settings_clipboard_out_summary, true));
+            screen.addPreference(switchPref(AppSettings.KEY_CLIPBOARD_IN,
+                    R.string.settings_clipboard_in,
+                    R.string.settings_clipboard_in_summary, true));
+            screen.addPreference(switchPref(AppSettings.KEY_RELEASE_KEYS,
+                    R.string.settings_release_keys,
+                    R.string.settings_release_keys_summary, true));
+            screen.addPreference(switchPref(AppSettings.KEY_REGION_HINTS,
+                    R.string.settings_region_hints,
+                    R.string.settings_region_hints_summary, true));
+
+            // Turning previews off deletes the ones already taken. Leaving them
+            // would make the switch a promise about the future only, and the
+            // pictures on disk are what somebody turning it off means.
+            final SwitchPreferenceCompat previews = switchPref(AppSettings.KEY_PREVIEWS,
+                    R.string.settings_previews, R.string.settings_previews_summary, true);
+            previews.setOnPreferenceChangeListener((p, v) -> {
+                if (!Boolean.TRUE.equals(v)) {
+                    Connections.clearThumbnails(requireContext());
+                }
+                return true;
+            });
+            screen.addPreference(previews);
+            store.built();
+        }
+
+        private SwitchPreferenceCompat switchPref(String key, int title, int summary,
+                                                  boolean def) {
+            final SwitchPreferenceCompat s = new SwitchPreferenceCompat(requireContext());
+            s.setKey(key);
+            s.setTitle(title);
+            s.setSummary(summary);
+            s.setDefaultValue(def);
+            s.setIconSpaceReserved(false);
+            s.setSingleLineTitle(false);
+            return s;
+        }
+
+        /**
+         * The input stack. The preset is a list, the tunables below it default to
+         * whatever that preset says, and changing the preset clears them — a
+         * half-faithful stack is not a comparison of anything.
+         */
+        private void input() {
+            final OptionScreen.Store store =
+                    OptionScreen.store(InputSettings.prefs(requireContext()));
+            getPreferenceManager().setPreferenceDataStore(store);
+            final PreferenceScreen screen = newScreen();
+
+            final ListPreference preset = new ListPreference(requireContext());
+            preset.setKey(InputSettings.KEY_PRESET);
+            preset.setTitle(R.string.settings_preset);
+            preset.setDialogTitle(R.string.settings_preset);
+            preset.setIconSpaceReserved(false);
+            preset.setSingleLineTitle(false);
+            preset.setEntryValues(new CharSequence[]{
+                    InputSettings.PRESET_IMPROVED, InputSettings.PRESET_FAITHFUL});
+            preset.setEntries(new CharSequence[]{
+                    getString(R.string.settings_preset_improved),
+                    getString(R.string.settings_preset_faithful)});
+            preset.setDefaultValue(InputSettings.PRESET_IMPROVED);
+            preset.setSummaryProvider(p -> ((ListPreference) p).getEntry()
+                    + "\n" + getString(R.string.settings_preset_summary));
+            preset.setOnPreferenceChangeListener((p, v) -> {
+                // Returning true is what persists it, through the same store;
+                // clearing the overrides is what makes a preset mean something.
+                InputSettings.clearOverrides(requireContext());
+                rebuild();
+                return true;
+            });
+            screen.addPreference(preset);
+
+            final PreferenceCategory tuning = new PreferenceCategory(requireContext());
+            tuning.setTitle(R.string.settings_tunables);
+            tuning.setIconSpaceReserved(false);
+            screen.addPreference(tuning);
+            OptionScreen.addTunables(tuning, InputSettings.tunables(),
+                    InputSettings.preset(requireContext(),
+                            getResources().getDisplayMetrics().density));
+
+            final Preference reset = new Preference(requireContext());
+            reset.setTitle(R.string.settings_reset);
+            reset.setSummary(R.string.settings_reset_summary);
+            reset.setIconSpaceReserved(false);
+            reset.setPersistent(false);
+            reset.setOnPreferenceClickListener(p -> {
+                InputSettings.clearOverrides(requireContext());
+                rebuild();
+                return true;
+            });
+            tuning.addPreference(reset);
+            store.built();
+        }
+
+        private void backend(String id) {
+            final OptionScreen.Store store =
+                    OptionScreen.store(Connections.backendPrefs(requireContext(), id));
+            getPreferenceManager().setPreferenceDataStore(store);
+            final PreferenceScreen screen = newScreen();
+            OptionScreen.addOptions(screen, Backends.options(id), BackendOption.Scope.GLOBAL);
+            // Under a heading of their own, because these rows answer a
+            // different question from the ones above them: not "what does this
+            // backend do" but "what does a connection do when it has not been
+            // told". With nothing above them there is nothing to tell them
+            // apart from, and a screen whose whole content is one heading says
+            // less than no heading at all.
+            PreferenceGroup into = screen;
+            if (screen.getPreferenceCount() > 0) {
+                final PreferenceCategory defaults = new PreferenceCategory(requireContext());
+                defaults.setTitle(R.string.settings_connection_defaults);
+                defaults.setIconSpaceReserved(false);
+                screen.addPreference(defaults);
+                into = defaults;
+            }
+            OptionScreen.addOptions(into, Backends.options(id), BackendOption.Scope.LAYERED);
+            store.built();
+        }
+
+        // ---- import and export ----------------------------------------------
+
+        private void transfer() {
+            final PreferenceScreen screen = newScreen();
+            screen.addPreference(link(R.string.transfer_export_connections,
+                    R.string.transfer_export_connections_summary, this::exportConnections));
+            screen.addPreference(link(R.string.transfer_export_settings,
+                    R.string.transfer_export_settings_summary,
+                    () -> exportSettings.launch(fileName(Transfer.KIND_SETTINGS))));
+            screen.addPreference(link(R.string.transfer_import,
+                    R.string.transfer_import_summary,
+                    // Anything, because a file that came back from somebody's
+                    // mail or a cloud drive arrives with whatever type that
+                    // service decided on, and the only check worth trusting is
+                    // of what is inside it.
+                    () -> importFile.launch(new String[]{"*/*"})));
+        }
+
+        /**
+         * Both directions through the storage access framework: no permission to
+         * ask for, and the file is somewhere the person picked rather than
+         * somewhere this app decided on.
+         *
+         * <p>Registered as fields, since a launcher has to exist before the
+         * fragment is started — and one per document, which is what keeps the
+         * result callback from having to remember which button was pressed
+         * across a process that may have died while the picker was up.
+         */
+        private final ActivityResultLauncher<String> exportConnections =
+                registerForActivityResult(
+                        new ActivityResultContracts.CreateDocument("application/json"),
+                        uri -> write(uri, Transfer.KIND_CONNECTIONS));
+
+        private final ActivityResultLauncher<String> exportSettings = registerForActivityResult(
+                new ActivityResultContracts.CreateDocument("application/json"),
+                uri -> write(uri, Transfer.KIND_SETTINGS));
+
+        private final ActivityResultLauncher<String[]> importFile = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(), this::read);
+
+        /**
+         * Whether the export being picked a destination for is taking the
+         * passwords with it, which is the one thing the launcher above cannot
+         * carry. False if this screen has been rebuilt since — a process that
+         * died while the picker was up writes the file without them, which is
+         * the harmless way for that to go wrong.
+         */
+        private boolean withPasswords;
+
+        /**
+         * The passwords are the whole of the question here, so it is asked
+         * before the destination is: on, this writes every saved password in
+         * plain text and the lock screen comes first; off, the file is a list of
+         * machines with no keys to them and there is nothing to gate.
+         */
+        private void exportConnections() {
+            final View view = LayoutInflater.from(requireContext())
+                    .inflate(R.layout.dialog_confirm, null);
+            final CheckBox tick = view.findViewById(R.id.tick);
+            ((TextView) view.findViewById(R.id.message))
+                    .setText(R.string.transfer_export_connections_message);
+            tick.setText(R.string.transfer_export_passwords);
+            tick.setChecked(true);
+            new MaterialAlertDialogBuilder(requireContext(),
+                    R.style.ThemeOverlay_RemoteDesktop_Dialog)
+                    .setTitle(R.string.transfer_export_connections)
+                    .setView(view)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(R.string.transfer_export, (d, w) -> {
+                        withPasswords = tick.isChecked();
+                        final String name = fileName(Transfer.KIND_CONNECTIONS);
+                        if (withPasswords) {
+                            credential(() -> exportConnections.launch(name));
+                        } else {
+                            exportConnections.launch(name);
+                        }
+                    })
+                    .show();
+        }
+
+        /**
+         * The lock screen, in front of a file that is about to contain every
+         * saved password in the clear — {@code BiometricPrompt} with a device
+         * credential allowed, which is the platform's own class and so brings
+         * nothing new into the build.
+         *
+         * <p>Before the picker rather than after it, so a prompt that is
+         * cancelled leaves no empty document behind at the destination. A phone
+         * with no credential set goes ahead: the gate is the lock screen, and
+         * there is not one to put in the way.
+         */
+        private void credential(Runnable then) {
+            final Context ctx = requireContext();
+            final int allowed = BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                    | BiometricManager.Authenticators.BIOMETRIC_WEAK;
+            final BiometricManager manager = ctx.getSystemService(BiometricManager.class);
+            if (manager == null || manager.canAuthenticate(allowed)
+                    != BiometricManager.BIOMETRIC_SUCCESS) {
+                then.run();
+                return;
+            }
+            new BiometricPrompt.Builder(ctx)
+                    .setTitle(getString(R.string.transfer_unlock_title))
+                    .setDescription(getString(R.string.transfer_unlock_message))
+                    // No negative button, which is not a choice: the builder
+                    // refuses one alongside a device credential, since the
+                    // credential screen brings its own way out.
+                    .setAllowedAuthenticators(allowed)
+                    .build()
+                    .authenticate(new CancellationSignal(), ctx.getMainExecutor(),
+                            new BiometricPrompt.AuthenticationCallback() {
+                                @Override
+                                public void onAuthenticationSucceeded(
+                                        BiometricPrompt.AuthenticationResult result) {
+                                    if (isAdded()) {
+                                        then.run();
+                                    }
+                                }
+                            });
+        }
+
+        private void write(Uri uri, String kind) {
+            if (uri == null) {
+                return; // the picker was left rather than used
+            }
+            final Context ctx = requireContext().getApplicationContext();
+            final boolean passwords = withPasswords;
+            withPasswords = false;
+            io(() -> {
+                try {
+                    final Transfer.Document doc = Transfer.write(ctx, kind, passwords);
+                    // "wt", not "w": an existing document is opened as it is,
+                    // and a shorter export written over a longer one would
+                    // otherwise keep the tail of what was there.
+                    try (OutputStream out = ctx.getContentResolver().openOutputStream(uri, "wt")) {
+                        if (out == null) {
+                            throw new IOException("nothing to write to at " + uri);
+                        }
+                        out.write(doc.text().getBytes(StandardCharsets.UTF_8));
+                    }
+                    return () -> said(Transfer.KIND_CONNECTIONS.equals(kind)
+                            ? R.string.transfer_exported_connections
+                            : R.string.transfer_exported_settings, doc.count());
+                } catch (Exception e) {
+                    Log.w(TAG, "writing " + uri, e);
+                    return () -> problem(R.string.transfer_write_failed);
+                }
+            });
+        }
+
+        private void read(Uri uri) {
+            if (uri == null) {
+                return;
+            }
+            final Context ctx = requireContext().getApplicationContext();
+            io(() -> {
+                try (InputStream in = ctx.getContentResolver().openInputStream(uri)) {
+                    if (in == null) {
+                        throw new IOException("nothing to read at " + uri);
+                    }
+                    // One byte past what this app would ever write, so a video
+                    // picked by mistake is refused rather than decoded.
+                    final byte[] bytes = in.readNBytes(Transfer.MAX_BYTES + 1);
+                    if (bytes.length > Transfer.MAX_BYTES) {
+                        throw new IOException("larger than any file this app writes");
+                    }
+                    final Transfer.Document doc =
+                            Transfer.open(new String(bytes, StandardCharsets.UTF_8));
+                    return () -> confirmImport(doc);
+                } catch (Exception e) {
+                    Log.w(TAG, "reading " + uri, e);
+                    return () -> problem(R.string.transfer_bad_file);
+                }
+            });
+        }
+
+        /**
+         * What the file turned out to hold, said before anything is applied —
+         * and, for the connections, the one destructive way to apply it.
+         */
+        private void confirmImport(Transfer.Document doc) {
+            final boolean connections = Transfer.KIND_CONNECTIONS.equals(doc.kind());
+            final View view = LayoutInflater.from(requireContext())
+                    .inflate(R.layout.dialog_confirm, null);
+            final CheckBox tick = view.findViewById(R.id.tick);
+            ((TextView) view.findViewById(R.id.message)).setText(getString(connections
+                            ? R.string.transfer_import_connections_message
+                            : R.string.transfer_import_settings_message,
+                    doc.count()));
+            tick.setText(R.string.transfer_import_replace);
+            tick.setVisibility(connections ? View.VISIBLE : View.GONE);
+            new MaterialAlertDialogBuilder(requireContext(),
+                    R.style.ThemeOverlay_RemoteDesktop_Dialog)
+                    .setTitle(connections
+                            ? R.string.transfer_import_connections_title
+                            : R.string.transfer_import_settings_title)
+                    .setView(view)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(R.string.transfer_import_apply,
+                            (d, w) -> apply(doc, connections && tick.isChecked()))
+                    .show();
+        }
+
+        private void apply(Transfer.Document doc, boolean deleteExisting) {
+            final Context ctx = requireContext().getApplicationContext();
+            final boolean connections = Transfer.KIND_CONNECTIONS.equals(doc.kind());
+            io(() -> {
+                final Transfer.Result r = Transfer.apply(ctx, doc, deleteExisting);
+                return () -> {
+                    said(connections
+                                    ? R.string.transfer_imported_connections
+                                    : R.string.transfer_imported_settings,
+                            r.applied(), r.total());
+                    if (!connections) {
+                        // The screens behind this one are built from the values
+                        // that have just moved.
+                        rebuild();
+                    }
+                };
+            });
+        }
+
+        // ---- reset --------------------------------------------------------
+
+        private void confirmResetAll() {
+            new MaterialAlertDialogBuilder(requireContext(),
+                    R.style.ThemeOverlay_RemoteDesktop_Dialog)
+                    .setTitle(R.string.settings_reset_all_confirm)
+                    .setMessage(R.string.settings_reset_all_summary)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(R.string.settings_reset_all_do, (d, w) -> {
+                        final Context ctx = requireContext();
+                        AppSettings.prefs(ctx).edit().clear().apply();
+                        InputSettings.prefs(ctx).edit().clear().apply();
+                        for (String id : Backends.ids()) {
+                            Connections.backendPrefs(ctx, id).edit().clear().apply();
+                        }
+                        said(R.string.settings_reset_all_done);
+                        rebuild();
+                    })
+                    .show();
+        }
+
+        // ---- plumbing -----------------------------------------------------
+
+        private static final String TAG = "Settings";
+
+        /**
+         * A document provider is another process and sealing a password is a
+         * keystore round trip each, so both directions run off the main thread.
+         * What the work returns is what to tell the person, run back here and
+         * only while there is still a screen to say it on.
+         */
+        private static final ExecutorService IO = Executors.newSingleThreadExecutor(r -> {
+            final Thread t = new Thread(r, "transfer");
+            t.setDaemon(true);
+            return t;
+        });
+
+        private void io(Supplier<Runnable> work) {
+            final View view = requireView();
+            IO.execute(() -> {
+                final Runnable report = work.get();
+                view.post(() -> {
+                    if (isAdded()) {
+                        report.run();
+                    }
+                });
+            });
+        }
+
+        /** What an import or an export did, on the screen it was asked from. */
+        private void said(int text, Object... args) {
+            Snackbar.make(requireView(), getString(text, args), Snackbar.LENGTH_LONG).show();
+        }
+
+        /** Long enough to read and not going anywhere, which a toast is not. */
+        private void problem(int message) {
+            new MaterialAlertDialogBuilder(requireContext(),
+                    R.style.ThemeOverlay_RemoteDesktop_Dialog)
+                    .setTitle(R.string.transfer_failed_title)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+        }
+
+        /** Dated, because the useful thing to do with two of these is compare them. */
+        private String fileName(String kind) {
+            return kind + "-" + LocalDate.now() + ".json";
+        }
+
+        /**
+         * Redraw the screen from the stored values. Every row here defaults to
+         * something computed — the preset's value — so clearing an override has
+         * to rebuild the rows rather than just refresh them.
+         */
+        private void rebuild() {
+            requireActivity().getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.content, new SettingsFragment())
+                    .commit();
+        }
+    }
+}

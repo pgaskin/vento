@@ -1,0 +1,67 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+plugins {
+    id 'com.android.library'
+}
+
+// `Backend` implemented on somebody else's viewer core. A protocol module like
+// the other two: `:realvnc-jni` holds the declarations and, inside that AAR,
+// their `libvncviewer.so`, and what is here is ours — the session's lifecycle,
+// the prompts, the options, and one small library that reads a counter their
+// exported functions do not offer.
+//
+// The one module the flavours disagree about, and the disagreement is a
+// dependency line: only `nonfree` has it, so the compiler says `free` has no
+// proprietary code in it rather than a convention saying so.
+android {
+    namespace = 'net.pgaskin.remotedesktop.backend.realvnc'
+    compileSdk 36
+    ndkVersion = project(':backends').nativeNdkVersion
+
+    defaultConfig {
+        minSdk 34
+        externalNativeBuild {
+            cmake {
+                targets 'remotedesktop_realvnc'
+            }
+        }
+        ndk {
+            abiFilters project(':backends').nativeAbis as String[]
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version = '3.30.5'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+        }
+    }
+}
+
+dependencies {
+    // The seam, and the only thing of the app's this module may name.
+    api project(':backends')
+
+    // Their JNI surface, and the libraries it binds to. `api` because a build
+    // that has this backend has their core in it, which is the fact the licence
+    // page is generated from.
+    api project(':realvnc-jni')
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

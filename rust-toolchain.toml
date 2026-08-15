@@ -1,0 +1,13 @@
+# CargoBuildTask checks `rustc --version` against this channel before it runs
+# anything, so an unexpected compiler is an error rather than a surprise later.
+#
+# The targets must stay the same list as `ndk.abiFilters` and as the ABIs
+# ExtractApkNativeLibs unpacks: a Rust library shipped for an ABI with no
+# RealVNC one beside it fails at System.loadLibrary on somebody's device.
+[toolchain]
+channel = "1.96.0"
+components = ["clippy", "rustfmt"]
+targets = [
+    "aarch64-linux-android",
+    "x86_64-linux-android",
+]

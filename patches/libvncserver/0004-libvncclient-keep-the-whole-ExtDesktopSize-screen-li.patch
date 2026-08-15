@@ -1,0 +1,78 @@
+From 00824b7d7b70791bc03c667aa701294e64b0f46c Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Wed, 12 Aug 2026 23:51:22 -0400
+Subject: [PATCH 4/5] libvncclient: keep the whole ExtDesktopSize screen list
+
+A multi-head desktop is one framebuffer with the heads laid out inside
+it, and the layout is the only thing that says where the joins are. The
+rectangle carries every screen; the loop overwrote client->screen with
+each one in turn, so what survived was the last, and a caller could not
+tell one monitor from four.
+
+The list is kept beside it, in the same network byte order, and freed
+with the client.
+
+diff --git a/include/rfb/rfbclient.h b/include/rfb/rfbclient.h
+index f72d84a..21ef0ac 100644
+--- a/include/rfb/rfbclient.h
++++ b/include/rfb/rfbclient.h
+@@ -506,6 +506,17 @@ typedef struct _rfbClient {
+         rfbBool isUpdateRectManagedByLib;
+ 
+         GetX509CertFingerprintMismatchDecisionProc GetX509CertFingerprintMismatchDecision;
++
++        /**
++         * The whole screen layout from the last ExtDesktopSize rectangle, which
++         * is what says where a multi-head desktop's heads are inside the
++         * framebuffer. rfbClient.screen keeps only the last screen read.
++         *
++         * In network byte order, as rfbClient.screen is. Owned by the library
++         * and freed by rfbClientCleanup().
++         */
++        rfbExtDesktopScreen* screens;
++        int numScreens;
+ } rfbClient;
+ 
+ /* cursor.c */
+diff --git a/src/libvncclient/rfbclient.c b/src/libvncclient/rfbclient.c
+index f6baf64..1bf2105 100644
+--- a/src/libvncclient/rfbclient.c
++++ b/src/libvncclient/rfbclient.c
+@@ -2165,6 +2165,17 @@ HandleRFBServerMessage(rfbClient* client)
+         }
+ 
+         screens = eds.numberOfScreens;
++        if (client->numScreens != screens) {
++          rfbExtDesktopScreen* layout = NULL;
++          if (screens > 0) {
++            layout = malloc(screens * sizeof(rfbExtDesktopScreen));
++            if (layout == NULL)
++              return FALSE;
++          }
++          free(client->screens);
++          client->screens = layout;
++          client->numScreens = screens;
++        }
+         for (loop=0; loop < screens; loop++)
+         {
+           if (!ReadFromRFBServer(client, ((char *)&screen), sz_rfbExtDesktopScreen)) {
+@@ -2175,6 +2186,7 @@ HandleRFBServerMessage(rfbClient* client)
+           } else {
+             invalidScreen = TRUE;
+           }
++          client->screens[loop] = screen;
+         }
+ 
+         if (!invalidScreen && (client->width != rect.r.w || client->height != rect.r.h)) {
+diff --git a/src/libvncclient/vncviewer.c b/src/libvncclient/vncviewer.c
+index 2af3785..dd2f111 100644
+--- a/src/libvncclient/vncviewer.c
++++ b/src/libvncclient/vncviewer.c
+@@ -590,6 +590,7 @@ void rfbClientCleanup(rfbClient* client) {
+   free(client->clientAuthSchemes);
+   free(client->rcSource);
+   free(client->rcMask);
++  free(client->screens);
+ 
+ #ifdef LIBVNCSERVER_HAVE_SASL
+   free(client->saslSecret);

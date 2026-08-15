@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- The icon and the title are the shape being switched *to*, and
+         HomeActivity sets both: this is one item in two states rather than two
+         items of which one is always wrong. -->
+    <item
+        android:id="@+id/action_view_mode"
+        android:icon="@drawable/ic_view_list"
+        android:title="@string/home_view_list"
+        app:showAsAction="always" />
+    <item
+        android:id="@+id/action_settings"
+        android:icon="@drawable/ic_settings"
+        android:title="@string/home_settings"
+        app:showAsAction="always" />
+</menu>

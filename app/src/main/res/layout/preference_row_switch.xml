@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    The widget half of a switch row. androidx's own is a SwitchCompat, which is
+    the one Material 2 control left on these screens; the panel has drawn the
+    same option as a MaterialSwitch since it existed.
+
+    The id is androidx's: SwitchPreferenceCompat finds its widget by it.
+-->
+<com.google.android.material.materialswitch.MaterialSwitch
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@id/switchWidget"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@null"
+    android:clickable="false"
+    android:focusable="false" />
