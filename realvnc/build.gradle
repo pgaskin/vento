@@ -1,0 +1,115 @@
+// SPDX-License-Identifier: CC0-1.0
+
+plugins {
+    id 'com.android.library'
+}
+
+/*
+ * The build these declarations bind to. `copies` is a list because a mirror's
+ * archive of a release is not byte for byte the publisher's — same entries, same
+ * dex, different container — so an APK hash identifies a copy, and the library
+ * hashes are what say this is the right build.
+ */
+ext.vncApk = [
+        name       : 'com.realvnc.viewer.android_4.9.3.60175.apk',
+        version    : '4.9.3.60175',
+        versionCode: 2070175,
+        copies     : [
+                '168469097377035c5f05878cc9c3e96fe15749cdaaed8cb5091b872ae9566674':
+                        'the copy these declarations were written against',
+                '65d9c31d282af7e0c000fad8d74073685b6fbce63cb5ec5737a8ea9c7f9acfcb':
+                        'pool.apk.aptoide.com, via the download task',
+        ],
+        // Tried in order. Aptoide answers a JSON API for an exact version code —
+        // nothing to scrape — and behind it is a snapshot of the file that API
+        // currently points at. APKMirror is left out on purpose: it answers a
+        // script with 403, so it would cost a cookie jar and a page of HTML.
+        sources    : [
+                [kind: 'aptoide-api', url: 'https://ws75.aptoide.com/api/7/app/getMeta' +
+                        '?package_name=com.realvnc.viewer.android&vercode=2070175'],
+                [kind: 'direct', url: 'https://web.archive.org/web/20260811195414id_/' +
+                        'https://pool.apk.aptoide.com/appupdater/' +
+                        'com-realvnc-viewer-android-2070175-75463342-' +
+                        'f98743311290dcd93f886016879cadfb.apk'],
+        ],
+        // arm64 is every device that can run minSdk 34, x86_64 is the emulator,
+        // and libc++_shared.so is what libvncviewer.so links against.
+        libraries  : [
+                'arm64-v8a/libvncviewer.so' : 'fdd67f78312bfbe4fb7861eaa42cfe5d6091668c057157d66e94aa33e41fe8ba',
+                'arm64-v8a/libc++_shared.so': '4397241b4bd20a8e579bfb41d21107857e12985f6a01ca0c2a5f83380d1270b4',
+                'x86_64/libvncviewer.so'    : 'ee3acfbe81cdd8f9dbd9542e2a0c9bd31634d78334c5e22c27414a8b73ac364a',
+                'x86_64/libc++_shared.so'   : 'db9609240e60ca18b816a5e95a6bbc784e799261efbd5b30c8e2e03b540b3fa8',
+        ],
+]
+
+ext.vncApkCandidates = {
+    [
+            layout.projectDirectory.file("apk/${vncApk.name}").asFile,
+            rootProject.layout.projectDirectory.file("stuff/${vncApk.name}").asFile,
+    ]
+}
+
+android {
+    namespace = 'com.realvnc.vncviewer.jni'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 34
+        // The whole package is names the native side resolves at run time.
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    // The AAR carries the libraries as well as the declarations, so whether a
+    // build contains RealVNC's core is a dependency line.
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+        }
+    }
+}
+
+def downloadVncApk = tasks.register('downloadVncApk', DownloadVncApk) {
+    group = 'build setup'
+    description = "Fetches ${vncApk.name} into apk/ if it is not already there."
+    sources.set(vncApk.sources)
+    knownCopies.set(vncApk.copies)
+    outputFile.set(layout.projectDirectory.file("apk/${vncApk.name}"))
+}
+
+def extractVncNativeLibs = tasks.register('extractVncNativeLibs', ExtractApkNativeLibs) {
+    // Ordering, not dependency: a build never fetches anything.
+    mustRunAfter(downloadVncApk)
+    apk.from(provider { vncApkCandidates().findAll { it.isFile() } })
+    expected.set(vncApk.libraries)
+    outputDir.set(layout.buildDirectory.dir('generated/vncNativeLibs'))
+    missingApkHint.set("""\
+        no RealVNC Viewer APK to unpack libvncviewer.so from. It is not in this
+        repository and is not redistributed with it; get it any of three ways:
+
+          ./gradlew :realvnc-jni:downloadVncApk        fetch it
+          cp <file> realvnc/apk/                   a copy you already have
+          adb shell pm path com.realvnc.viewer.android + adb pull
+
+        Wanted: ${vncApk.name} (versionCode ${vncApk.versionCode}). Any copy of
+        that build will do — what is checked is the libraries, not the archive.
+
+        Or build the `free` flavour of the app, which contains none of this."""
+            .stripIndent())
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.sources.jniLibs.addGeneratedSourceDirectory(extractVncNativeLibs) { it.outputDir }
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

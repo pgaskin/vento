@@ -7,4 +7,4 @@ plugins {
 
 //sourceSets.main.groovy.srcDir '../app/buildSrc/src/main/groovy'
 //sourceSets.main.groovy.srcDir '../backends/buildSrc/src/main/groovy'
-//sourceSets.main.groovy.srcDir '../realvnc/buildSrc/src/main/groovy'
+sourceSets.main.groovy.srcDir '../realvnc/buildSrc/src/main/groovy'

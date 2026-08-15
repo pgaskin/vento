@@ -19,3 +19,6 @@ dependencyResolutionManagement {
 rootProject.name = "vento"
 
 include ':control'
+
+include ':realvnc-jni'
+project(':realvnc-jni').projectDir = file('realvnc')
