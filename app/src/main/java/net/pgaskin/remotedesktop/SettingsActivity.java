@@ -196,9 +196,12 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                     () -> a.open(SECTION_INPUT)));
             screen.addPreference(heading(R.string.settings_group_protocols));
             for (String id : Backends.ids()) {
-                final Preference p = link(0, R.string.settings_backend_summary,
-                        () -> a.openBackend(id));
+                final Preference p = link(0, 0, () -> a.openBackend(id));
                 p.setTitle(Backends.name(id));
+                // What the client is for, in the backend's own words — the same
+                // sentences the protocol dialog offers it by. A row saying what
+                // is behind it was saying what every one of these rows is.
+                p.setSummary(Backends.description(id));
                 screen.addPreference(p);
             }
             screen.addPreference(heading(R.string.settings_group_app));
@@ -255,7 +258,9 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             if (title != 0) {
                 p.setTitle(title);
             }
-            p.setSummary(summary);
+            if (summary != 0) {
+                p.setSummary(summary);
+            }
             p.setIconSpaceReserved(false);
             p.setSingleLineTitle(false);
             p.setPersistent(false);

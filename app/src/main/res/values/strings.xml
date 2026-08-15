@@ -94,7 +94,6 @@
     <string name="settings_playground">Playground</string>
     <string name="settings_playground_summary">A fake desktop for trying these settings against
         known geometry.</string>
-    <string name="settings_backend_summary">Options for every connection that uses it.</string>
     <string name="settings_licenses">Licences</string>
     <string name="settings_licenses_summary">What this build is made of, and what it may be used
         for.</string>
