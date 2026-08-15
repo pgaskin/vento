@@ -9,7 +9,7 @@ import android.graphics.Bitmap;
  * The JNI surface of {@code libremotedesktop_freerdp.so} — FreeRDP's own client
  * behind the shim in {@code src/main/cpp}.
  *
- * <p>{@code RdpNative}'s twin method for method, because that is what makes the
+ * <p>{@code IronRdpNative}'s twin method for method, because that is what makes the
  * two RDP clients comparable: anything the app can ask one it can ask the other,
  * and a difference in what comes back is a difference between the libraries.
  * {@link #nativeCreate}'s arguments are where they diverge, and every divergence

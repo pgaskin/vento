@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Patrick Gaskin
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package net.pgaskin.remotedesktop.backend.rdp;
+package net.pgaskin.remotedesktop.backend.ironrdp;
 
 import android.content.Context;
 import android.graphics.Insets;
@@ -65,7 +65,7 @@ import java.util.Map;
  *       server and corrupt on the one the protocol belongs to.
  * </ul>
  */
-public final class RdpProvider implements BackendProvider {
+public final class IronRdpProvider implements BackendProvider {
 
     public static final String NLA = "Nla";
     public static final String DESKTOP_SIZE = "DesktopSize";
@@ -180,7 +180,7 @@ public final class RdpProvider implements BackendProvider {
     @Override
     public Backend create(Context context, String address, String userName, String password,
                           Map<String, String> options) {
-        return new RdpBackend(context, address, userName, password, options);
+        return new IronRdpBackend(context, address, userName, password, options);
     }
 
     /**

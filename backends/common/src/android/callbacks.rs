@@ -6,7 +6,7 @@
 //! thing in the path.
 //!
 //! One class per backend declares the interface and they are identical, so this
-//! takes the name: `RfbNative$Callbacks` and `RdpNative$Callbacks` are the same
+//! takes the name: `RfbNative$Callbacks` and `IronRdpNative$Callbacks` are the same
 //! shape because they are answering the same `Backend`. Where the two protocols
 //! genuinely differ — RDP's credentials carry a domain — the difference is in
 //! what is sent *back* through `nativeAnswerCredentials`, not in what is

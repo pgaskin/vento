@@ -14,7 +14,7 @@
 //! RDP_RFX=off RDP_COMPRESSION=rdp61 cargo run --example rdp-probe -- …
 //! ```
 
-use remotedesktop_rdp::{Client, Config, Credentials, Handler, Nla};
+use remotedesktop_ironrdp::{Client, Config, Credentials, Handler, Nla};
 use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
@@ -125,7 +125,7 @@ fn main() {
         password: Some(password.clone()),
         desktop_size,
         nla,
-        compression: remotedesktop_rdp::compression(
+        compression: remotedesktop_ironrdp::compression(
             std::env::var("RDP_COMPRESSION").ok().as_deref(),
         ),
         remote_fx: std::env::var("RDP_RFX").as_deref() != Ok("off"),

@@ -2023,7 +2023,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "remotedesktop-rdp"
+name = "remotedesktop-ironrdp"
 version = "0.0.1"
 dependencies = [
  "android_logger",

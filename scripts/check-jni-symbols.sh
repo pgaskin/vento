@@ -25,7 +25,7 @@ MODULES=(
     "rfb:net/pgaskin/remotedesktop/backend/rfb/RfbNative:remotedesktop_rfb:cargo"
     "libvnc:net/pgaskin/remotedesktop/backend/libvnc/LibVncNative:remotedesktop_libvnc:cmake"
     "tigervnc:net/pgaskin/remotedesktop/backend/tigervnc/TigerVncNative:remotedesktop_tigervnc:cmake"
-    "rdp:net/pgaskin/remotedesktop/backend/rdp/RdpNative:remotedesktop_rdp:cargo"
+    "ironrdp:net/pgaskin/remotedesktop/backend/ironrdp/IronRdpNative:remotedesktop_ironrdp:cargo"
     "freerdp:net/pgaskin/remotedesktop/backend/freerdp/FreeRdpNative:remotedesktop_freerdp:cmake"
     "realvnc:net/pgaskin/remotedesktop/backend/realvnc/RealVncTraffic:remotedesktop_realvnc:cmake"
 )

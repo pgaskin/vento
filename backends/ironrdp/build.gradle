@@ -9,7 +9,7 @@ plugins {
 // `src/main/rust`, IronRDP in the RFB client's shape, and the AAR carries the
 // library it compiles to.
 android {
-    namespace = 'net.pgaskin.remotedesktop.backend.rdp'
+    namespace = 'net.pgaskin.remotedesktop.backend.ironrdp'
     compileSdk 36
     ndkVersion = project(':backends').nativeNdkVersion
 
@@ -33,11 +33,11 @@ android {
 
 dependencies {
     // The seam, and the only thing of the app's this module may name. `api`
-    // because `RdpBackend` is a `Backend` and whoever holds one says so.
+    // because `IronRdpBackend` is a `Backend` and whoever holds one says so.
     api project(':backends')
 }
 
-// `libremotedesktop_rdp.so`, compiled by cargo-ndk into a generated jniLibs
+// `libremotedesktop_ironrdp.so`, compiled by cargo-ndk into a generated jniLibs
 // directory the AAR packages. Every variant: both flavours get this client.
 androidComponents {
     onVariants(selector().all()) { variant ->
@@ -46,7 +46,7 @@ androidComponents {
 
         final cargoBuild = tasks.register("cargoBuild${cap}Native", CargoBuildTask) {
             workspaceDir.set(seam.cargoWorkspace)
-            cargoPackage.set('remotedesktop-rdp')
+            cargoPackage.set('remotedesktop-ironrdp')
             ndkDirectory.set(androidComponents.sdkComponents.ndkDirectory)
             rustToolchainFile.set(seam.cargoRustToolchain)
             cargoNdkVersion.set(seam.cargoNdkVersion)

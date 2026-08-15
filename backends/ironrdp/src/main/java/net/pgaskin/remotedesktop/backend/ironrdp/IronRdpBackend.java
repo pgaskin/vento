@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Patrick Gaskin
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package net.pgaskin.remotedesktop.backend.rdp;
+package net.pgaskin.remotedesktop.backend.ironrdp;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -46,14 +46,14 @@ import java.util.function.Consumer;
  *       is ours rather than the protocol's — view only.
  * </ul>
  */
-public final class RdpBackend implements Backend, RdpNative.Callbacks {
+public final class IronRdpBackend implements Backend, IronRdpNative.Callbacks {
 
     static final String TAG = "Rdp";
 
     private static final int CONNECT_TIMEOUT_MS = 20_000;
 
     /**
-     * US English, and not a choice — see {@code RdpProvider} for why: the
+     * US English, and not a choice — see {@code IronRdpProvider} for why: the
      * scancode table this client sends is a US layout, so the layout the server
      * is told to use has to be the same one.
      */
@@ -88,7 +88,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
     private volatile int desktopHeight;
     private volatile boolean dead;
 
-    public RdpBackend(Context context, String address, String userName, String password,
+    public IronRdpBackend(Context context, String address, String userName, String password,
                       Map<String, String> extraOptions) {
         this.context = context.getApplicationContext();
         this.address = address;
@@ -100,7 +100,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
         // fails the connection instead of asking for the real one.
         this.password = password == null || password.isEmpty() ? null : password;
         this.options = new ConcurrentHashMap<>();
-        for (var option : RdpProvider.OPTIONS) {
+        for (var option : IronRdpProvider.OPTIONS) {
             options.put(option.key(), option.defaultValue());
         }
         if (extraOptions != null) {
@@ -149,12 +149,12 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
         }
         state = State.CONNECTING;
         fireState(State.CONNECTING, "Connecting to " + address);
-        final int[] size = RdpProvider.size(context, address, options.get(RdpProvider.DESKTOP_SIZE));
-        final long h = RdpNative.nativeCreate(this, address, userName, domain, password,
-                options.get(RdpProvider.NLA),
-                bool(RdpProvider.COMPRESSION) ? "rdp61" : null,
-                !"bitmap".equals(options.get(RdpProvider.GRAPHICS)),
-                options.get(RdpProvider.EXPERIENCE),
+        final int[] size = IronRdpProvider.size(context, address, options.get(IronRdpProvider.DESKTOP_SIZE));
+        final long h = IronRdpNative.nativeCreate(this, address, userName, domain, password,
+                options.get(IronRdpProvider.NLA),
+                bool(IronRdpProvider.COMPRESSION) ? "rdp61" : null,
+                !"bitmap".equals(options.get(IronRdpProvider.GRAPHICS)),
+                options.get(IronRdpProvider.EXPERIENCE),
                 size[0], size[1], monitorCount(), KEYBOARD_LAYOUT,
                 android.os.Build.MODEL, CONNECT_TIMEOUT_MS);
         if (h == 0) {
@@ -164,14 +164,14 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
         synchronized (pixels) {
             handle = h;
         }
-        RdpNative.nativeViewOnly(h, bool(RdpProvider.VIEW_ONLY));
+        IronRdpNative.nativeViewOnly(h, bool(IronRdpProvider.VIEW_ONLY));
     }
 
     @Override
     public void disconnect() {
         final long h = handle;
         if (h != 0) {
-            RdpNative.nativeDisconnect(h);
+            IronRdpNative.nativeDisconnect(h);
         } else {
             closed("Disconnected");
         }
@@ -189,7 +189,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
             handle = 0;
         }
         if (h != 0) {
-            RdpNative.nativeDestroy(h);
+            IronRdpNative.nativeDestroy(h);
         }
     }
 
@@ -226,14 +226,14 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
             main.post(() -> callback.accept(List.of()));
             return;
         }
-        final String[] info = RdpNative.nativeInfo(h);
+        final String[] info = IronRdpNative.nativeInfo(h);
         final List<ConnectionFact> facts = new ArrayList<>();
         if (info != null && info.length >= 6) {
             facts.add(ConnectionFact.of(ConnectionFact.Field.PROTOCOL, "Protocol", info[0]));
             facts.add(ConnectionFact.of(ConnectionFact.Field.CONNECTION, "Connection", info[1]));
             facts.add(ConnectionFact.of(ConnectionFact.Field.SECURITY, "Security", info[2]));
             facts.add(ConnectionFact.of(ConnectionFact.Field.LINE_SPEED, "Line speed", info[3]));
-            final long[] traffic = RdpNative.nativeTraffic(h);
+            final long[] traffic = IronRdpNative.nativeTraffic(h);
             if (traffic != null && traffic.length == 2) {
                 facts.add(ConnectionFact.data(traffic[0], traffic[1]));
             }
@@ -247,7 +247,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
 
     @Override
     public boolean viewOnly() {
-        return bool(RdpProvider.VIEW_ONLY);
+        return bool(IronRdpProvider.VIEW_ONLY);
     }
 
     /**
@@ -258,7 +258,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
     private int monitorCount() {
         try {
             return Math.max(1, Math.min(16,
-                    Integer.parseInt(options.getOrDefault(RdpProvider.MONITORS, "1"))));
+                    Integer.parseInt(options.getOrDefault(IronRdpProvider.MONITORS, "1"))));
         } catch (NumberFormatException e) {
             return 1;
         }
@@ -267,20 +267,20 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
     @Override
     public boolean canResize() {
         final long h = handle;
-        return h != 0 && !dead && state == State.CONNECTED && RdpNative.nativeCanResize(h);
+        return h != 0 && !dead && state == State.CONNECTED && IronRdpNative.nativeCanResize(h);
     }
 
     @Override
     public List<Monitor> monitors() {
         final long h = handle;
-        return h != 0 && !dead ? Monitor.fromFlat(RdpNative.nativeMonitors(h)) : List.of();
+        return h != 0 && !dead ? Monitor.fromFlat(IronRdpNative.nativeMonitors(h)) : List.of();
     }
 
     @Override
     public void requestDesktopSize(int width, int height) {
         final long h = handle;
         if (h != 0 && !dead) {
-            RdpNative.nativeRequestDesktopSize(h, width, height);
+            IronRdpNative.nativeRequestDesktopSize(h, width, height);
         }
     }
 
@@ -293,13 +293,13 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
         if (h == 0 || dead) {
             return;
         }
-        if (RdpProvider.VIEW_ONLY.equals(key)) {
-            RdpNative.nativeViewOnly(h, Boolean.parseBoolean(value));
-        } else if (RdpProvider.MONITORS.equals(key)) {
+        if (IronRdpProvider.VIEW_ONLY.equals(key)) {
+            IronRdpNative.nativeViewOnly(h, Boolean.parseBoolean(value));
+        } else if (IronRdpProvider.MONITORS.equals(key)) {
             // Remembered rather than acted on: the count is what the *next*
             // layout asks for, and a desktop somebody is working on does not
             // get rearranged as a side effect of a settings row moving.
-            RdpNative.nativeSetMonitorCount(h, monitorCount());
+            IronRdpNative.nativeSetMonitorCount(h, monitorCount());
         }
         // Everything else is decided in the connection sequence, which has
         // already happened.
@@ -311,7 +311,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
     public void pointer(int x, int y, int buttonMask) {
         final long h = handle;
         if (h != 0) {
-            RdpNative.nativePointer(h, x, y, buttonMask);
+            IronRdpNative.nativePointer(h, x, y, buttonMask);
         }
     }
 
@@ -319,7 +319,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
     public void keyDown(int keysym, int keyId) {
         final long h = handle;
         if (h != 0) {
-            RdpNative.nativeKeyDown(h, keysym, keyId);
+            IronRdpNative.nativeKeyDown(h, keysym, keyId);
         }
     }
 
@@ -327,7 +327,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
     public void keyUp(int keyId) {
         final long h = handle;
         if (h != 0) {
-            RdpNative.nativeKeyUp(h, keyId);
+            IronRdpNative.nativeKeyUp(h, keyId);
         }
     }
 
@@ -335,7 +335,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
     public void releaseAllKeys() {
         final long h = handle;
         if (h != 0) {
-            RdpNative.nativeReleaseAllKeys(h);
+            IronRdpNative.nativeReleaseAllKeys(h);
         }
     }
 
@@ -343,7 +343,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
     public void focus(boolean focused) {
         final long h = handle;
         if (h != 0) {
-            RdpNative.nativeFocus(h, focused);
+            IronRdpNative.nativeFocus(h, focused);
         }
     }
 
@@ -351,7 +351,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
     public void clipboardToRemote(String text) {
         final long h = handle;
         if (h != 0 && text != null) {
-            RdpNative.nativeClipboard(h, text);
+            IronRdpNative.nativeClipboard(h, text);
         }
     }
 
@@ -365,7 +365,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
         }
         synchronized (pixels) {
             return handle != 0
-                    && RdpNative.nativeReadRegion(handle, x, y, width, height, dst, dstX, dstY);
+                    && IronRdpNative.nativeReadRegion(handle, x, y, width, height, dst, dstX, dstY);
         }
     }
 
@@ -382,7 +382,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
         final Bitmap out = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888);
         final boolean ok;
         synchronized (pixels) {
-            ok = handle != 0 && RdpNative.nativeReadThumbnail(handle, step, out);
+            ok = handle != 0 && IronRdpNative.nativeReadThumbnail(handle, step, out);
         }
         if (!ok) {
             out.recycle();
@@ -461,12 +461,12 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
 
     @Override
     public void onPointerMode(boolean relative) {
-        // Never called; see RdpNative.Callbacks.
+        // Never called; see IronRdpNative.Callbacks.
     }
 
     @Override
     public void onBell() {
-        // Never called; see RdpNative.Callbacks. The three VNC backends gate
+        // Never called; see IronRdpNative.Callbacks. The three VNC backends gate
         // theirs on a per-connection switch, and this one has no such row
         // because there is nothing behind it to switch off.
     }
@@ -500,7 +500,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
                     }
                     final String[] split = splitDomain(
                             user == null || user.isEmpty() ? shown : user);
-                    RdpNative.nativeAnswerCredentials(session, split[1], split[0],
+                    IronRdpNative.nativeAnswerCredentials(session, split[1], split[0],
                             ok ? secret : null);
                 }
             };
@@ -530,7 +530,7 @@ public final class RdpBackend implements Backend, RdpNative.Callbacks {
     private void answerTrust(boolean accept) {
         final long h = handle;
         if (h != 0) {
-            RdpNative.nativeAnswerTrust(h, accept);
+            IronRdpNative.nativeAnswerTrust(h, accept);
         }
     }
 

@@ -2,7 +2,7 @@
 # what both have to fit. Bound rather than written: what is ours is the threads,
 # the framebuffer, the keysym map and the trust decision.
 [package]
-name = "remotedesktop-rdp"
+name = "remotedesktop-ironrdp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,7 +12,7 @@ publish = false
 # `lib` for the tests and the example, `cdylib` for the library the app loads —
 # one crate for one protocol. The name is the `.so`'s: librdp.so is too plain a
 # name to put in somebody's APK.
-name = "remotedesktop_rdp"
+name = "remotedesktop_ironrdp"
 crate-type = ["lib", "cdylib"]
 
 [dependencies]

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Patrick Gaskin
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package net.pgaskin.remotedesktop.backend.rdp;
+package net.pgaskin.remotedesktop.backend.ironrdp;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -40,7 +40,7 @@ final class DesktopSizes {
     /** {@code {width, height}}, or null if this address has never connected. */
     static int[] remembered(Context ctx, String address) {
         final String value = prefs(ctx).getString(key(address), null);
-        return value == null ? null : RdpProvider.parse(value);
+        return value == null ? null : IronRdpProvider.parse(value);
     }
 
     static void remember(Context ctx, String address, int width, int height) {

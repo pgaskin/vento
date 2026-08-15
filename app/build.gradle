@@ -100,7 +100,7 @@ dependencies {
     implementation project(':backends:rfb')
     implementation project(':backends:libvnc')
     implementation project(':backends:tigervnc')
-    implementation project(':backends:rdp')
+    implementation project(':backends:ironrdp')
     implementation project(':backends:freerdp')
 
     // Their backend, and behind it the JNI surface and libvncviewer.so itself.

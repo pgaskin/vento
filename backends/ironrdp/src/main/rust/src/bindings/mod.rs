@@ -1,7 +1,7 @@
-//! The RDP backend's JNI surface: the entry points `RdpNative` declares, and
+//! The RDP backend's JNI surface: the entry points `IronRdpNative` declares, and
 //! the session behind them.
 //!
-//! `libremotedesktop_rdp.so` is this crate, and this module is everything in
+//! `libremotedesktop_ironrdp.so` is this crate, and this module is everything in
 //! it that is not the protocol — it is compiled for Android and nowhere else.
 //! What it needs of Android rather than of RDP — a locked bitmap, the callbacks
 //! into Java, a place to wait for a person — is `common::android`, and the
@@ -32,7 +32,7 @@ unsafe fn session<'a>(handle: jlong) -> Option<&'a Session> {
 
 /// What the client speaks — the one call that proves the whole path.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeVersion<'local>(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeVersion<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass,
 ) -> jstring {
@@ -45,7 +45,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 
 #[unsafe(no_mangle)]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeCreate(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeCreate(
     mut env: EnvUnowned,
     _class: JClass,
     listener: JObject,
@@ -74,7 +74,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
         let callbacks = Callbacks::new(
             env,
             &listener,
-            jni::jni_str!("net/pgaskin/remotedesktop/backend/rdp/RdpNative$Callbacks"),
+            jni::jni_str!("net/pgaskin/remotedesktop/backend/ironrdp/IronRdpNative$Callbacks"),
         )?;
         let config = Config {
             address: string(env, &address)?.unwrap_or_default(),
@@ -117,7 +117,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 
 /// A `null` password cancels, which ends the session.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeAnswerCredentials(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeAnswerCredentials(
     mut env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -145,7 +145,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 /// Whether the certificate the session asked about is the right one. The pin
 /// store is Java's, so this is the answer rather than the question.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeAnswerTrust(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeAnswerTrust(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -157,7 +157,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeDisconnect(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeDisconnect(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -169,7 +169,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 
 /// Ends the session, waits for its thread, and frees the handle.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeDestroy(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeDestroy(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -183,7 +183,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativePointer(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativePointer(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -202,7 +202,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeKeyDown(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeKeyDown(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -215,7 +215,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeKeyUp(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeKeyUp(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -227,7 +227,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeReleaseAllKeys(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeReleaseAllKeys(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -240,7 +240,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 /// Whether the session is on screen. Unlike RFB's "stop asking", this is a
 /// Suppress Output PDU — RDP's server sends what it likes until told not to.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeFocus(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeFocus(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -254,7 +254,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 /// What this phone has copied. Offered to the remote, which asks for it only if
 /// somebody pastes there — see `clipboard`.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeClipboard(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeClipboard(
     mut env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -276,7 +276,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 /// connection sequence, so this is the display control channel having opened
 /// and said what it can do — which happens after the session starts, or never.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeCanResize(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeCanResize(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -290,7 +290,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 /// Ask for a desktop of this size per monitor. The answer is a reactivation
 /// carrying whatever the server made of it, or nothing at all.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeRequestDesktopSize(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeRequestDesktopSize(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -306,7 +306,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 
 /// How many monitors the next layout asks for.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeSetMonitorCount(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeSetMonitorCount(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -320,7 +320,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 /// The monitors the desktop is made of, four ints each. Empty for a
 /// single-monitor session and for one whose layout the server did not grant.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeMonitors<'local>(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeMonitors<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass,
     handle: jlong,
@@ -342,7 +342,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 /// counted inside TLS and outside TCP, which is what the row this feeds says it
 /// means.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeTraffic<'local>(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeTraffic<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass,
     handle: jlong,
@@ -362,7 +362,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeViewOnly(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeViewOnly(
     _env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -377,7 +377,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 /// rest of `dst` alone. The offset is a slice offset and nothing else — see
 /// `rfb`'s copy of this function for what it buys the caller.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeReadRegion(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeReadRegion(
     env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -420,7 +420,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
 
 /// The whole desktop at `1/step`, into a bitmap Java has already sized.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeReadThumbnail(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeReadThumbnail(
     env: EnvUnowned,
     _class: JClass,
     handle: jlong,
@@ -457,10 +457,10 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nati
     true
 }
 
-/// Everything the connection panel can be told, in the order `RdpBackend` reads
+/// Everything the connection panel can be told, in the order `IronRdpBackend` reads
 /// it back out. Shorter than the RFB one by the two rows RDP has no concept of.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_rdp_RdpNative_nativeInfo<'local>(
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeInfo<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass,
     handle: jlong,

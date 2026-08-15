@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Patrick Gaskin
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package net.pgaskin.remotedesktop.backend.rdp;
+package net.pgaskin.remotedesktop.backend.ironrdp;
 
 import android.graphics.Bitmap;
 
 /**
- * The JNI surface of {@code libremotedesktop_rdp.so} — IronRDP wrapped in
+ * The JNI surface of {@code libremotedesktop_ironrdp.so} — IronRDP wrapped in
  * {@code src/main/rust} and bound in its {@code src/bindings}.
  *
  * <p>Deliberately {@code RfbNative}'s twin: same handle, same listener, same two
@@ -27,16 +27,16 @@ import android.graphics.Bitmap;
  *
  * <h2>The handle</h2>
  * {@code nativeDestroy} frees the session and joins its thread, so nothing may
- * hold a handle across it. {@link RdpBackend} retires the handle under its own
+ * hold a handle across it. {@link IronRdpBackend} retires the handle under its own
  * lock first.
  */
-final class RdpNative {
+final class IronRdpNative {
 
-    private RdpNative() {
+    private IronRdpNative() {
     }
 
     static {
-        System.loadLibrary("remotedesktop_rdp");
+        System.loadLibrary("remotedesktop_ironrdp");
     }
 
     /** Everything the session says. Protocol thread, always. */
