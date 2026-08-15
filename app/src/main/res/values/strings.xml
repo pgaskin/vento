@@ -178,6 +178,7 @@
     <string name="transfer_import_settings_message">This file holds %1$d settings. Anything it
         does not mention is left as it is.</string>
     <string name="transfer_import_replace">Delete the connections already here first</string>
+    <string name="transfer_import_reset">Reset the settings already here first</string>
     <string name="transfer_exported_connections">Exported %1$d connections</string>
     <string name="transfer_exported_settings">Exported %1$d settings</string>
     <string name="transfer_imported_connections">Imported %1$d of %2$d connections</string>

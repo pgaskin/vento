@@ -6,7 +6,10 @@ package net.pgaskin.remotedesktop;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * App-level preferences: the ones that are about this program rather than about
@@ -30,13 +33,31 @@ public final class AppSettings {
     public static final String KEY_RELEASE_KEYS = "releaseKeys";
 
     /**
-     * Every key in this file, and every one of them a switch — which is what an
-     * export walks and what an import checks a file's keys against. A setting
-     * added above and not added here is one that does not travel.
+     * Every key in this file with the answer it gives when nothing is stored,
+     * and every one of them a switch. The getters below read it, an export walks
+     * it and an import checks a file's keys against it — one table, because a
+     * default written in two places is one that will differ in two places. A
+     * setting added above and not added here is one that does not travel.
      */
-    static final List<String> KEYS = List.of(KEY_HUD, KEY_KEEP_AWAKE, KEY_IMMERSIVE,
-            KEY_PRIVATE_IME, KEY_PREVIEWS, KEY_LIST_VIEW, KEY_MODIFIER_RESETS_IME,
-            KEY_CLIPBOARD_OUT, KEY_CLIPBOARD_IN, KEY_REGION_HINTS, KEY_RELEASE_KEYS);
+    static final Map<String, Boolean> DEFAULTS = defaults();
+
+    static final List<String> KEYS = List.copyOf(DEFAULTS.keySet());
+
+    private static Map<String, Boolean> defaults() {
+        final Map<String, Boolean> m = new LinkedHashMap<>();
+        m.put(KEY_HUD, false);
+        m.put(KEY_KEEP_AWAKE, true);
+        m.put(KEY_IMMERSIVE, true);
+        m.put(KEY_PRIVATE_IME, true);
+        m.put(KEY_PREVIEWS, true);
+        m.put(KEY_LIST_VIEW, true);
+        m.put(KEY_MODIFIER_RESETS_IME, true);
+        m.put(KEY_CLIPBOARD_OUT, true);
+        m.put(KEY_CLIPBOARD_IN, true);
+        m.put(KEY_REGION_HINTS, true);
+        m.put(KEY_RELEASE_KEYS, true);
+        return Collections.unmodifiableMap(m);
+    }
 
     private AppSettings() {
     }
@@ -45,16 +66,20 @@ public final class AppSettings {
         return ctx.getApplicationContext().getSharedPreferences(FILE, Context.MODE_PRIVATE);
     }
 
+    private static boolean get(Context ctx, String key) {
+        return prefs(ctx).getBoolean(key, DEFAULTS.get(key));
+    }
+
     public static boolean hud(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_HUD, false);
+        return get(ctx, KEY_HUD);
     }
 
     public static boolean keepAwake(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_KEEP_AWAKE, true);
+        return get(ctx, KEY_KEEP_AWAKE);
     }
 
     public static boolean immersive(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_IMMERSIVE, true);
+        return get(ctx, KEY_IMMERSIVE);
     }
 
     /**
@@ -63,12 +88,12 @@ public final class AppSettings {
      * mark only part of a desktop, so the whole of it is treated as one.
      */
     public static boolean privateIme(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_PRIVATE_IME, true);
+        return get(ctx, KEY_PRIVATE_IME);
     }
 
     /** Whether a session leaves a picture of its last screenful behind. */
     public static boolean previews(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_PREVIEWS, true);
+        return get(ctx, KEY_PREVIEWS);
     }
 
     /**
@@ -84,7 +109,7 @@ public final class AppSettings {
      * been switched to them stays switched.
      */
     public static boolean listView(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_LIST_VIEW, true);
+        return get(ctx, KEY_LIST_VIEW);
     }
 
     public static void setListView(Context ctx, boolean rows) {
@@ -98,7 +123,7 @@ public final class AppSettings {
      * Ctrl while the IME shows symbols otherwise means going back by hand.
      */
     public static boolean modifierResetsIme(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_MODIFIER_RESETS_IME, true);
+        return get(ctx, KEY_MODIFIER_RESETS_IME);
     }
 
     /**
@@ -112,11 +137,11 @@ public final class AppSettings {
      * asking, once, for the text they are looking at.
      */
     public static boolean clipboardOut(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_CLIPBOARD_OUT, true);
+        return get(ctx, KEY_CLIPBOARD_OUT);
     }
 
     public static boolean clipboardIn(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_CLIPBOARD_IN, true);
+        return get(ctx, KEY_CLIPBOARD_IN);
     }
 
     /**
@@ -127,7 +152,7 @@ public final class AppSettings {
      * not be the last time it can be read.
      */
     public static boolean regionHints(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_REGION_HINTS, true);
+        return get(ctx, KEY_REGION_HINTS);
     }
 
     /**
@@ -146,7 +171,7 @@ public final class AppSettings {
      * through a second window would want.
      */
     public static boolean releaseKeys(Context ctx) {
-        return prefs(ctx).getBoolean(KEY_RELEASE_KEYS, true);
+        return get(ctx, KEY_RELEASE_KEYS);
     }
 
     public static void setRegionHints(Context ctx, boolean show) {

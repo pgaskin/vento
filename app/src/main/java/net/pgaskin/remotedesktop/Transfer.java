@@ -9,6 +9,7 @@ import android.util.Log;
 
 import net.pgaskin.remotedesktop.backend.BackendOption;
 import net.pgaskin.remotedesktop.backend.Backends;
+import net.pgaskin.remotedesktop.control.input.Config;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -149,28 +150,37 @@ final class Transfer {
     }
 
     /**
-     * Only what has been set. An absent preference means "whatever this app
-     * says", which is what lets a default that moves in a later version reach
-     * the phone the file lands on; writing every default out would freeze this
-     * build's answers into the file instead.
+     * <b>Every</b> setting, including the ones nobody has ever touched: what
+     * goes in the file is the answer this phone gives, not the subset it has
+     * been told. A snapshot is what makes the file worth having — reset the
+     * settings and import it and the phone is the one the file came off,
+     * whatever either build's defaults happen to be — and it is what the reset
+     * on the way in is for ({@link #applySettings}).
+     *
+     * <p>What that costs is the other reading: a default that moves in a later
+     * version no longer reaches a phone this file lands on, because the file now
+     * has an answer of its own for every key.
      */
     private static int writeSettings(Context ctx, JSONObject root) throws JSONException {
         final JSONObject app = new JSONObject();
         final SharedPreferences ap = AppSettings.prefs(ctx);
-        for (String key : AppSettings.KEYS) {
-            if (ap.contains(key)) {
-                app.put(key, ap.getBoolean(key, false));
-            }
+        for (Map.Entry<String, Boolean> e : AppSettings.DEFAULTS.entrySet()) {
+            app.put(e.getKey(), ap.getBoolean(e.getKey(), e.getValue()));
         }
         root.put("app", app);
 
         final JSONObject input = new JSONObject();
         final SharedPreferences ip = InputSettings.prefs(ctx);
-        for (String key : inputKeys()) {
-            final String v = ip.getString(key, null);
-            if (v != null && !v.isEmpty()) {
-                input.put(key, v);
-            }
+        input.put(InputSettings.KEY_PRESET,
+                ip.getString(InputSettings.KEY_PRESET, InputSettings.PRESET_IMPROVED));
+        // The preset with this phone's overrides on top, which is what a tunable
+        // nobody has touched answers. A Config cannot be built without a
+        // density and no tunable is derived from one, so nothing written here is
+        // a fact about this screen rather than a choice about the feel.
+        final Config config =
+                InputSettings.config(ctx, ctx.getResources().getDisplayMetrics().density);
+        for (InputSettings.Tunable t : InputSettings.tunables()) {
+            input.put(t.key(), t.read().apply(config));
         }
         root.put("input", input);
 
@@ -183,9 +193,7 @@ final class Transfer {
                     continue;
                 }
                 final String v = bp.getString(o.key(), null);
-                if (v != null && !v.isEmpty()) {
-                    one.put(o.key(), v);
-                }
+                one.put(o.key(), v == null || v.isEmpty() ? o.defaultValue() : v);
             }
             if (one.length() > 0) {
                 backends.put(id, one);
@@ -226,10 +234,32 @@ final class Transfer {
         };
     }
 
-    static Result apply(Context ctx, Document doc, boolean deleteExisting) {
+    /**
+     * @param replaceExisting whether what is here goes first — the connections
+     *                        deleted, or the settings put back to their
+     *                        defaults. Without it either kind is a merge.
+     */
+    static Result apply(Context ctx, Document doc, boolean replaceExisting) {
         return KIND_CONNECTIONS.equals(doc.kind())
-                ? applyConnections(ctx, doc.root(), deleteExisting)
-                : applySettings(ctx, doc.root());
+                ? applyConnections(ctx, doc.root(), replaceExisting)
+                : applySettings(ctx, doc.root(), replaceExisting);
+    }
+
+    /**
+     * Every settings store this app has, emptied, so each answers with its own
+     * defaults again: the app's, the input stack's, and one per backend.
+     *
+     * <p>Here rather than beside the button that offers it, because it is the
+     * same enumeration {@link #writeSettings} walks — a settings file added
+     * later and reset in only one of the two places is what this prevents.
+     * Connections are not settings and are not touched.
+     */
+    static void resetSettings(Context ctx) {
+        AppSettings.prefs(ctx).edit().clear().apply();
+        InputSettings.prefs(ctx).edit().clear().apply();
+        for (String id : Backends.ids()) {
+            Connections.backendPrefs(ctx, id).edit().clear().apply();
+        }
     }
 
     private static Result applyConnections(Context ctx, JSONObject root, boolean deleteExisting) {
@@ -351,11 +381,20 @@ final class Transfer {
     }
 
     /**
-     * A merge, not a replacement: a key the file does not mention keeps whatever
-     * this phone answers for it. Reset all settings is beside the import for the
-     * other reading.
+     * A merge unless it is asked not to be: a key the file does not mention
+     * keeps whatever this phone answers for it, which is what an import from a
+     * file written by an older build has to mean.
+     *
+     * <p>{@code reset} is the other reading, and the settings' half of "delete
+     * the connections already here first": every setting back to its default
+     * before anything is read, so what the phone ends up with is the file and
+     * nothing that happened to be here before it. Since {@link #writeSettings}
+     * writes every setting, that pair is a restore.
      */
-    private static Result applySettings(Context ctx, JSONObject root) {
+    private static Result applySettings(Context ctx, JSONObject root, boolean reset) {
+        if (reset) {
+            resetSettings(ctx);
+        }
         int applied = 0;
         int total = 0;
 

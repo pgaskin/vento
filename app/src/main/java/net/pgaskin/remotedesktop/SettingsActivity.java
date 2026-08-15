@@ -582,7 +582,8 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
 
         /**
          * What the file turned out to hold, said before anything is applied —
-         * and, for the connections, the one destructive way to apply it.
+         * and the one destructive way to apply it, which is the same offer for
+         * either kind: what is here goes first, so what lands is the file.
          */
         private void confirmImport(Transfer.Document doc) {
             final boolean connections = Transfer.KIND_CONNECTIONS.equals(doc.kind());
@@ -593,8 +594,9 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                             ? R.string.transfer_import_connections_message
                             : R.string.transfer_import_settings_message,
                     doc.count()));
-            tick.setText(R.string.transfer_import_replace);
-            tick.setVisibility(connections ? View.VISIBLE : View.GONE);
+            tick.setText(connections
+                    ? R.string.transfer_import_replace
+                    : R.string.transfer_import_reset);
             new MaterialAlertDialogBuilder(requireContext(),
                     R.style.ThemeOverlay_RemoteDesktop_Dialog)
                     .setTitle(connections
@@ -603,15 +605,15 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                     .setView(view)
                     .setNegativeButton(android.R.string.cancel, null)
                     .setPositiveButton(R.string.transfer_import_apply,
-                            (d, w) -> apply(doc, connections && tick.isChecked()))
+                            (d, w) -> apply(doc, tick.isChecked()))
                     .show();
         }
 
-        private void apply(Transfer.Document doc, boolean deleteExisting) {
+        private void apply(Transfer.Document doc, boolean replaceExisting) {
             final Context ctx = requireContext().getApplicationContext();
             final boolean connections = Transfer.KIND_CONNECTIONS.equals(doc.kind());
             io(() -> {
-                final Transfer.Result r = Transfer.apply(ctx, doc, deleteExisting);
+                final Transfer.Result r = Transfer.apply(ctx, doc, replaceExisting);
                 return () -> {
                     said(connections
                                     ? R.string.transfer_imported_connections
