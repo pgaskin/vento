@@ -1,0 +1,9 @@
+build
+target
+local.properties
+*.iml
+.gradle
+.cxx
+.idea
+.vscode
+.claude
