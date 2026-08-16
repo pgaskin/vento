@@ -79,9 +79,7 @@ im=$(command -v magick || command -v convert) || die "imagemagick is required"
 cp "$icon" build/icon.png
 echo "build/icon.png"
 
-# 1 connections, 2 session info panel, 3 backend picker, 4 settings, 5 session
-# with the keyboard, 6 playground
-for n in 1 2 3 4 5 6; do
+for n in 1 4 3 5 2 9; do
     test -f "$shots/$n.png" || die "missing $shots/$n.png"
     "$im" "$shots/$n.png" -resize 540x1200 -quality 88 -sampling-factor 1x1 -strip "build/shot-$n.jpg"
     echo "build/shot-$n.jpg"
