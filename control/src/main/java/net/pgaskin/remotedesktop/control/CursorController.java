@@ -182,8 +182,24 @@ public final class CursorController implements MouseSink {
      * against a desktop edge the origin is pinned by the clamp and the cursor is
      * <em>not</em> at the centre; there the desktop has to move, and dragging the
      * cursor to the middle would throw the pointer off what it was aimed at.
+     *
+     * <p>All of which is about a cursor this end owns. Where the far end does,
+     * {@link #x} and {@link #y} stand still and mean nothing, so there is
+     * nothing here to keep in the middle of anything — and the viewport is
+     * following its own focus, which a pinch has been moving ({@code
+     * Viewport.panBy}). Re-centring that on the cursor would throw the pan away,
+     * which is the whole of how a desktop is navigated in that mode.
      */
     public void setInsets(int left, int top, int right, int bottom) {
+        if (relative) {
+            viewport.setInsets(left, top, right, bottom);
+            // The scale correction below, and nothing else: a window that grew
+            // can leave the picture smaller than the space for it either way.
+            viewport.centreOn(viewport.focusX(), viewport.focusY(),
+                    Math.max(viewport.getScale(), viewport.minScale()));
+            changed();
+            return;
+        }
         final boolean centredX = Math.abs(screenX() - viewport.centreScreenX()) <= 0.5f;
         final boolean centredY = Math.abs(screenY() - viewport.centreScreenY()) <= 0.5f;
         viewport.setInsets(left, top, right, bottom);

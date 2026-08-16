@@ -352,6 +352,26 @@ public class CursorControllerTest {
         assertEquals("and the desktop does not slide under it", ox, viewport.originX(), 1e-3);
     }
 
+    /**
+     * The pan survives an overlay. Relative mode is the only mode a pinch pans
+     * in — there is no centre-follow there to navigate a zoomed desktop with —
+     * and the position an inset would otherwise re-centre on is the one this
+     * mode freezes, so it would put the picture back wherever the cursor was
+     * standing when the far end took it over.
+     */
+    @Test
+    public void anInsetKeepsThePanWhereTheFarEndOwnsTheCursor() {
+        viewport.centreOn(FB_W / 2f, FB_H / 2f, 2.0f);
+        cursor.setRelative(true);
+        viewport.panBy(-200, -150);
+        final float fx = viewport.focusX(), fy = viewport.focusY();
+
+        cursor.setInsets(0, 0, 0, 200);
+
+        assertEquals("looking where the pinch left it", fx, viewport.focusX(), 1e-3);
+        assertEquals(fy, viewport.focusY(), 1e-3);
+    }
+
     /** A zoomed screen means fewer desktop pixels, for a delta as for a position. */
     @Test
     public void aRelativeDeltaIsStillInDesktopPixels() {
