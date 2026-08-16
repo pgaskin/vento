@@ -3,13 +3,16 @@
 
 package net.pgaskin.remotedesktop.backend.realvnc;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 
 import net.pgaskin.remotedesktop.backend.Backend;
 import net.pgaskin.remotedesktop.backend.BackendOption;
 import net.pgaskin.remotedesktop.backend.BackendOption.Choice;
 import net.pgaskin.remotedesktop.backend.BackendProvider;
 import net.pgaskin.remotedesktop.backend.BackendOption.Scope;
+import net.pgaskin.remotedesktop.plugin.Plugin;
 
 import java.util.List;
 import java.util.Map;
@@ -212,6 +215,21 @@ public final class RealVncProvider implements BackendProvider {
     public Backend create(Context context, String address, String userName, String password,
                           Map<String, String> options) {
         return new RealVncBackend(context, address, userName, password, options);
+    }
+
+    /**
+     * The one backend that is not ready the moment it is installed: its library
+     * is RealVNC's, is in no build, and arrives on the device.
+     */
+    @Override
+    public boolean isSetup(Context context) {
+        return RealVncLibrary.isSetup(context);
+    }
+
+    @Override
+    public void setup(Activity host) {
+        host.startActivity(new Intent(Plugin.ACTION_SETUP)
+                .setPackage(RealVncLibrary.pluginPackage()));
     }
 
     /** Every option at its default, as the map {@code createSession} takes. */

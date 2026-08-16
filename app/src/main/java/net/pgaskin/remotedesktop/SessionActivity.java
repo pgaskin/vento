@@ -104,7 +104,51 @@ public final class SessionActivity extends Activity
             return;
         }
 
-        session = openOrAttach(address);
+        // A backend waiting for something it has to be given offers that
+        // instead of connecting, which is where its own code would otherwise
+        // throw on a screen that is already up. Only where there is nothing
+        // running: a session that came up before a plugin lost its copy is
+        // still a session, and this screen attaches to it.
+        final Session running = Sessions.byKey(sessionKey(address));
+        if (running != null && !running.isClosed()) {
+            start(address, backendId);
+            return;
+        }
+        final Intent asked = getIntent();
+        Backends.isSetup(this, backendId, ready -> {
+            if (getIntent() != asked) {
+                recreate(); // the notification landed here for another connection
+            } else if (ready) {
+                start(address, backendId);
+            } else {
+                setUpFirst(backendId);
+            }
+        });
+    }
+
+    /**
+     * The window this screen is when there is a session to have: everything
+     * from creating the backend to attaching the view.
+     *
+     * <p>Its own method because it can happen after {@code onCreate} has
+     * returned — the question of whether the backend is ready is not one for
+     * the main thread — and so the two lines {@link #onStart} would have run
+     * are here as well.
+     */
+    private void start(String address, String backendId) {
+        try {
+            session = openOrAttach(address);
+        } catch (Throwable t) {
+            // Creating a backend is running somebody else's constructor, and a
+            // window that dies here takes the app with it. The screen says what
+            // happened; the plugin it came from grows a card.
+            Plugins.failed(this, backendId, t);
+            final TextView tv = new TextView(this);
+            tv.setText(t.getMessage() == null ? String.valueOf(t) : t.getMessage());
+            tv.setPadding(48, 96, 48, 48);
+            setContentView(tv);
+            return;
+        }
         // No TaskDescription naming the machine: a window per session makes that
         // the obvious thing to want, and the launcher does not offer it — the
         // recents card is headed with the app's name whatever a label says, and
@@ -147,6 +191,52 @@ public final class SessionActivity extends Activity
         getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::disconnectRequested);
         askAboutNotifications();
+        if (started) {
+            session.backend().focus(true);
+            session.onScreen(true);
+        }
+    }
+
+    /** The backend this window is waiting to have set up, while it is waiting. */
+    private String awaitingSetup;
+
+    /**
+     * The whole of the window for a connection that cannot be made yet: what it
+     * is waiting for, and the button that asks the plugin for it.
+     *
+     * <p>Nothing is waited on. The setup screen is another process's and can be
+     * killed behind a dialog, so what reports success is this window resuming
+     * and asking again.
+     */
+    private void setUpFirst(String backendId) {
+        awaitingSetup = backendId;
+        final LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(48, 96, 48, 48);
+        final TextView tv = new TextView(this);
+        tv.setText(getString(R.string.session_backend_setup, Backends.name(backendId)));
+        box.addView(tv, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        box.addView(quietButton(R.string.plugin_set_up, () -> Plugins.setup(this, backendId)),
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+        setContentView(box);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (awaitingSetup != null) {
+            // Everything this window is was decided in onCreate, against an
+            // answer that may have changed while the plugin's own screen was up.
+            Backends.isSetup(this, awaitingSetup, ready -> {
+                if (ready) {
+                    recreate();
+                }
+            });
+        }
     }
 
     // ---- what the session has to say for itself ----------------------------
@@ -376,9 +466,13 @@ public final class SessionActivity extends Activity
      * focus without hiding anything, and freezing the desktop behind an open
      * "connection information" box would be a bug rather than a saving.
      */
+    /** Whether this window is on screen, for a session that arrives after it is. */
+    private boolean started;
+
     @Override
     protected void onStart() {
         super.onStart();
+        started = true;
         // Here rather than in onCreate, so that turning the row off reaches the
         // session it was turned off during — which is what somebody switching
         // it means, and what the immersive row below already does.
@@ -405,6 +499,7 @@ public final class SessionActivity extends Activity
     @Override
     protected void onStop() {
         super.onStop();
+        started = false;
         if (view != null) {
             view.suspendInput();
         }

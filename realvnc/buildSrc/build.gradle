@@ -1,9 +1,0 @@
-// SPDX-License-Identifier: CC0-1.0
-
-plugins {
-    id 'groovy'
-}
-
-// Nothing beyond Gradle's own API. Unused while this module is a subproject of
-// the app's build, which compiles these sources from its own buildSrc; this is
-// what makes the directory work as a build of its own.

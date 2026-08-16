@@ -25,6 +25,10 @@
          not want a card behind it, and 2 dp from one reads as a mistake. -->
     <dimen name="group_gap_field">8dp</dimen>
 
+    <!-- Around a card on the home screen, which with the list's own padding
+         either side comes to the same 16 dp a group of rows is inset by. -->
+    <dimen name="card_margin">8dp</dimen>
+
     <!--
         A screen's header, which is a heading over the groups under it and is
         inset like one: 24 dp, where a container's own edge is 16. Flush with

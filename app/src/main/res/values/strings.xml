@@ -23,6 +23,17 @@
     <string name="home_delete_title">Delete %1$s?</string>
     <string name="home_delete_message">The connection, saved credentials, and preview will be permanently deleted.</string>
 
+    <!-- plugins: cards on the home screen, and one dialog wherever a backend of theirs is used -->
+    <string name="plugin_needs_setup">The %1$s backend requires additional setup.</string>
+    <!-- Both reasons a plugin can be refused before it is loaded, since the line under it says which. -->
+    <string name="plugin_incompatible">This plugin does not work with this build of the app.</string>
+    <string name="plugin_failed">This plugin did not load.</string>
+    <string name="plugin_restart_title">Plugins changed</string>
+    <string name="plugin_restart">Restart the app to use the plugins installed on this phone.</string>
+    <string name="plugin_restart_action">Restart</string>
+    <string name="plugin_set_up">Set up</string>
+    <string name="plugin_uninstall">Uninstall</string>
+
     <!-- editor -->
     <string name="editor_new">New connection</string>
     <string name="editor_edit">Edit connection</string>
@@ -52,6 +63,10 @@
     <string name="settings_group_sessions">Sessions</string>
     <string name="settings_group_backends">Backends</string>
     <string name="settings_group_app">App</string>
+    <!-- Shown on a backend that came from an add-on, with the package as its summary. -->
+    <string name="settings_plugin">Plugin</string>
+    <!-- On the row of a backend whose plugin is waiting for something, in place of its settings. -->
+    <string name="settings_backend_setup">Not set up</string>
     <string name="settings_general">General</string>
     <string name="settings_general_summary">Keyboard, clipboard, and controls.</string>
     <string name="settings_input">Touch and cursor</string>
@@ -136,6 +151,7 @@
     <string name="session_no_backend">This build is incomplete and does not include any backends.</string>
     <string name="session_no_such_backend">This build does not contain the %1$s backend. Edit the connection and choose a different one.</string>
     <string name="session_no_address">No address. Pass --es address host[:port].</string>
+    <string name="session_backend_setup">%1$s has to be set up before it can connect.</string>
     <string name="session_connecting">Connecting…</string>
     <string name="session_disconnected">Disconnected</string>
     <string name="session_timed_out">Closed after %1$s timeout</string>

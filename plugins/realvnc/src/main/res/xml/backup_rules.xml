@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    `allowBackup="false"` in the manifest is the other half of this and stays:
+    it stops a cloud backup, and it stops nothing else. A device-to-device
+    transfer is a separate mechanism with a list of its own, and without one it
+    carries this add-on's whole data directory — the library included — to the
+    next phone, which is the one thing no artefact here may do.
+
+    The whole directory rather than the store's own name: an acquired library is
+    the only thing in here worth keeping, and it is the one thing that must not
+    travel.
+-->
+<data-extraction-rules>
+    <device-transfer>
+        <exclude domain="file" path="." />
+    </device-transfer>
+</data-extraction-rules>

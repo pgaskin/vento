@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.os.SystemClock;
+import android.util.Log;
 
 import net.pgaskin.remotedesktop.backend.Backend;
 import net.pgaskin.remotedesktop.backend.Prompt;
@@ -73,7 +74,18 @@ public final class Session implements Backend.Listener, Prompt.Handler {
         backend.setPromptHandler(s);
         Sessions.add(s);
         SessionService.start(s.context);
-        backend.connect();
+        // A backend may be somebody else's code, loaded out of an add-on, and a
+        // throw out of `connect` must end this session rather than the process.
+        // The listener is already set, so the session says what happened in the
+        // window that is already open.
+        try {
+            backend.connect();
+        } catch (Throwable t) {
+            Log.e("Session", "connecting with " + backend.getClass().getName(), t);
+            final String said = t.getMessage();
+            s.state(Backend.State.CLOSED,
+                    said == null || said.isEmpty() ? t.getClass().getSimpleName() : said);
+        }
         return s;
     }
 
@@ -222,7 +234,12 @@ public final class Session implements Backend.Listener, Prompt.Handler {
         // what is true now. The remembered detail goes with the remembered
         // state and is dropped when they disagree — "Connecting to …" under
         // CONNECTED is worse than nothing.
-        final Backend.State live = backend.state();
+        // A session that has already ended is not re-asked, which is the other
+        // half of the same rule: a backend that threw on the way up never
+        // reached a state of its own, so asking it turns the reason this
+        // session ended back into "Connecting…" on a window that will never
+        // connect. CLOSED is terminal here whatever the backend says.
+        final Backend.State live = state == Backend.State.CLOSED ? state : backend.state();
         if (live != state) {
             state = live;
             detail = null;

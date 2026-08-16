@@ -408,6 +408,15 @@ final class ConnectionEditorPanel {
                 }
                 if (o.key().equals(BACKEND)) {
                     rebuild();
+                    // Choosing one that is waiting for something is one of the
+                    // ways to ask for it. The choice is kept either way: a
+                    // connection can be saved now and set up later, and the
+                    // setup screen has no answer to give back.
+                    Backends.isSetup(activity, value, ready -> {
+                        if (!ready) {
+                            Plugins.setup(activity, value);
+                        }
+                    });
                 }
             }
         };

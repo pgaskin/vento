@@ -1,0 +1,37 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+plugins {
+    id 'com.android.library'
+}
+
+// The add-on side of the arrangement `:backends` holds the app side of: where a
+// verified file lives, how it crosses from one uid to the other, and the shape
+// of the screen that acquires it. One consumer today, and it is written as a
+// contract anyway for the reason `:backends` is — a contract that lives inside
+// its only implementation is not one.
+android {
+    namespace = 'net.pgaskin.remotedesktop.plugin'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 34
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+dependencies {
+    // For the discovery action and, in the app's process, which add-on a class
+    // was loaded from. Nothing here names a protocol.
+    api project(':backends')
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

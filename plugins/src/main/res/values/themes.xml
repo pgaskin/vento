@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    The phone's own look, and no bar: an add-on has one screen, which draws its
+    own title so that it can be laid out with the rest of the text rather than
+    above it. DayNight has no NoActionBar variant of its own, hence the two
+    items.
+-->
+<resources>
+    <style name="Theme.Plugin" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

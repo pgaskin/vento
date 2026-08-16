@@ -7,6 +7,8 @@ import android.app.Application;
 
 import com.google.android.material.color.DynamicColors;
 
+import net.pgaskin.remotedesktop.backend.Backends;
+
 /**
  * Material You, in one line: every activity gets the system palette.
  *
@@ -22,5 +24,9 @@ public final class RemoteDesktopApp extends Application {
     public void onCreate() {
         super.onCreate();
         DynamicColors.applyToActivitiesIfAvailable(this);
+
+        // Before anything can ask what this app can connect with, and here
+        // rather than in an activity because the service is an entry point too.
+        Backends.discover(this);
     }
 }

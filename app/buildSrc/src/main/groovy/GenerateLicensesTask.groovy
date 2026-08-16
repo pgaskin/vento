@@ -27,7 +27,7 @@ import java.util.regex.Pattern
  * The app's licence page, as an asset: what this build is made of, and what that
  * means for handing it on.
  *
- * <p>The first-party modules and any notice come from the caller; the Rust
+ * <p>The first-party modules come from the caller; the Rust
  * crates are resolved from {@code cargo metadata}, because a hand-written list
  * is wrong the first time a dependency moves. Per <em>target</em>, since which
  * crates are in the graph is platform-dependent, and a crate reached by more
@@ -73,10 +73,6 @@ abstract class GenerateLicensesTask extends DefaultTask {
     @Input
     abstract ListProperty<Map<String, String>> getOtherComponents()
 
-    /** What this build may and may not be done with. Empty for most builds. */
-    @Input
-    abstract Property<String> getNotice()
-
     /**
      * The Cargo workspace whose dependencies are listed. Every member of it is
      * a root here, because what is packaged is one shared library per protocol
@@ -120,8 +116,8 @@ abstract class GenerateLicensesTask extends DefaultTask {
             }
         }
 
-        asset.setText(renderHtml(firstParty.get(), otherComponents.get(), crates.values().toList(),
-                notice.getOrElse('')), 'UTF-8')
+        asset.setText(renderHtml(firstParty.get(), otherComponents.get(),
+                crates.values().toList()), 'UTF-8')
         logger.lifecycle("described ${firstParty.get().size()} modules, " +
                 "${otherComponents.get().size()} other components and " +
                 "${crates.size()} rust crates in ${ASSET}")
@@ -226,11 +222,8 @@ abstract class GenerateLicensesTask extends DefaultTask {
     }
 
     static String renderHtml(List<Map<String, String>> modules, List<Map<String, String>> others,
-                             List<Map> crates, String notice) {
+                             List<Map> crates) {
         final body = new StringBuilder()
-        if (notice) {
-            body << "<div class=\"notice\">${htmlEscape(notice)}</div>\n"
-        }
         body << "<h2>This app</h2>\n"
         modules.each { module ->
             body << "<details>\n<summary>${htmlEscape(module.name)}</summary>\n"
@@ -264,8 +257,6 @@ body { font-family: sans-serif; margin: 0; padding: 28px 16px 40px; line-height:
        background: #ffffff; color: #202124; }
 h1 { font-size: 1.3rem; margin: 0 0 4px; }
 h2 { font-size: 1rem; margin: 26px 0 0; }
-.notice { margin: 0 0 8px; padding: 12px; border-radius: 8px; white-space: pre-wrap;
-          background: rgba(200,80,60,.14); border: 1px solid rgba(200,80,60,.5); }
 .intro { opacity: .7; margin: 0 0 16px; }
 details { margin: 10px 0; }
 summary { padding: 16px; font-size: 1.05rem; font-weight: 600; cursor: pointer;

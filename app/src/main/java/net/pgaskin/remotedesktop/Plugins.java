@@ -1,0 +1,208 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+package net.pgaskin.remotedesktop;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
+
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+
+import net.pgaskin.remotedesktop.backend.Backends;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
+
+/**
+ * The plugins as the app has to deal with them: what each is waiting for or
+ * wrong about, and the calls into somebody else's code that a person asks for.
+ *
+ * <p>Which plugins there are is {@link Backends}'s answer; what to say about one
+ * is the app's, and it is here rather than on the home screen because four
+ * screens make the same two calls and a failure in any of them has to end up in
+ * the same place — a card on the home screen, which is where the thing itself
+ * can be uninstalled.
+ */
+final class Plugins {
+
+    /** What a card says, and so what it offers to do about it. */
+    enum Kind {
+        /** Installed and loaded, and waiting for something it has to be given. */
+        SETUP,
+        /** Not this build's companion, or it declares no backend. */
+        INCOMPATIBLE,
+        /** It threw, at discovery or the first time a screen used it. */
+        FAILED,
+        /** What is installed is not what is loaded, which only ending the process fixes. */
+        RESTART,
+    }
+
+    /**
+     * One card. The package is null for {@link Kind#RESTART}, which is about the
+     * set rather than about any one of them; the backend is the one waiting to
+     * be set up, for the button that asks; and the detail is whatever the
+     * plugin's own failure said.
+     */
+    record Card(Kind kind, String packageName, String backendId, String title, String message,
+                String detail) {
+    }
+
+    private Plugins() {
+    }
+
+    /**
+     * What the home screen puts above the connections, worked out fresh each
+     * time it resumes: every one of these can change while the app is in the
+     * background, and uninstalling from a card is how one of them usually does.
+     *
+     * <p>The answer arrives rather than being returned, because asking a
+     * plugin whether it is set up is not a question for the main thread
+     * ({@link Backends#isSetup}). It arrives on that thread, and at once where
+     * every answer is already known.
+     */
+    static void cards(Context context, Consumer<List<Card>> then) {
+        final List<String> ids = new ArrayList<>();
+        for (String id : Backends.ids()) {
+            if (Backends.packageOf(id) != null) {
+                ids.add(id);
+            }
+        }
+        if (ids.isEmpty()) {
+            then.accept(build(context, Map.of()));
+            return;
+        }
+        // Counted on the main thread, which every answer comes back on, so
+        // neither the map nor the counter needs anything of its own.
+        final Map<String, List<String>> waiting = new LinkedHashMap<>();
+        final int[] left = {ids.size()};
+        for (String id : ids) {
+            Backends.isSetup(context, id, ok -> {
+                if (!ok) {
+                    waiting.computeIfAbsent(Backends.packageOf(id), k -> new ArrayList<>()).add(id);
+                }
+                if (--left[0] == 0) {
+                    then.accept(build(context, waiting));
+                }
+            });
+        }
+    }
+
+    /** The cards themselves, given which backends said they are not set up. */
+    private static List<Card> build(Context context, Map<String, List<String>> waiting) {
+        final PackageManager pm = context.getPackageManager();
+        final Set<String> installed = Backends.installedPlugins(context);
+        final List<Card> cards = new ArrayList<>();
+        final Set<String> known = new LinkedHashSet<>();
+        boolean stale = false;
+        for (Backends.Plugin p : Backends.plugins()) {
+            known.add(p.packageName());
+            if (!installed.contains(p.packageName())) {
+                // Gone since the app started. Only one that was loaded leaves
+                // anything behind: its dex and its backends are in this process
+                // until the process ends.
+                stale |= p.state() == Backends.PluginState.LOADED;
+                continue;
+            }
+            final String label = label(pm, p.packageName());
+            switch (p.state()) {
+                case LOADED -> {
+                    final List<String> ids = waiting.get(p.packageName());
+                    if (ids != null) {
+                        final List<String> names = ids.stream().map(Backends::name).toList();
+                        cards.add(new Card(Kind.SETUP, p.packageName(), ids.get(0), label,
+                                context.getString(R.string.plugin_needs_setup,
+                                        String.join(", ", names)), null));
+                    }
+                }
+                case INCOMPATIBLE -> cards.add(new Card(Kind.INCOMPATIBLE, p.packageName(), null,
+                        label, context.getString(R.string.plugin_incompatible), p.detail()));
+                case FAILED -> cards.add(new Card(Kind.FAILED, p.packageName(), null,
+                        label, context.getString(R.string.plugin_failed), p.detail()));
+            }
+        }
+        // One installed while the app was running, which is the ordinary first
+        // run rather than a fault: nothing of it can be loaded until this
+        // process ends, and there is nothing else to offer.
+        for (String pkg : installed) {
+            stale |= !known.contains(pkg);
+        }
+        if (stale) {
+            cards.add(new Card(Kind.RESTART, null, null,
+                    context.getString(R.string.plugin_restart_title),
+                    context.getString(R.string.plugin_restart), null));
+        }
+        return cards;
+    }
+
+    /**
+     * Ask a plugin for whatever it is waiting for, and return. There is no
+     * callback: what this starts is a screen in another process, which can be
+     * killed behind a dialog, so the only answer that survives is the caller
+     * asking {@link Backends#isSetup} again when it resumes.
+     */
+    static void setup(Activity host, String id) {
+        try {
+            Backends.setup(host, id);
+        } catch (Throwable t) {
+            failed(host, id, t);
+        }
+    }
+
+    /**
+     * End this process and come back to an empty home screen.
+     *
+     * <p>The loaded set is fixed for the life of a process — dex and a shared
+     * library that are open cannot be swapped underneath a live session — so
+     * this is the only way to pick up a plugin that has arrived since. The
+     * sessions are told rather than dropped: a far end that is disconnected
+     * knows, where one whose socket vanishes waits for a timeout.
+     */
+    static void restart(Activity host) {
+        for (Session s : Sessions.all()) {
+            s.disconnect();
+        }
+        host.startActivity(new Intent(host, HomeActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        host.finish();
+        Runtime.getRuntime().exit(0);
+    }
+
+    /**
+     * Somebody else's code threw where this screen called it: say so once, and
+     * record it so the home screen grows a card with an uninstall on it. The
+     * message is the plugin's own where it has one, since "not the build this
+     * was written for" reaches a person through exactly this path.
+     */
+    static void failed(Activity host, String id, Throwable t) {
+        Backends.failed(id, t);
+        final String said = t.getMessage();
+        new MaterialAlertDialogBuilder(host, R.style.ThemeOverlay_RemoteDesktop_Dialog)
+                .setTitle(Backends.name(id))
+                .setMessage(said == null || said.isEmpty()
+                        ? host.getString(R.string.plugin_failed) : said)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+    }
+
+    /** The system's own confirmation, which is why this needs no permission. */
+    static void uninstall(Activity host, String packageName) {
+        host.startActivity(new Intent(Intent.ACTION_DELETE,
+                Uri.fromParts("package", packageName, null)));
+    }
+
+    private static String label(PackageManager pm, String pkg) {
+        try {
+            return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+        } catch (PackageManager.NameNotFoundException e) {
+            return pkg; // uninstalled between two calls
+        }
+    }
+}

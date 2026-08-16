@@ -1,0 +1,80 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+plugins {
+    id 'com.android.application'
+}
+
+// The one add-on: RealVNC's backend, the JNI surface under it, and the screen
+// that acquires their library on the phone. Nothing of theirs is in this APK
+// either — what makes it a separate artefact is that everything which *knows*
+// about them is in it, so the app names no protocol and carries no downloader
+// for somebody else's blob.
+android {
+    namespace = 'net.pgaskin.remotedesktop.realvnc'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "net.pgaskin.remotedesktop.realvnc"
+        minSdk 34
+        targetSdk 36
+        // Checked for equality against the app's before this APK's dex is
+        // loaded: the seam between the two is a set of Java interfaces that no
+        // release has promised to keep stable, so they ship together.
+        versionCode 1
+        versionName "1"
+
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            vcsInfo.include = false
+        }
+    }
+
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    packaging {
+        jniLibs {
+            // The app loads this APK's dex with `nativeLibraryDir` as its
+            // library path, and that directory is only populated when the
+            // libraries are unpacked at install time.
+            useLegacyPackaging = true
+        }
+    }
+}
+
+dependencies {
+    // The seam, which the app also has: loaded parent-first, so both sides mean
+    // the same `Backend`.
+    implementation project(':backends')
+
+    // The add-on side of the arrangement: the setup screen's shape, the
+    // provider, and the verified store behind both.
+    implementation project(':plugins')
+
+    // What this add-on exists to carry.
+    implementation project(':backends:realvnc')
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

@@ -6,14 +6,14 @@ plugins {
 }
 
 // `Backend` implemented on somebody else's viewer core. A protocol module like
-// the other two: `:realvnc-jni` holds the declarations and, inside that AAR,
-// their `libvncviewer.so`, and what is here is ours — the session's lifecycle,
-// the prompts, the options, and one small library that reads a counter their
-// exported functions do not offer.
+// the other two: `:realvnc-jni` holds the declarations, and what is here is
+// ours — the session's lifecycle, the prompts, the options, and one small
+// library that reads a counter their exported functions do not offer.
 //
-// The one module the flavours disagree about, and the disagreement is a
-// dependency line: only `nonfree` has it, so the compiler says `free` has no
-// proprietary code in it rather than a convention saying so.
+// Nothing of RealVNC's is in this or in anything built from it. It is the one
+// backend that ships in an add-on rather than in the app, because everything
+// which knows where their library comes from has to live somewhere the app is
+// not.
 android {
     namespace = 'net.pgaskin.remotedesktop.backend.realvnc'
     compileSdk 36
@@ -54,10 +54,12 @@ dependencies {
     // The seam, and the only thing of the app's this module may name.
     api project(':backends')
 
-    // Their JNI surface, and the libraries it binds to. `api` because a build
-    // that has this backend has their core in it, which is the fact the licence
-    // page is generated from.
+    // Their JNI surface, and the pin on the build it binds to.
     api project(':realvnc-jni')
+
+    // The add-on this ships inside, for the one thing it needs of it: the
+    // library, which crosses from the add-on's uid to the app's.
+    implementation project(':plugins')
 }
 
 java {

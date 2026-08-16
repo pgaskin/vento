@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<resources>
+    <string name="app_name">Vento RealVNC backend</string>
+    <string name="setup_title">RealVNC</string>
+    <string name="setup_explanation">This backend requires a proprietary library from the RealVNC Viewer %1$s APK. You can select it from a local file, or it can be automatically downloaded and verified.</string>
+</resources>

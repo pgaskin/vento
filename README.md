@@ -14,7 +14,7 @@ It has the best touchpad-style controls of any remote desktop app I am currently
 - Workarounds for various Android IME bugs.
 - Hardware-accelerated H.264 where supported (FreeRDP, TigerVNC).
 - Multiple client backends for VNC (TigerVNC, LibVNC, Rust) and RDP (IronRDP, FreeRDP).
-- RealVNC backend (if compiled from source).
+- Optional RealVNC backend (separate APK, fetches the library at runtime).
 
 ### Vibe-coding
 
@@ -56,11 +56,12 @@ git submodule update --init
 ./gradlew :backends:fetchCryptoSources
 
 # build apk
-./gradlew :app:assembleFreeDebug
+./gradlew :app:assembleDebug
 
-# build apk (including realvnc backend)
-./gradlew :realvnc-jni:downloadVncApk # or manually download it to realvnc/apk/
-./gradlew :app:assembleNonfreeDebug
+# build the non-free realvnc backend add-on
+# note: it must be signed with the same key
+# note: it must be the same version as the app (the backend API isn't stable)
+./gradlew :plugins:realvnc:assembleDebug
 ```
 
 When updating the third_party dependencies, you'll need to update the unpatched gitlink, regenerate the patches and generated code, and commit the result.

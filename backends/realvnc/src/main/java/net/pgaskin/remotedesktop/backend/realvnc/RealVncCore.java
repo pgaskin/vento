@@ -13,6 +13,7 @@ import com.realvnc.vncviewer.jni.Bindings;
 import com.realvnc.vncviewer.jni.ConfigurationBindings;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
 
@@ -52,7 +53,14 @@ public final class RealVncCore {
         }
         final Context app = context.getApplicationContext();
 
-        System.loadLibrary("vncviewer");
+        // Their library, out of the add-on, by absolute path. This call is what
+        // sets the classloader the core's own lookups are answered from, so it
+        // has to be made from a class of the add-on's — which this is.
+        try {
+            RealVncLibrary.load(app);
+        } catch (IOException e) {
+            throw new IllegalStateException(e.getMessage(), e);
+        }
         // No client certificates: nothing here enrols one, so the core's
         // identity authentication has an empty list to choose from and falls
         // back to asking for a password.
@@ -61,44 +69,58 @@ public final class RealVncCore {
         final HandlerThread thread = new HandlerThread("VncCore");
         thread.start();
         handler = new Handler(thread.getLooper());
-        initialised = true;
 
         // Blocking here rather than posting-and-forgetting: everything else
         // this class exists for is illegal until initApp has returned, and the
         // caller is on the main thread at startup where a few ms is invisible.
-        runBlocking(() -> {
-            final File logDir = new File(app.getFilesDir(), "vnclog");
-            //noinspection ResultOfMethodCallIgnored
-            logDir.mkdirs();
+        try {
+            runBlocking(() -> {
+                final File logDir = new File(app.getFilesDir(), "vnclog");
+                //noinspection ResultOfMethodCallIgnored
+                logDir.mkdirs();
 
-            final Map<String, String> global = Map.of(
-                    // The cursor is ours to draw, at our own scale, over a
-                    // desktop the viewport may be magnifying — which is the
-                    // whole premise of the control stack, and so is not offered
-                    // as a setting the way the other backends' cursor rows are.
-                    "UseLocalCursor", "true",
-                    "Locale", "en_US",
-                    "SctpMaxMtu", "1200");
+                final Map<String, String> global = Map.of(
+                        // The cursor is ours to draw, at our own scale, over a
+                        // desktop the viewport may be magnifying — which is the
+                        // whole premise of the control stack, and so is not
+                        // offered as a setting the way the other backends'
+                        // cursor rows are.
+                        "UseLocalCursor", "true",
+                        "Locale", "en_US",
+                        "SctpMaxMtu", "1200");
 
-            Bindings.initApp(
-                    APP_NAME,
-                    "1",
-                    app.getFilesDir().getAbsolutePath(),
-                    logDir.getAbsolutePath(),
-                    "vncviewer",
-                    app,
-                    global,
-                    true,
-                    Bindings.LogMode.LOG_DEBUG);
+                Bindings.initApp(
+                        APP_NAME,
+                        "1",
+                        app.getFilesDir().getAbsolutePath(),
+                        logDir.getAbsolutePath(),
+                        "vncviewer",
+                        app,
+                        global,
+                        true,
+                        Bindings.LogMode.LOG_DEBUG);
 
-            // The other half of the bootstrap. Everything it wants is about
-            // RealVNC accounts, which we do not use; the bindings answer all of
-            // it themselves, so there is nothing to pass and nothing to ignore.
-            Bindings.initViewer();
+                // The other half of the bootstrap. Everything it wants is about
+                // RealVNC accounts, which we do not use; the bindings answer all
+                // of it themselves, so there is nothing to pass and nothing to
+                // ignore.
+                Bindings.initViewer();
 
-            RealVncPrompts.registerFactories();
-            Log.i(TAG, "core initialised on " + Thread.currentThread().getName());
-        });
+                RealVncPrompts.registerFactories();
+                Log.i(TAG, "core initialised on " + Thread.currentThread().getName());
+            });
+        } catch (Throwable t) {
+            // A bootstrap that failed leaves nothing worth keeping: the thread
+            // goes, so the next attempt is a whole one rather than a second
+            // initApp on a looper that is half set up.
+            thread.quitSafely();
+            handler = null;
+            throw t;
+        }
+        // Last, so that a bootstrap which threw is not a core the next caller
+        // is told is ready: everything below is illegal until initApp has
+        // returned, and this flag is the whole of what says it has.
+        initialised = true;
         return handler;
     }
 
@@ -119,6 +141,11 @@ public final class RealVncCore {
         handler.removeCallbacks(r);
     }
 
+    /**
+     * A throw comes back to the caller rather than up this thread. There is no
+     * handler above a {@code HandlerThread}, so one let out here is the process
+     * — and the caller is the one place that can tell a screen what happened.
+     */
     static void runBlocking(Runnable r) {
         if (Thread.currentThread() == handler.getLooper().getThread()) {
             r.run();
@@ -126,9 +153,12 @@ public final class RealVncCore {
         }
         final Object lock = new Object();
         final boolean[] done = {false};
+        final Throwable[] threw = {null};
         handler.post(() -> {
             try {
                 r.run();
+            } catch (Throwable t) {
+                threw[0] = t;
             } finally {
                 synchronized (lock) {
                     done[0] = true;
@@ -136,6 +166,7 @@ public final class RealVncCore {
                 }
             }
         });
+        final Throwable failed;
         synchronized (lock) {
             while (!done[0]) {
                 try {
@@ -145,6 +176,14 @@ public final class RealVncCore {
                     return;
                 }
             }
+            failed = threw[0];
+        }
+        if (failed instanceof RuntimeException e) {
+            throw e;
+        } else if (failed instanceof Error x) {
+            throw x;
+        } else if (failed != null) {
+            throw new RuntimeException(failed);
         }
     }
 

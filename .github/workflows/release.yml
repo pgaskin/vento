@@ -37,6 +37,9 @@ jobs:
             if (versionName !== versionCode) fail(`versionName (${versionName}) does not match versionCode (${versionCode})`)
             if (tag !== `v${versionName}`) fail(`tag (${tag}) does not match versionName (${versionName})`)
             if (!fs.existsSync(`metadata/en-US/changelogs/${versionCode}.txt`)) fail(`missing changelog for versionCode ${versionCode}`)
+            const plugin = fs.readFileSync('plugins/realvnc/build.gradle', 'utf8')
+            const pluginCode = plugin.match(/^\s*versionCode\s+([0-9]+)/m)?.[1]
+            if (pluginCode !== versionCode) fail(`the add-on's versionCode (${pluginCode}) does not match the app's (${versionCode})`)
             core.setOutput('name', versionName)
             core.setOutput('code', versionCode)
             core.setOutput('tag', tag)
@@ -54,7 +57,7 @@ jobs:
       - run: ./gradlew :backends:fetchCryptoSources
       - run: rustup toolchain install # install the toolchain pinned by rust-toolchain.toml
       - run: cargo install cargo-ndk@4.1.2
-      - run: ./gradlew :app:assembleFreeRelease
+      - run: ./gradlew :app:assembleRelease :plugins:realvnc:assembleRelease
 
       - name: Write keystore
         run: echo "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
@@ -62,18 +65,21 @@ jobs:
           KEYSTORE_PATH: ${{ github.workspace }}/keystore.jks
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       - name: Sign APK
-        # v1 (JAR) signing off: minSdk 34 never uses it, and it only adds dead
-        # META-INF entries. The APK Signing Block (v2/v3) is the whole signature.
-        # --alignment-preserved: keep AGP's existing zip alignment instead of
-        # letting apksigner re-align (its default), so the signed APK's entry
-        # layout stays identical to the unsigned build F-Droid rebuilds and
-        # apksigcopier reattaches the signature to.
-        run: $ANDROID_HOME/build-tools/36.0.0/apksigner sign --v1-signing-enabled false --alignment-preserved --ks "$KEYSTORE_PATH" --ks-pass env:KEYSTORE_PASSWORD --in app/build/outputs/apk/free/release/app-free-release-unsigned.apk --out Vento.apk
+        run: |
+          set -euo pipefail
+          for spec in "app/build/outputs/apk/release/app-release-unsigned.apk Vento.apk" \
+                      "plugins/realvnc/build/outputs/apk/release/realvnc-release-unsigned.apk vento-rvnc.apk"; do
+            set -- $spec
+            $ANDROID_HOME/build-tools/36.0.0/apksigner sign --v1-signing-enabled false --alignment-preserved --ks "$KEYSTORE_PATH" --ks-pass env:KEYSTORE_PASSWORD --in "$1" --out "$2"
+          done
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/keystore.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-      - name: Verify APK signature
-        run: $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs Vento.apk
+      - name: Verify APK signatures
+        run: |
+          set -euo pipefail
+          $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs Vento.apk
+          $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs vento-rvnc.apk
 
       - name: Verify reproducible build
         # Rebuild from a copy at a different absolute path (a reproducible build
@@ -89,13 +95,15 @@ jobs:
             --exclude='.cxx/' \
             --exclude='.gradle/' \
             ./ "$rebuild/"
-          ( cd "$rebuild" && ./gradlew --no-daemon :app:assembleFreeRelease )
-          unsigned=app/build/outputs/apk/free/release/app-free-release-unsigned.apk
-          rebuilt="$rebuild/app/build/outputs/apk/free/release/app-free-release-unsigned.apk"
-          # the two independent builds must be bit-for-bit identical
-          go run scripts/check-reproducible.go "$unsigned" "$rebuilt"
-          # the signed APK must reproduce from that build (differing only in the signature)
-          go run scripts/check-reproducible.go Vento.apk "$rebuilt"
+          ( cd "$rebuild" && ./gradlew --no-daemon :app:assembleRelease :plugins:realvnc:assembleRelease )
+          check() {
+            # the two independent builds must be bit-for-bit identical
+            go run scripts/check-reproducible.go "$1" "$rebuild/$1"
+            # the signed APK must reproduce from that build (differing only in the signature)
+            go run scripts/check-reproducible.go "$2" "$rebuild/$1"
+          }
+          check app/build/outputs/apk/release/app-release-unsigned.apk Vento.apk
+          check plugins/realvnc/build/outputs/apk/release/realvnc-release-unsigned.apk vento-rvnc.apk
 
       - name: Create release
         id: create-release
@@ -122,10 +130,12 @@ jobs:
         with:
           retries: 3
           script: |
-            await github.rest.repos.uploadReleaseAsset({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: ${{ toJSON(steps.create-release.outputs.id) }},
-              data: require('fs').readFileSync('Vento.apk'),
-              name: 'Vento.apk',
-            })
+            for (const name of ['Vento.apk', 'vento-rvnc.apk']) {
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: ${{ toJSON(steps.create-release.outputs.id) }},
+                data: require('fs').readFileSync(name),
+                name: name,
+              })
+            }

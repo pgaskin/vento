@@ -28,5 +28,8 @@ include ':backends:freerdp'
 include ':backends:realvnc'
 include ':control'
 
+include ':plugins'
+include ':plugins:realvnc'
+
 include ':realvnc-jni'
 project(':realvnc-jni').projectDir = file('realvnc')

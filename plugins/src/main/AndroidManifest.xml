@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        Every add-on acquires something over the network, since the whole reason
+        for being one is holding what a build cannot.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+        Not for deciding when to fetch: for telling a person which of the two
+        failures they have. An app refused the network resolves no host at all,
+        and "unable to resolve host" is a sentence about DNS for something that
+        is nothing to do with DNS.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+
+    <application>
+
+        <!--
+            Never bound. It exists so that the app's <queries> entry for this
+            action matches the package, which is both how an add-on is found and
+            what makes it visible to everything else the app asks about it.
+
+            Exported because package visibility is decided by AppsFilter, which
+            only considers components another package could actually reach: a
+            filter on an unexported component matches nothing and the add-on
+            stays invisible. It answers a bind with null and stops itself if
+            anybody starts it, so being reachable costs nothing.
+        -->
+        <service
+            android:name=".PluginService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="net.pgaskin.remotedesktop.action.BACKEND_PLUGIN" />
+            </intent-filter>
+        </service>
+
+    </application>
+
+</manifest>

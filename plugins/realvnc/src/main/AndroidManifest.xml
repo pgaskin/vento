@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        Everything this add-on holds is somebody else's binary, acquired on the
+        phone it is for. Backing it up would send it off the device by a route
+        nobody chose, and restoring it would put a build for one ABI on another
+        — which the hash refuses, so the only thing a backup could achieve here
+        is the part that is not wanted.
+    -->
+    <application
+        android:label="@string/app_name"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/backup_rules"
+        android:theme="@style/Theme.Plugin">
+
+        <!--
+            No launcher filter: this is reached from the app and from nowhere
+            else. Exported for that, since the app is another package.
+        -->
+        <activity
+            android:name="net.pgaskin.remotedesktop.realvnc.RealVncSetupActivity"
+            android:exported="true"
+            android:label="@string/setup_title">
+            <intent-filter>
+                <action android:name="net.pgaskin.remotedesktop.action.SETUP_PLUGIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            The one way anything of this add-on's leaves its uid. The authority
+            carries the applicationId so that a debug build and a release one
+            can be installed side by side.
+        -->
+        <provider
+            android:name="net.pgaskin.remotedesktop.realvnc.RealVncLibraryProvider"
+            android:authorities="${applicationId}.libraries"
+            android:exported="true"
+            android:grantUriPermissions="false" />
+
+    </application>
+
+</manifest>

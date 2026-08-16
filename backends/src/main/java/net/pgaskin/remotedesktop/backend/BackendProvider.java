@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop.backend;
 
+import android.app.Activity;
 import android.content.Context;
 
 import java.util.List;
@@ -57,4 +58,26 @@ public interface BackendProvider {
 
     Backend create(Context context, String address, String userName, String password,
                    Map<String, String> options);
+
+    /**
+     * Whether this backend can be connected with yet.
+     *
+     * <p>False only for one that needs something the build cannot contain — a
+     * library it has to be given on the device. It appears everywhere it would
+     * otherwise appear while this is false, because being chosen is one of the
+     * things that leads to {@link #setup}.
+     */
+    default boolean isSetup(Context context) {
+        return true;
+    }
+
+    /**
+     * Ask for whatever {@link #isSetup} is waiting for, and return.
+     *
+     * <p>There is no callback: what this starts may be a screen in another
+     * process which can be killed behind a dialog, so the only answer that
+     * survives is the caller asking {@link #isSetup} again when it resumes.
+     */
+    default void setup(Activity host) {
+    }
 }

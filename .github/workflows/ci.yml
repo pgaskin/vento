@@ -58,13 +58,16 @@ jobs:
       - run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses; ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager 'cmake;3.30.5' 'ndk;28.2.13676358' 'build-tools;36.0.0'
       - run: ./patch.sh -n
       - run: ./gradlew :backends:fetchCryptoSources
-      - run: ./gradlew :realvnc-jni:downloadVncApk
       - run: rustup toolchain install
       - run: cargo install cargo-ndk@4.1.2
-      - run: ./gradlew :app:assembleFreeDebug
+      - run: ./gradlew :app:assembleDebug
       - uses: actions/upload-artifact@v7
         with:
-          name: app-free-debug
-          path: app/build/outputs/apk/free/debug/app-free-debug.apk
-      - run: ./gradlew :app:assembleNonfreeDebug
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+      - run: ./gradlew :plugins:realvnc:assembleDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: realvnc-debug
+          path: plugins/realvnc/build/outputs/apk/debug/realvnc-debug.apk
       #- run: ./scripts/check-jni-symbols.sh

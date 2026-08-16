@@ -11,7 +11,7 @@ plugins {
 // versionCode, which is what a build server that republishes this wants.
 //
 // The cost is only the other architecture's libraries, and as of ed0b535 a
-// universal freeRelease APK is 31.7 MB: 9.9 MB of arm64-v8a, 10.3 MB of
+// universal release APK is 31.7 MB: 9.9 MB of arm64-v8a, 10.3 MB of
 // x86_64, and 11.5 MB that is neither. Splitting would save a phone 10.3 MB of
 // a 31.7 MB download and cost every consumer of this build a second artefact,
 // while also making versioning more complicated.
@@ -40,19 +40,6 @@ android {
     // For VERSION_NAME, which the settings tree shows.
     buildFeatures {
         buildConfig true
-    }
-
-    // Everything of RealVNC's is one dependency and one flavour leaves it out,
-    // so `freeDebug` contains none of it and a dependency line is the whole of
-    // the enforcement. Neither flavour has any source of its own.
-    flavorDimensions += 'licensing'
-    productFlavors {
-        free {
-            dimension 'licensing'
-        }
-        nonfree {
-            dimension 'licensing'
-        }
     }
 
     buildTypes {
@@ -99,17 +86,14 @@ dependencies {
 
     // The seam, and the protocols this build has: each carries its own native
     // library and declares itself as a `BackendProvider` service, so these
-    // lines are the whole of what this app can connect with. Nothing in the
-    // app names a protocol.
+    // lines are the whole of what this app can connect with, along with any
+    // add-on installed beside it. Nothing in the app names a protocol.
     implementation project(':backends')
     implementation project(':backends:rfb')
     implementation project(':backends:libvnc')
     implementation project(':backends:tigervnc')
     implementation project(':backends:ironrdp')
     implementation project(':backends:freerdp')
-
-    // Their backend, and behind it the JNI surface and libvncviewer.so itself.
-    nonfreeImplementation project(':backends:realvnc')
 
     implementation 'androidx.recyclerview:recyclerview:1.4.0'
     implementation 'androidx.preference:preference:1.2.1'
@@ -125,7 +109,6 @@ androidComponents {
     onVariants(selector().all()) { variant ->
         final cap = variant.name.substring(0, 1).toUpperCase(Locale.ROOT) + variant.name.substring(1)
 
-        final nonfree = variant.flavorName == 'nonfree'
         final backends = project(':backends')
         final genLicenses = tasks.register("generate${cap}Licenses", GenerateLicensesTask) {
             cargoLock.set(rootProject.file('Cargo.lock'))
@@ -145,14 +128,6 @@ androidComponents {
                         spdx: 'GPL-3.0-or-later',
                         text: rootProject.file('LICENSE').getText('UTF-8'),
                 ]]
-                if (nonfree) {
-                    modules << [
-                            name: 'realvnc-jni',
-                            spdx: 'CC0-1.0',
-                            text: rootProject.file('realvnc/LICENSE').getText('UTF-8'),
-                    ]
-                }
-                modules
             })
             // The Cargo lock accounts for every Rust protocol module and for
             // nothing under a CMake one nor anything in `dependencies` above,
@@ -233,13 +208,6 @@ androidComponents {
             })
             // One line per paragraph: the page wraps it, and a line break here
             // is a line break on the phone.
-            notice.set(nonfree ? [
-                    'This build contains RealVNC\'s libvncviewer.so, extracted from their ' +
-                            'published Android viewer. It is theirs, no licence here covers it, ' +
-                            'and nothing grants a right to pass it on: this build may be used, ' +
-                            'and may not be redistributed.',
-                    'The free flavour of this app contains none of it.',
-            ].join('\n\n') : '')
         }
         variant.sources.assets?.addGeneratedSourceDirectory(genLicenses) { it.assetsOutputDir }
     }

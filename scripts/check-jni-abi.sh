@@ -23,9 +23,10 @@
 # that exist there and not here are the deliberate subset — their connection
 # store, their cloud account, and everything neither side calls.
 #
-# Both sides come from this module's own pin: the APK it names and the library
-# unpacked out of it — the APK from `apk/`, or the copy of that same build in
-# the repository's `stuff/`, and nothing else.
+# Both sides come out of one APK, of the build `Library.VERSION` names: their
+# dex and the library itself. Nothing fetches it — see README.md — and it is
+# looked for in `apk/` and in the repository's `stuff/`, by name, so that a
+# different build of the viewer cannot answer a question about this one.
 #
 #   ./check-jni-abi.sh            # builds the module if needed
 #   NOBUILD=1 ./check-jni-abi.sh  # against whatever is already built
@@ -56,26 +57,42 @@ fi
 CLASSES="$(find build -type d -path "*/classes/$PKG" 2>/dev/null | head -1)"
 [ -n "$CLASSES" ] || { echo "nothing built: run without NOBUILD=1" >&2; exit 1; }
 
-SO="$(find build/generated/vncNativeLibs -name libvncviewer.so 2>/dev/null | head -1)"
-[ -n "$SO" ] || { echo "no libvncviewer.so unpacked: see README.md" >&2; exit 1; }
-
 # The pinned build by name, not the first APK lying about: `stuff/` holds the
 # 4.9.1 the reverse engineering was done against as well, and checking this
 # module's declarations against a different build's dex would answer a question
-# nobody asked.
-PINNED="$(sed -n "s/^ *name *: *'\(.*\)',/\1/p" build.gradle | head -1)"
-[ -n "$PINNED" ] || { echo "no APK name in build.gradle" >&2; exit 1; }
+# nobody asked. The version comes from the pin itself, so the two cannot drift.
+PIN="src/main/java/$PKG/Library.java"
+VERSION="$(sed -n 's/.*VERSION *= *"\([^"]*\)".*/\1/p' "$PIN" | head -1)"
+[ -n "$VERSION" ] || { echo "no VERSION in $PIN" >&2; exit 1; }
+PINNED="com.realvnc.viewer.android_${VERSION}.apk"
 APK=""
 for candidate in "apk/$PINNED" "../stuff/$PINNED"; do
     [ -f "$candidate" ] && { APK="$candidate"; break; }
 done
-[ -n "$APK" ] || { echo "no APK to read their side out of; see README.md" >&2; exit 1; }
+[ -n "$APK" ] || { echo "no $PINNED to read their side out of; see README.md" >&2; exit 1; }
 
-# ---- their declarations, out of the APK's own dex ---------------------------
+# ---- their declarations and their library, out of the one APK ---------------
 echo "reading $(basename "$APK")…"
 $APKTOOL d -f -r -o "$WORK/theirs" "$APK" >/dev/null
 THEIRS="$(dirname "$(find "$WORK/theirs" -path "*/$PKG/SessionBindings.smali" | head -1)")"
 [ -d "$THEIRS" ] || { echo "$APK has no $PKG in it" >&2; exit 1; }
+
+# One ABI is enough for a symbol table, and arm64 is the one every device that
+# can run this has. The hash is checked because the whole point of a pin is that
+# the questions below are asked of *that* build: an archive with the right name
+# and a different library in it would otherwise pass quietly.
+SO="$WORK/theirs/lib/arm64-v8a/libvncviewer.so"
+[ -f "$SO" ] || { echo "$APK has no arm64-v8a/libvncviewer.so in it" >&2; exit 1; }
+WANT="$(grep -A2 '"arm64-v8a/libvncviewer.so"' "$PIN" \
+        | sed -n 's/.*"\([0-9a-f]\{64\}\)".*/\1/p' | head -1)"
+GOT="$(sha256sum "$SO" | cut -d' ' -f1)"
+[ -n "$WANT" ] || { echo "no arm64-v8a/libvncviewer.so hash in $PIN" >&2; exit 1; }
+if [ "$WANT" != "$GOT" ]; then
+    echo "libvncviewer.so in $APK is not the pinned build" >&2
+    echo "  pinned $WANT" >&2
+    echo "  found  $GOT" >&2
+    exit 1
+fi
 
 # One line per member: kind, static-ness, name, descriptor. Bodies, and every
 # modifier except `static` (which decides whether a native is handed a class or

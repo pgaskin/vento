@@ -3,7 +3,8 @@
     SPDX-FileCopyrightText: 2026 Patrick Gaskin
     SPDX-License-Identifier: GPL-3.0-or-later
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
         A backend opens sockets from native code, where a missing permission
@@ -33,13 +34,22 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
     <!--
-        A restore may not carry a picture of somebody's desktop, or anything a
-        backend acquired for the device it was acquired on. The rules say what
-        it may.
+        Add-ons: a package is visible here if it declares this action, and
+        nothing in this manifest names one. An app that named a package, or
+        asked for QUERY_ALL_PACKAGES, would be saying which add-on it is for —
+        which is the thing keeping them separate is for.
     -->
+    <queries>
+        <intent>
+            <action android:name="net.pgaskin.remotedesktop.action.BACKEND_PLUGIN" />
+        </intent>
+    </queries>
+
     <application
         android:name=".RemoteDesktopApp"
         android:dataExtractionRules="@xml/backup_rules"
+        android:appComponentFactory="net.pgaskin.remotedesktop.AppFactory"
+        tools:replace="android:appComponentFactory"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"

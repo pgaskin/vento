@@ -8,23 +8,20 @@
 #   scripts/session.sh -d                    # with the debug HUD over the desktop
 #   scripts/session.sh -t 256                # a mirror tile size other than the default
 #   scripts/session.sh -l                    # follow the log of a running session
-#   scripts/session.sh -f                    # the free flavour: our own RFB client only
 #   scripts/session.sh -b rfb                # same server, the other backend
 #   scripts/session.sh -o Encoding=tight     # backend options, Key=value,Key=value
-#   scripts/session.sh -f -b rdp             # the RDP test desktop (scripts/testrdp/)
-#   scripts/session.sh -f -b freerdp         # the same desktop, the other RDP client
+#   scripts/session.sh -b rdp                # the RDP test desktop (scripts/testrdp/)
+#   scripts/session.sh -b freerdp            # the same desktop, the other RDP client
 #
 # The default address is the test desktop's (5901), or 3389 with -b rdp; the
-# QEMU and H.264 rigs are 5902 and 5903 and have to be given. -f sets the
-# backend as well, so it goes before -b rather than after it.
+# QEMU and H.264 rigs are 5902 and 5903 and have to be given.
 set -euo pipefail
 cd "$(dirname "$0")/.."   # the build is at the repository root
 
-PKG=net.pgaskin.remotedesktop
-ACT="$PKG/.SessionActivity"
+PKG=net.pgaskin.remotedesktop.debug
+ACT="$PKG/net.pgaskin.remotedesktop.SessionActivity"
 BUILD=1
 HUD=false
-FLAVOUR=Nonfree
 BACKEND=
 TILE=
 OPTIONS=
@@ -44,7 +41,6 @@ while [ $# -gt 0 ]; do
         -d) HUD=true; shift ;;
         -t) TILE="$2"; shift 2 ;;
         -o) OPTIONS="${OPTIONS:+$OPTIONS,}$2"; shift 2 ;;
-        -f) FLAVOUR=Free; BACKEND=rfb; shift ;;
         -b) BACKEND="$2"; shift 2 ;;
         -l) log ;;
         -h) sed -n '2,/^set /p' "$0" | sed 's/^# \{0,1\}//;$d'; exit 2 ;;
@@ -65,7 +61,7 @@ if [ -z "$ADDRESS" ]; then
     fi
 fi
 
-[ "$BUILD" = 1 ] && ./gradlew --quiet ":app:install${FLAVOUR}Debug"
+[ "$BUILD" = 1 ] && ./gradlew --quiet ':app:installDebug'
 
 adb shell am force-stop "$PKG"
 adb logcat -c
@@ -78,4 +74,4 @@ adb shell am start -n "$ACT" \
     ${USERNAME:+--es user "$USERNAME"} \
     ${PASSWORD:+--es password "$PASSWORD"} >/dev/null
 
-echo "session on $ADDRESS (${FLAVOUR,,}${BACKEND:+, $BACKEND}${OPTIONS:+, $OPTIONS}) — scripts/session.sh -l to follow the log"
+echo "session on $ADDRESS (${BACKEND:-default}${OPTIONS:+, $OPTIONS}) — scripts/session.sh -l to follow the log"

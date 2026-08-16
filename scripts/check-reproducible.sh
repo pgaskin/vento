@@ -8,9 +8,12 @@
 # the two copies are for; everything else about the two builds is the same
 # machine, the same toolchain and the same caches.
 #
-#   ./check-reproducible.sh                # freeRelease, both ABIs
-#   ./check-reproducible.sh nonfreeRelease
-#   ./check-reproducible.sh -k freeRelease # keep the copies, to diff by hand
+#   ./check-reproducible.sh             # release, both ABIs
+#   ./check-reproducible.sh debug
+#   ./check-reproducible.sh -k release  # keep the copies, to diff by hand
+#
+# Both artefacts are compared: the app and the add-on, which are released
+# together and neither of which contains anything of anybody else's.
 #
 # Neither build is this working tree's, which is deliberate: a tree somebody
 # develops in has a warm CMake cache, and a cache that has outlived the option
@@ -27,21 +30,19 @@ keep=
 while getopts ":k" arg; do
     case "$arg" in
         k) keep=1 ;;
-        *) echo "usage: $0 [-k] [variant]" >&2; exit 2 ;;
+        *) echo "usage: $0 [-k] [buildType]" >&2; exit 2 ;;
     esac
 done
 shift $((OPTIND - 1))
 
-variant=${1-freeRelease}
-[ $# -le 1 ] || { echo "usage: $0 [-k] [variant]" >&2; exit 2; }
+buildType=${1-release}
+[ $# -le 1 ] || { echo "usage: $0 [-k] [buildType]" >&2; exit 2; }
 
 command -v go >/dev/null || { echo "error: go is not on the PATH" >&2; exit 1; }
 
-flavour=${variant%%[A-Z]*}
-buildType=$(echo "${variant#"$flavour"}" | tr '[:upper:]' '[:lower:]')
-[ -n "$flavour" ] && [ -n "$buildType" ] || { echo "error: $variant is not a flavour and a build type" >&2; exit 2; }
-capitalized=$(echo "${variant:0:1}" | tr '[:lower:]' '[:upper:]')${variant:1}
-outputs=app/build/outputs/apk/$flavour/$buildType
+capitalized=$(echo "${buildType:0:1}" | tr '[:lower:]' '[:upper:]')${buildType:1}
+outputs=app/build/outputs/apk/$buildType
+pluginOutputs=plugins/realvnc/build/outputs/apk/$buildType
 
 here=$PWD
 # Two copies and two builds of them is around 40 GB, so they go beside the
@@ -60,8 +61,6 @@ for dir in "$a" "$b"; do
     echo "==> copying to $dir"
     rm -rf "$dir"
     mkdir -p "$dir"
-    # stuff/ comes too, in spite of being reference material rather than input:
-    # it is where the nonfree flavour looks for RealVNC's APK.
     rsync -a \
         --exclude='/target/' \
         --exclude='build/' \
@@ -72,17 +71,19 @@ for dir in "$a" "$b"; do
 done
 
 for dir in "$a" "$b"; do
-    echo "==> building $variant in $dir"
-    (cd "$dir" && ./gradlew ":app:assemble$capitalized")
+    echo "==> building $buildType in $dir"
+    (cd "$dir" && ./gradlew ":app:assemble$capitalized" ":plugins:realvnc:assemble$capitalized")
 done
 
 status=0
 shopt -s nullglob
-for apk in "$a/$outputs"/*.apk; do
-    name=$(basename "$apk")
-    echo
-    echo "==> $name"
-    go run ./check-reproducible.go "$apk" "$b/$outputs/$name" || status=1
+for out in "$outputs" "$pluginOutputs"; do
+    for apk in "$a/$out"/*.apk; do
+        name=$(basename "$apk")
+        echo
+        echo "==> $name"
+        go run ./check-reproducible.go "$apk" "$b/$out/$name" || status=1
+    done
 done
 
 exit $status

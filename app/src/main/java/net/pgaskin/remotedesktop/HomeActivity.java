@@ -85,7 +85,17 @@ public final class HomeActivity extends AppCompatActivity {
 
         listView = AppSettings.listView(this);
         barHeight = toolbar.getLayoutParams().height;
-        list.setLayoutManager(new GridLayoutManager(this, spanCount()));
+        final GridLayoutManager grid = new GridLayoutManager(this, spanCount());
+        // A plugin's card is a statement about the screen rather than an item
+        // on it, so it takes the whole width whatever shape the items are and
+        // however many columns they are in.
+        grid.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
+            @Override
+            public int getSpanSize(int position) {
+                return position < adapter.cards.size() ? grid.getSpanCount() : 1;
+            }
+        });
+        list.setLayoutManager(grid);
         // Every change here is a full reload, and the one change somebody sees
         // is the switch between the two shapes — where cards morphing into rows
         // is a distraction in a gesture whose whole content is "show me more of
@@ -348,9 +358,15 @@ public final class HomeActivity extends AppCompatActivity {
 
     // ---- the list -----------------------------------------------------------
 
-    private final class Adapter extends RecyclerView.Adapter<Holder> {
+    private final class Adapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         private final List<Connection> items = new ArrayList<>();
+        /**
+         * The plugins with something to say, above the connections. Recomputed
+         * with the list, since every one of them can change while the app is in
+         * the background and uninstalling from a card is how one usually does.
+         */
+        private final List<Plugins.Card> cards = new ArrayList<>();
         /**
          * Decoded previews, by connection id. A preview is a sealed PNG, so
          * binding a card costs a decryption and a decode, and a grid rebinds
@@ -364,8 +380,19 @@ public final class HomeActivity extends AppCompatActivity {
             items.clear();
             previews.clear();
             items.addAll(Connections.all(HomeActivity.this));
+            // About the connections alone: a screen saying there are none is
+            // still true with a card above it, and a plugin waiting to be set
+            // up is a good deal of what somebody would do first.
             empty.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
             notifyDataSetChanged();
+            // The plugins land when they land: asking one whether it is set up
+            // can mean hashing a library, and the connections are not made to
+            // wait behind that. Where the answers are known it is this frame.
+            Plugins.cards(HomeActivity.this, found -> {
+                cards.clear();
+                cards.addAll(found);
+                notifyDataSetChanged();
+            });
         }
 
         /**
@@ -375,20 +402,33 @@ public final class HomeActivity extends AppCompatActivity {
          */
         @Override
         public int getItemViewType(int position) {
+            if (position < cards.size()) {
+                return 2;
+            }
             return listView ? 1 : 0;
         }
 
         @NonNull
         @Override
-        public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            return new Holder(LayoutInflater.from(parent.getContext()).inflate(
+        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            final LayoutInflater inflater = LayoutInflater.from(parent.getContext());
+            if (viewType == 2) {
+                return new PluginHolder(inflater.inflate(R.layout.item_plugin, parent, false));
+            }
+            return new Holder(inflater.inflate(
                     viewType == 1 ? R.layout.item_connection_row : R.layout.item_connection,
                     parent, false));
         }
 
         @Override
-        public void onBindViewHolder(@NonNull Holder h, int position) {
-            final Connection c = items.get(position);
+        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+            if (holder instanceof PluginHolder p) {
+                bindCard(p, position, cards.get(position));
+                return;
+            }
+            final Holder h = (Holder) holder;
+            final int index = position - cards.size();
+            final Connection c = items.get(index);
             h.title.setText(c.title());
             h.subtitle.setText(c.subtitle());
             // INVISIBLE, not GONE: a connection with no name has one line to
@@ -447,7 +487,7 @@ public final class HomeActivity extends AppCompatActivity {
             h.pin.setVisibility(c.pinned() ? View.VISIBLE : View.GONE);
 
             if (listView) {
-                groupRow(h.card, position);
+                groupRow(h.card, index);
             }
 
             h.card.setOnClickListener(v -> openConnection(c));
@@ -461,9 +501,61 @@ public final class HomeActivity extends AppCompatActivity {
             });
         }
 
+        /**
+         * One plugin's card: what it is, what is wrong or missing, what its own
+         * failure said, and the one or two things to do about it. Uninstall is
+         * on every card about a package; the restart card is about the set and
+         * has the other button instead.
+         */
+        private void bindCard(PluginHolder h, int position, Plugins.Card card) {
+            spaceCard(h.itemView, position);
+            h.title.setText(card.title());
+            h.message.setText(card.message());
+            h.detail.setText(card.detail());
+            h.detail.setVisibility(card.detail() == null || card.detail().isEmpty()
+                    ? View.GONE : View.VISIBLE);
+            h.setUp.setVisibility(card.kind() == Plugins.Kind.SETUP ? View.VISIBLE : View.GONE);
+            h.restart.setVisibility(card.kind() == Plugins.Kind.RESTART
+                    ? View.VISIBLE : View.GONE);
+            h.uninstall.setVisibility(card.packageName() == null ? View.GONE : View.VISIBLE);
+            h.setUp.setOnClickListener(v -> Plugins.setup(HomeActivity.this, card.backendId()));
+            h.restart.setOnClickListener(v -> Plugins.restart(HomeActivity.this));
+            h.uninstall.setOnClickListener(
+                    v -> Plugins.uninstall(HomeActivity.this, card.packageName()));
+        }
+
         @Override
         public int getItemCount() {
-            return items.size();
+            return cards.size() + items.size();
+        }
+
+        /**
+         * A card's edges, which the two shapes below it disagree about.
+         *
+         * <p>It is the full width of either shape, so it has to line up with
+         * both: a row is inset 16 dp with the list flush to the screen, and a
+         * card carries 8 dp of its own with the list padded by 8. The inset is
+         * therefore the group's less whatever the list already contributes, and
+         * comes to the same 16 dp either way.
+         *
+         * <p>The gap is the one between two groups of rows, for the same reason
+         * that is the gap: a card is a statement about the screen, not an entry
+         * on it. Above the first, below every one, and less what the neighbour
+         * already brings — the list's own top padding, and a connection card's
+         * own margin where the shape below is cards.
+         */
+        private void spaceCard(View card, int position) {
+            final int inset = getResources().getDimensionPixelSize(R.dimen.group_inset);
+            final int spacing = getResources().getDimensionPixelSize(R.dimen.group_spacing);
+            final int own = getResources().getDimensionPixelSize(R.dimen.card_margin);
+            final ViewGroup.MarginLayoutParams lp =
+                    (ViewGroup.MarginLayoutParams) card.getLayoutParams();
+            lp.setMarginStart(inset - listSidePadding());
+            lp.setMarginEnd(inset - listSidePadding());
+            lp.topMargin = position == 0 ? spacing - listTopPadding() : 0;
+            lp.bottomMargin = position == cards.size() - 1 && !listView
+                    ? spacing - own : spacing;
+            card.setLayoutParams(lp);
         }
 
         /**
@@ -505,6 +597,26 @@ public final class HomeActivity extends AppCompatActivity {
             connected = v.findViewById(R.id.connected);
             title = v.findViewById(R.id.title);
             subtitle = v.findViewById(R.id.subtitle);
+        }
+    }
+
+    /** A plugin's card, which shares nothing with a connection's but its list. */
+    private static final class PluginHolder extends RecyclerView.ViewHolder {
+        final TextView title;
+        final TextView message;
+        final TextView detail;
+        final View setUp;
+        final View restart;
+        final View uninstall;
+
+        PluginHolder(View v) {
+            super(v);
+            title = v.findViewById(R.id.title);
+            message = v.findViewById(R.id.message);
+            detail = v.findViewById(R.id.detail);
+            setUp = v.findViewById(R.id.setup);
+            restart = v.findViewById(R.id.restart);
+            uninstall = v.findViewById(R.id.uninstall);
         }
     }
 }

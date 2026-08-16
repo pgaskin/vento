@@ -41,6 +41,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
@@ -199,8 +201,18 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                     () -> a.open(SECTION_INPUT)));
             screen.addPreference(heading(R.string.settings_group_backends));
             for (String id : Backends.ids()) {
-                final Preference p = link(0, 0, () -> a.openBackend(id));
+                // A backend still waiting for something it has to be given
+                // offers that instead of its screen: what is behind this row is
+                // a set of answers for a connection that cannot be made yet.
+                final Preference p = link(0, 0, () -> Backends.isSetup(a, id, ready -> {
+                    if (ready) {
+                        a.openBackend(id);
+                    } else {
+                        Plugins.setup(a, id);
+                    }
+                }));
                 p.setTitle(Backends.name(id));
+                backendRows.put(id, p);
                 screen.addPreference(p);
             }
             screen.addPreference(heading(R.string.settings_group_app));
@@ -217,6 +229,31 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             screen.addPreference(link(R.string.settings_source,
                     R.string.settings_source_summary, this::openSource));
             screen.addPreference(version());
+        }
+
+        /**
+         * The root screen's backend rows, by id, and empty on every other
+         * screen. Coming back from an add-on's setup activity is the only
+         * report there is that it worked, so what a row says and does is
+         * decided again each time this screen resumes.
+         */
+        private final Map<String, Preference> backendRows = new LinkedHashMap<>();
+
+        @Override
+        public void onResume() {
+            super.onResume();
+            final String notSetUp = getString(R.string.settings_backend_setup);
+            for (Map.Entry<String, Preference> row : backendRows.entrySet()) {
+                final Preference p = row.getValue();
+                // `isAdded` as well as the rule the seam applies: the activity
+                // outlives this fragment by a whole screen, and a row of one
+                // that has been replaced is not one anybody is looking at.
+                Backends.isSetup(requireContext(), row.getKey(), ready -> {
+                    if (isAdded()) {
+                        p.setSummary(ready ? null : notSetUp);
+                    }
+                });
+            }
         }
 
         /** A heading over the group that follows, or with no title, a break. */
@@ -418,6 +455,21 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                 into = defaults;
             }
             OptionScreen.addOptions(into, Backends.options(id), BackendOption.Scope.LAYERED);
+
+            // A backend that came out of an add-on says so, and the row is the
+            // way to the thing itself: the system's own page for that package,
+            // which is where it is uninstalled, its storage cleared and its
+            // version read. In a group of its own because it is a fact about
+            // where this backend is, not a setting.
+            final String plugin = Backends.packageOf(id);
+            if (plugin != null) {
+                screen.addPreference(heading(0));
+                final Preference p = link(R.string.settings_plugin, 0, () -> startActivity(
+                        new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.fromParts("package", plugin, null))));
+                p.setSummary(plugin);
+                screen.addPreference(p);
+            }
             store.built();
         }
 
