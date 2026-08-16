@@ -22,7 +22,7 @@ This is mostly vibe-coded, but I've tested it extensively and worked alongside i
 
 I wouldn't have made this app otherwise (even though I've been wanting to for years) since it's just too much work, especially for all the native bindings and the gesture handling.
 
-Even with Claude, the initial version took ~42 hours of work over ~10 days, and that's not including all the stuff I reused from my existing projects (almost all written without LLMs), for example:
+Even with Claude, the initial version took ~60 hours of work over ~10 days, and that's not including all the stuff I reused from my existing projects (almost all written without LLMs), for example:
 
 - [vncpatch](https://github.com/pgaskin/vncpatch): fixes, patches, and notes for the realvnc app
 - [lithiumpatch](https://github.com/pgaskin/lithiumpatch): apk fetch stuff and workflow
@@ -37,7 +37,9 @@ Claude was very useful for playing with the gesture detection code, as it was ab
 
 Claude was also very helpful for exhaustively testing things like keyboard input, catching quite a few bugs in the process. Without Claude, I wouldn't have bothered to write and run individual test scripts for all combinations of platforms (Windows, Linux, etc), server implementations (RealVNC, Microsoft Remote Desktop, IronRDP, FreeRDP, TightVNC, TigerVNC, NeatVNC, UltraVNC, LibVNC), and client implementations (IronRDP, FreeRDP, LibVNC, TigerVNC, RealVNC, etc). Over a day of unattended running, it wrote more than 90k lines of throwaway test scripts and ran them on multiple devices against multiple VMs I set up and its own containers.
 
-This README (and the ones in the other folders) is entirely hand-written by me.
+This README (and the ones in the other folders) is entirely hand-written by me. Almost all user-facing text in the app is also hand-written.
+
+I still need to refactor the code and clean up the comments in the app.
 
 ### Development
 
