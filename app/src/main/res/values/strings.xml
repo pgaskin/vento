@@ -125,6 +125,27 @@
     <string name="settings_reset_all_confirm">Reset all settings?</string>
     <string name="settings_reset_all_do">Reset</string>
     <string name="settings_reset_all_done">Settings cleared</string>
+    <!-- The other four rows in the same group, each destroying one store. The summary
+         is also the question the dialog asks, so it has to read as both. -->
+    <string name="settings_delete">Delete</string>
+    <string name="settings_clear">Clear</string>
+    <string name="settings_forget">Forget</string>
+    <string name="settings_delete_connections">Delete all connections</string>
+    <string name="settings_delete_connections_summary">Permanently delete all saved connections, along with their credentials and preview.</string>
+    <string name="settings_delete_connections_confirm">Delete all connections?</string>
+    <string name="settings_delete_connections_done">Deleted %1$d connections</string>
+    <string name="settings_forget_hosts">Clear known hosts</string>
+    <string name="settings_forget_hosts_summary">Forget all accepted server certificates.</string>
+    <string name="settings_forget_hosts_confirm">Clear known hosts?</string>
+    <string name="settings_forget_hosts_done">Known hosts cleared</string>
+    <string name="settings_clear_libraries">Clear cached plugin libraries</string>
+    <string name="settings_clear_libraries_summary">Delete cached copies of native libraries provided by plugins.</string>
+    <string name="settings_clear_libraries_confirm">Clear cached plugin libraries?</string>
+    <string name="settings_clear_libraries_done">Cached plugin libraries cleared</string>
+    <string name="settings_delete_recordings">Delete playground recordings</string>
+    <string name="settings_delete_recordings_summary">Delete touch and keyboard recordings written by the playground.</string>
+    <string name="settings_delete_recordings_confirm">Delete playground recordings?</string>
+    <string name="settings_delete_recordings_done">Deleted %1$d recordings</string>
 
     <!-- import and export -->
     <string name="settings_transfer">Import and export</string>

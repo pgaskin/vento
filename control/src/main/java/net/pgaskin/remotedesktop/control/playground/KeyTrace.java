@@ -246,8 +246,8 @@ public final class KeyTrace implements KeySink {
     }
 
     private void open() {
-        final File dir = new File(ctx.getExternalFilesDir(null), "keytrace");
-        if (!dir.isDirectory() && !dir.mkdirs()) {
+        final File dir = Recordings.dir(ctx, Recordings.KEYS);
+        if (dir == null || (!dir.isDirectory() && !dir.mkdirs())) {
             Log.e(TAG, "cannot create " + dir);
             return;
         }

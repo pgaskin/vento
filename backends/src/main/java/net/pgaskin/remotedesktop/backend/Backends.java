@@ -572,6 +572,42 @@ public final class Backends {
         }
     }
 
+    /**
+     * Forget every remembered yes, so that the next asker asks the backend again.
+     *
+     * <p>{@link #isSetup} keeps a yes for the life of the process because what a
+     * yes means is that a file is in place, and nothing takes one away. The app
+     * deleting its own copies of an add-on's libraries is the one thing that
+     * does, and it says so here — otherwise a screen goes on holding an answer
+     * about a file that is gone: no card where there should be one, and a
+     * session that fails where it should have offered to set the backend up.
+     */
+    public static void setupChanged() {
+        setUp.clear();
+    }
+
+    /**
+     * Every server this phone has accepted, forgotten — the shared store and
+     * whatever each backend keeps of its own.
+     *
+     * <p>Both halves, because "which machines am I no longer asked about?" is
+     * one question and a screen offering to answer half of it would be worse
+     * than one offering nothing. A backend that throws is recorded and the rest
+     * still run, for the same reason the loop over four screens' callbacks is
+     * guarded: one add-on must not be the others being left pinned.
+     */
+    public static void forgetHosts(Context context) {
+        final Context app = context.getApplicationContext();
+        KnownHosts.clear(app);
+        for (BackendProvider p : providers()) {
+            try {
+                p.forgetHosts(app);
+            } catch (Throwable t) {
+                failed(p.id(), t);
+            }
+        }
+    }
+
     public static Backend create(Context context, String id, String address, String userName,
                                  String password, Map<String, String> options) {
         final BackendProvider p = provider(id);

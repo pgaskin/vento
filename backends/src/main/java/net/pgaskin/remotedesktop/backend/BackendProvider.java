@@ -80,4 +80,16 @@ public interface BackendProvider {
      */
     default void setup(Activity host) {
     }
+
+    /**
+     * Forget every server identity this backend has accepted.
+     *
+     * <p>Empty for all but the two that need it. {@link KnownHosts} is the
+     * store, and {@link Backends#forgetHosts} clears it for everybody; this is
+     * for a backend whose library pins the far end <em>itself</em> — a
+     * known-hosts file of its own, or a blob only it can compare — which nothing
+     * above this interface can find, since it is not a fact about the app.
+     */
+    default void forgetHosts(Context context) {
+    }
 }

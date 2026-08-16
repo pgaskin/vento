@@ -119,6 +119,38 @@ public final class FreeRdpBackend implements Backend, FreeRdpNative.Callbacks {
         return new String[]{"", name};
     }
 
+    /** Where the library is told to keep what it wants to keep; see {@link #connect}. */
+    private static File store(Context context) {
+        return new File(context.getFilesDir(), "freerdp");
+    }
+
+    /**
+     * The library's own certificate store, emptied: one PEM per server it has
+     * connected to, under {@code server/}, and the older single file beside it.
+     *
+     * <p>Whether a connection is refused is the app's pin store's answer rather
+     * than this one's (see {@code onVerifyChangedCertificate} in the JNI), so
+     * nothing here decides anything — but it is still a list of the machines
+     * this phone has been to, written without anybody asking, and "forget every
+     * server" that left it behind would be a half-truth.
+     */
+    static void forgetHosts(Context context) {
+        final File store = store(context);
+        delete(new File(store, "known_hosts"));
+        final File[] servers = new File(store, "server").listFiles();
+        if (servers != null) {
+            for (File f : servers) {
+                delete(f);
+            }
+        }
+    }
+
+    private static void delete(File f) {
+        if (f.exists() && !f.delete()) {
+            Log.w(TAG, "could not delete " + f);
+        }
+    }
+
     // ---- lifecycle ---------------------------------------------------------
 
     @Override
@@ -144,7 +176,7 @@ public final class FreeRdpBackend implements Backend, FreeRdpNative.Callbacks {
         // $HOME and does not exist in an app's process: what it keeps there is a
         // certificate store nothing here reads, but one it cannot write is a
         // connection that fails and blames TLS for it.
-        final File store = new File(context.getFilesDir(), "freerdp");
+        final File store = store(context);
         //noinspection ResultOfMethodCallIgnored
         store.mkdirs();
         final long h = FreeRdpNative.nativeCreate(this, address, userName, domain, password,

@@ -8,11 +8,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.util.Log;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import net.pgaskin.remotedesktop.backend.Backends;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -32,6 +34,8 @@ import java.util.function.Consumer;
  * can be uninstalled.
  */
 final class Plugins {
+
+    private static final String TAG = "Plugins";
 
     /** What a card says, and so what it offers to do about it. */
     enum Kind {
@@ -190,6 +194,79 @@ final class Plugins {
                         ? host.getString(R.string.plugin_failed) : said)
                 .setPositiveButton(android.R.string.ok, null)
                 .show();
+    }
+
+    // ---- the libraries an add-on has handed over --------------------------
+
+    /**
+     * Where an add-on's libraries are kept once they are the app's copies.
+     *
+     * <p>Written by {@code net.pgaskin.remotedesktop.plugin.Libraries}, which
+     * runs in this process as the app but is in a module the app does not
+     * compile against — it comes across on the add-on's dex. So the directory is
+     * named in two places, and this is the second: a copy is verified against
+     * the add-on's before it is loaded either way, so the cost of the two
+     * drifting apart is a button that deletes nothing rather than one that
+     * deletes the wrong thing.
+     */
+    private static File libraryCache(Context ctx) {
+        return new File(ctx.getApplicationContext().getFilesDir(), "plugins");
+    }
+
+    /** Whether there is anything for {@link #clearLibraries} to do. */
+    static boolean hasLibraries(Context ctx) {
+        final File[] dirs = libraryCache(ctx).listFiles();
+        if (dirs == null) {
+            return false;
+        }
+        for (File dir : dirs) {
+            final File[] files = dir.listFiles();
+            if (files == null || files.length > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Forget every copy, and say how many went.
+     *
+     * <p>What is already loaded stays loaded — a library this process has opened
+     * is mapped whether the file is still named or not, so a live session is not
+     * a reason to refuse this. The next one to load a backend of an add-on's
+     * copies it across again, which is what makes this a cache rather than a
+     * store: it is deleted to reclaim the space, or to make an add-on that has
+     * been set up again hand over what it now has.
+     */
+    static int clearLibraries(Context ctx) {
+        final File[] dirs = libraryCache(ctx).listFiles();
+        if (dirs == null) {
+            return 0;
+        }
+        int gone = 0;
+        for (File dir : dirs) {
+            final File[] files = dir.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    if (f.delete()) {
+                        gone++;
+                    } else {
+                        Log.w(TAG, "could not delete " + f);
+                    }
+                }
+            }
+            // The package's own directory too, so that an add-on uninstalled
+            // long ago leaves nothing behind with its name on it.
+            //noinspection ResultOfMethodCallIgnored
+            dir.delete();
+        }
+        // Every "this backend is ready" answer given so far was about the files
+        // that have just gone. Whether it is still true is now the add-on's to
+        // say again — it usually is, since it has its own copy to hand over,
+        // and where it has not this is what puts the card back on the home
+        // screen instead of leaving a session to fail.
+        Backends.setupChanged();
+        return gone;
     }
 
     /** The system's own confirmation, which is why this needs no permission. */

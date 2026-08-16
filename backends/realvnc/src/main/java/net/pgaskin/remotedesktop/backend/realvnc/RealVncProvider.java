@@ -232,6 +232,12 @@ public final class RealVncProvider implements BackendProvider {
                 .setPackage(RealVncLibrary.pluginPackage()));
     }
 
+    /** The core recognises a server by a blob of its own; see {@link RealVncBackend}. */
+    @Override
+    public void forgetHosts(Context context) {
+        RealVncBackend.forgetIdentities(context);
+    }
+
     /** Every option at its default, as the map {@code createSession} takes. */
     static Map<String, String> defaults() {
         final java.util.Map<String, String> m = new java.util.LinkedHashMap<>();

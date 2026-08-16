@@ -15,6 +15,7 @@ import net.pgaskin.remotedesktop.backend.CursorCache;
 import net.pgaskin.remotedesktop.backend.Monitor;
 import net.pgaskin.remotedesktop.backend.Prompt;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -41,8 +42,8 @@ import java.util.function.Consumer;
  *   <li><b>The far end's identity is the library's business.</b> It checks the
  *       certificate, keeps its own known-hosts file beside the app's, and asks
  *       in its own words; what the seam carries is the question and the answer.
- *       So {@code KnownHosts} is not consulted for this backend, and forgetting
- *       a host there does not reach it.
+ *       So {@code KnownHosts} is not consulted for this backend, and clearing it
+ *       does not reach this store — {@link #forgetHosts} is what does.
  * </ul>
  */
 public final class TigerVncBackend implements Backend, TigerVncNative.Callbacks {
@@ -78,6 +79,26 @@ public final class TigerVncBackend implements Backend, TigerVncNative.Callbacks 
     private volatile int desktopWidth;
     private volatile int desktopHeight;
     private volatile boolean dead;
+
+    /**
+     * The library's own known-hosts file, deleted.
+     *
+     * <p>Here rather than in the provider because the path is this class's
+     * doing: {@link TigerVncNative#nativeSetStateDir} is told the app's files
+     * directory below, and the library puts its own directory under whatever it
+     * is given. Nothing has to be running for this to be right — the file
+     * outlives every session, which is the point of it.
+     */
+    static void forgetHosts(Context context) {
+        final File hosts = new File(new File(context.getFilesDir(), STATE_DIR), KNOWN_HOSTS);
+        if (hosts.exists() && !hosts.delete()) {
+            Log.w(TAG, "could not delete " + hosts);
+        }
+    }
+
+    /** What the library makes under the directory it is given, and what it calls the file. */
+    private static final String STATE_DIR = "tigervnc";
+    private static final String KNOWN_HOSTS = "x509_known_hosts";
 
     public TigerVncBackend(Context context, String address, String userName, String password,
                            Map<String, String> extraOptions) {

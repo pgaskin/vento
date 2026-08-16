@@ -35,6 +35,7 @@ import com.google.android.material.snackbar.Snackbar;
 
 import net.pgaskin.remotedesktop.backend.BackendOption;
 import net.pgaskin.remotedesktop.backend.Backends;
+import net.pgaskin.remotedesktop.control.playground.Recordings;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -489,12 +490,29 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                     // service decided on, and the only check worth trusting is
                     // of what is inside it.
                     () -> importFile.launch(new String[]{"*/*"})));
-            // Beside the import and the export because it is the third thing
-            // that acts on the whole of the settings at once, and in a group of
-            // its own because it is the only one that destroys something.
+            // Beside the import and the export because they act on the whole of
+            // what is stored at once, and in a group of their own because they
+            // are the ones that destroy something. Each is one store: what a row
+            // deletes is said on the row, and nothing here deletes two things
+            // out of a person's answer to one question.
             screen.addPreference(heading(0));
             screen.addPreference(link(R.string.settings_reset_all,
                     R.string.settings_reset_all_summary, this::confirmResetAll));
+            screen.addPreference(link(R.string.settings_delete_connections,
+                    R.string.settings_delete_connections_summary,
+                    this::confirmDeleteConnections));
+            screen.addPreference(link(R.string.settings_forget_hosts,
+                    R.string.settings_forget_hosts_summary, this::confirmForgetHosts));
+            // Only where there is a plugin to have handed a library over, or a
+            // copy left by one that has gone: on a phone with neither, the row
+            // is a question about a thing that does not exist here.
+            if (!Backends.installedPlugins(requireContext()).isEmpty()
+                    || Plugins.hasLibraries(requireContext())) {
+                screen.addPreference(link(R.string.settings_clear_libraries,
+                        R.string.settings_clear_libraries_summary, this::confirmClearLibraries));
+            }
+            screen.addPreference(link(R.string.settings_delete_recordings,
+                    R.string.settings_delete_recordings_summary, this::confirmDeleteRecordings));
         }
 
         /**
@@ -705,15 +723,26 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             });
         }
 
-        // ---- reset --------------------------------------------------------
+        // ---- reset, and the other four ways of destroying something -------
 
-        private void confirmResetAll() {
+        /**
+         * The shape all five share: the row's own summary as the question, since
+         * what a row says it will delete is exactly what has to be confirmed,
+         * and saying it twice in two wordings is how the two come to disagree.
+         */
+        private void confirm(int title, int message, int action, Runnable go) {
             new MaterialAlertDialogBuilder(requireContext(),
                     R.style.ThemeOverlay_RemoteDesktop_Dialog)
-                    .setTitle(R.string.settings_reset_all_confirm)
-                    .setMessage(R.string.settings_reset_all_summary)
+                    .setTitle(title)
+                    .setMessage(message)
                     .setNegativeButton(android.R.string.cancel, null)
-                    .setPositiveButton(R.string.settings_reset_all_do, (d, w) -> {
+                    .setPositiveButton(action, (d, w) -> go.run())
+                    .show();
+        }
+
+        private void confirmResetAll() {
+            confirm(R.string.settings_reset_all_confirm, R.string.settings_reset_all_summary,
+                    R.string.settings_reset_all_do, () -> {
                         final Context ctx = requireContext();
                         AppSettings.prefs(ctx).edit().clear().apply();
                         InputSettings.prefs(ctx).edit().clear().apply();
@@ -723,8 +752,55 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                         Sessions.timeoutChanged();
                         said(R.string.settings_reset_all_done);
                         rebuild();
-                    })
-                    .show();
+                    });
+        }
+
+        /**
+         * The records and their previews. A session that is already open is not
+         * touched: it is a connection to a machine rather than a row in a file,
+         * and ending one is something the person is doing elsewhere.
+         */
+        private void confirmDeleteConnections() {
+            confirm(R.string.settings_delete_connections_confirm,
+                    R.string.settings_delete_connections_summary,
+                    R.string.settings_delete, () -> said(
+                            R.string.settings_delete_connections_done,
+                            Connections.deleteAll(requireContext())));
+        }
+
+        private void confirmForgetHosts() {
+            confirm(R.string.settings_forget_hosts_confirm,
+                    R.string.settings_forget_hosts_summary,
+                    R.string.settings_forget, () -> {
+                        Backends.forgetHosts(requireContext());
+                        said(R.string.settings_forget_hosts_done);
+                    });
+        }
+
+        /**
+         * The app's copies of what an add-on has handed over. Nothing is lost
+         * that the add-on cannot hand over again, which is why this asks in
+         * plainer terms than the rows above it.
+         */
+        private void confirmClearLibraries() {
+            confirm(R.string.settings_clear_libraries_confirm,
+                    R.string.settings_clear_libraries_summary,
+                    R.string.settings_clear, () -> {
+                        Plugins.clearLibraries(requireContext());
+                        said(R.string.settings_clear_libraries_done);
+                        // The row is offered only while there is something to
+                        // delete, and there no longer is unless a plugin is
+                        // installed.
+                        rebuild();
+                    });
+        }
+
+        private void confirmDeleteRecordings() {
+            confirm(R.string.settings_delete_recordings_confirm,
+                    R.string.settings_delete_recordings_summary,
+                    R.string.settings_delete, () -> said(
+                            R.string.settings_delete_recordings_done,
+                            Recordings.clear(requireContext())));
         }
 
         // ---- plumbing -----------------------------------------------------

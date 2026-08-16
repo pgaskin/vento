@@ -138,8 +138,8 @@ public final class TouchRecorder implements TouchRouter.Tap {
     }
 
     private void save(TouchLog.Writer w) {
-        final File dir = new File(ctx.getExternalFilesDir(null), "touchlogs");
-        if (!dir.isDirectory() && !dir.mkdirs()) {
+        final File dir = Recordings.dir(ctx, Recordings.TOUCH);
+        if (dir == null || (!dir.isDirectory() && !dir.mkdirs())) {
             Log.e(TAG, "cannot create " + dir);
             return;
         }

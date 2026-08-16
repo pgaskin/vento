@@ -136,6 +136,24 @@ public final class Connections {
         }
     }
 
+    /**
+     * Every connection, gone, and its preview with it — how many there were is
+     * the answer, since a screen that destroys something has to be able to say
+     * what it destroyed.
+     *
+     * <p>Not {@link #delete} over all the ids: this also takes the previews of
+     * connections that are no longer in the list, which is where the pictures of
+     * a machine somebody deleted on an older build would otherwise still be.
+     * "Delete everything" means the directory rather than the records it can
+     * account for.
+     */
+    public static int deleteAll(Context ctx) {
+        final int had = all(ctx).size();
+        write(ctx, List.of());
+        clearThumbnails(ctx);
+        return had;
+    }
+
     private static void write(Context ctx, List<Connection> list) {
         final JSONArray a = new JSONArray();
         try {

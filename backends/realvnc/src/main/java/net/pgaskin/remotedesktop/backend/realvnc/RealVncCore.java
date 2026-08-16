@@ -44,6 +44,18 @@ public final class RealVncCore {
     }
 
     /**
+     * The core's own directory, which is the path {@link #start} gives
+     * {@code initApp} with the app name under it — the core makes it, and what
+     * it puts there is its business rather than this backend's.
+     *
+     * <p>Public here because forgetting a server means deleting something out of
+     * it, and nothing else can work out where it is.
+     */
+    static File dataDir(Context context) {
+        return new File(context.getApplicationContext().getFilesDir(), APP_NAME);
+    }
+
+    /**
      * Idempotent. Returns the handler for the session thread, which is also
      * what {@link #post} uses.
      */

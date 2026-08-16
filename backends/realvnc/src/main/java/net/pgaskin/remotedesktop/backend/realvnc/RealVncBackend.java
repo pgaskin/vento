@@ -20,6 +20,7 @@ import net.pgaskin.remotedesktop.backend.ConnectionFact;
 import net.pgaskin.remotedesktop.backend.KnownHosts;
 import net.pgaskin.remotedesktop.backend.Prompt;
 
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -860,6 +861,27 @@ public final class RealVncBackend implements Backend,
     /** Keyed on the address as written, as {@link KnownHosts} is. */
     private static android.content.SharedPreferences identities(Context context) {
         return context.getSharedPreferences("realvnc_identities", Context.MODE_PRIVATE);
+    }
+
+    /**
+     * Every identity this core has been told to remember, forgotten, so that the
+     * next connection to each is asked about again.
+     *
+     * <p>The other half of what clearing {@link KnownHosts} means, which does
+     * not reach either of these: what is stored is the core's own blob rather
+     * than a fingerprint, and only the core can compare one.
+     *
+     * <p>Two stores because there are two. The one above is what this class
+     * hands back as {@code Identity} on the next connection; the core keeps its
+     * own beside its keys, under the directory it was given, and a server it
+     * still recognises there is a server it does not ask about.
+     */
+    static void forgetIdentities(Context context) {
+        identities(context).edit().clear().apply();
+        final File own = new File(new File(RealVncCore.dataDir(context), ".vnc"), "identities");
+        if (own.exists() && !own.delete()) {
+            Log.w(TAG, "could not delete " + own);
+        }
     }
 
     // ---- plumbing ----------------------------------------------------------

@@ -174,6 +174,12 @@ public final class FreeRdpProvider implements BackendProvider {
         return new FreeRdpBackend(context, address, userName, password, options);
     }
 
+    /** The library keeps a certificate store of its own; see {@link FreeRdpBackend}. */
+    @Override
+    public void forgetHosts(Context context) {
+        FreeRdpBackend.forgetHosts(context);
+    }
+
     /**
      * The desktop size to ask this connection's server for, as
      * {@code {width, height}}.

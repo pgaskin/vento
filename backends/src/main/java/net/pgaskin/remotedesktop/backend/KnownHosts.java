@@ -62,6 +62,18 @@ public final class KnownHosts {
     }
 
     /**
+     * Every pin here, gone: the next connection to each of them asks again, as
+     * a first one does.
+     *
+     * <p>Only this store. A backend whose library keeps its own is reached
+     * through {@link BackendProvider#forgetHosts}, which is what
+     * {@link Backends#forgetHosts} exists to call alongside this.
+     */
+    public static void clear(Context ctx) {
+        prefs(ctx).edit().clear().apply();
+    }
+
+    /**
      * Whether this certificate is the one this address was accepted with, in
      * which case nothing is asked. A match being silent is the point of
      * pinning: a prompt that appears every time is a prompt nobody reads.
