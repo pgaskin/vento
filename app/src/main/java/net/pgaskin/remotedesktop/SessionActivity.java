@@ -101,6 +101,15 @@ public final class SessionActivity extends Activity
     private SessionView view;
     private Connection connection; // non-null from the store, so it can leave a preview
 
+    /**
+     * What was stored for the input stack when the view's config was built from
+     * it, so that coming back from the settings screen can tell a file somebody
+     * edited from one they only looked at. Every trip through another activity
+     * ends here, and re-applying settings that have not moved is not free: it
+     * re-clamps the viewport, which is a thing the eye can catch.
+     */
+    private Map<String, ?> inputPrefs;
+
     // setDecorFitsSystemWindows is deprecated because a build targeting API 35
     // or above is edge to edge whether it asks or not. This one still runs on
     // 34, where it has to ask.
@@ -190,6 +199,7 @@ public final class SessionActivity extends Activity
         // the obvious thing to want, and the launcher does not offer it — the
         // recents card is headed with the app's name whatever a label says, and
         // what tells two sessions apart there is the picture on the card.
+        inputPrefs = InputSettings.prefs(this).getAll();
         view = new SessionView(this, session.backend(), this,
                 InputSettings.config(this, getResources().getDisplayMetrics().density));
         // The connection's own map rather than what the backend was created
@@ -201,7 +211,7 @@ public final class SessionActivity extends Activity
                 connection != null ? connection.options() : optionsFromIntent()));
         // The switch is in the settings tree now; --ez hud true still forces it
         // on for a session started from the command line.
-        view.setHudVisible(AppSettings.hud(this) || getIntent().getBooleanExtra("hud", false));
+        view.setHudVisible(hudWanted());
         // --ei tile 512, for the sweep the tile size was chosen from. No
         // setting: the default is the answer, and a session started any other
         // way gets it.
@@ -265,6 +275,7 @@ public final class SessionActivity extends Activity
     @Override
     protected void onResume() {
         super.onResume();
+        refreshSettings();
         if (awaitingSetup != null) {
             // Everything this window is was decided in onCreate, against an
             // answer that may have changed while the plugin's own screen was up.
@@ -274,6 +285,41 @@ public final class SessionActivity extends Activity
                 }
             });
         }
+    }
+
+    /**
+     * Settings are changed on screens of their own, so a session that outlives
+     * a trip to one has to be told on the way back rather than at the next
+     * connection — this is the whole of "somewhere else" for a screen that is
+     * only ever left and returned to.
+     *
+     * <p>The readout is set every time because it is a field and a redraw. The
+     * input stack is set only when the file behind it has actually moved, since
+     * applying it re-clamps the viewport, and a session panned into a corner
+     * being nudged out of it every time the app is switched away from and back
+     * is a worse thing than a stale setting.
+     *
+     * <p>What still waits for the next session is the private-IME flag, which
+     * an editor declares when a keyboard connects to it: an IME already up when
+     * it changed keeps the old one until it starts again.
+     */
+    private void refreshSettings() {
+        if (view == null) {
+            return;
+        }
+        view.setHudVisible(hudWanted());
+        final Map<String, ?> stored = InputSettings.prefs(this).getAll();
+        if (stored.equals(inputPrefs)) {
+            return;
+        }
+        inputPrefs = stored;
+        view.applySettings(InputSettings.config(this,
+                getResources().getDisplayMetrics().density));
+    }
+
+    /** The switch in the settings tree, or {@code --ez hud true} for one session. */
+    private boolean hudWanted() {
+        return AppSettings.hud(this) || getIntent().getBooleanExtra("hud", false);
     }
 
     // ---- what the session has to say for itself ----------------------------
@@ -477,13 +523,20 @@ public final class SessionActivity extends Activity
             return;
         }
         final WindowInsetsController bars = getWindow().getInsetsController();
-        if (AppSettings.immersive(this) && bars != null) {
-            // Sticky immersive: a swipe brings the bars back for a moment and
-            // they go again on their own, so a gesture aimed at the edge of the
-            // desktop does not leave them up.
-            bars.setSystemBarsBehavior(
-                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            bars.hide(WindowInsets.Type.systemBars());
+        if (bars != null) {
+            if (AppSettings.immersive(this)) {
+                // Sticky immersive: a swipe brings the bars back for a moment and
+                // they go again on their own, so a gesture aimed at the edge of the
+                // desktop does not leave them up.
+                bars.setSystemBarsBehavior(
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                bars.hide(WindowInsets.Type.systemBars());
+            } else {
+                // And the way back, for the setting having been turned off over
+                // a running session: this window is the only thing that hid
+                // them, so it is the only thing that can put them back.
+                bars.show(WindowInsets.Type.systemBars());
+            }
         }
         if (view != null) {
             view.refreshClipboard();

@@ -296,6 +296,31 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         return cfg;
     }
 
+    /**
+     * The input stack's settings, as they are now: they are edited on a screen
+     * of their own, and a session still connected underneath it would otherwise
+     * go on running on the ones it opened with until it was reconnected.
+     *
+     * <p>Into the live config rather than in place of it, because every piece
+     * of this stack holds <em>this</em> object and reads its fields as it goes
+     * — which is what makes a swap possible at all, and is why the values are
+     * nearly all of the work. What is left is whatever does not follow from a
+     * field being read later: a capture is a request to the system rather than
+     * a value, and the insets are computed from several of these and cached in
+     * the viewport. Both are redone unconditionally rather than against a list
+     * of which setting implies which, since such a list is one somebody has to
+     * remember to add to and nothing fails when they do not.
+     *
+     * <p>Called between gestures — the settings screen is another activity, so
+     * {@code onStop} has already let go of every touch, key and button this
+     * session was holding.
+     */
+    public void applySettings(Config now) {
+        cfg.copyFrom(now);
+        syncPointerCapture();
+        applyInsets();
+    }
+
     public void setHudVisible(boolean show) {
         hudVisible = show;
         invalidate();
