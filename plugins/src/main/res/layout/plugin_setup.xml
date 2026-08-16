@@ -79,6 +79,17 @@
             android:text="@string/plugin_allow_network"
             android:visibility="gone" />
 
+        <TextView
+            android:id="@+id/plugin_pins"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textSize="11sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:typeface="monospace"
+            android:visibility="gone" />
+
     </LinearLayout>
 
 </ScrollView>

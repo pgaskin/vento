@@ -55,6 +55,22 @@ public final class Download {
     }
 
     /**
+     * Whose server is on the other end, for a screen to name.
+     *
+     * <p>Somebody watching ten megabytes arrive is owed the name of whoever is
+     * sending them, and a mirror that is being tried after another one failed is
+     * the case where it matters: the bar looks the same either way. A host and
+     * not a URL, because a line of status is not wide enough for one.
+     */
+    public interface Where {
+        /** Asking a mirror's API which file it has. */
+        void asking(String host);
+
+        /** Fetching the archive itself. */
+        void fetching(String host);
+    }
+
+    /**
      * The first source that answers wins.
      *
      * <p>Every failure is reported, not the last: two mirrors fail for two
@@ -63,12 +79,17 @@ public final class Download {
      * the host it came from as well, since a message on a screen cannot carry a
      * URL.
      */
-    public static void toFile(Iterable<Source> sources, File out, Progress progress)
+    public static void toFile(Iterable<Source> sources, File out, Progress progress, Where where)
             throws IOException {
         final StringBuilder failures = new StringBuilder();
         for (Source source : sources) {
             try {
-                fetch(resolve(source, progress), out, progress);
+                // Whoever is asked and whoever answers with the file are not
+                // always the same host, so the second is named once it is known
+                // rather than the first being named for both.
+                final String url = resolve(source, progress, where);
+                where.fetching(host(url));
+                fetch(url, out, progress);
                 return;
             } catch (IOException e) {
                 Log.w(TAG, "fetching from " + source.url(), e);
@@ -83,10 +104,22 @@ public final class Download {
                 ? "There is nowhere to fetch it from." : failures.toString());
     }
 
-    private static String resolve(Source source, Progress progress) throws IOException {
+    /** The host a URL names, and the URL itself where it somehow names none. */
+    private static String host(String url) {
+        try {
+            final String host = URI.create(url).getHost();
+            return host == null || host.isEmpty() ? url : host;
+        } catch (IllegalArgumentException e) {
+            return url;
+        }
+    }
+
+    private static String resolve(Source source, Progress progress, Where where)
+            throws IOException {
         if (source.kind() == Kind.DIRECT) {
             return source.url();
         }
+        where.asking(host(source.url()));
         final File meta = File.createTempFile("meta", ".json");
         try {
             fetch(source.url(), meta, progress);

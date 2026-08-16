@@ -66,6 +66,13 @@ public abstract class SetupActivity extends Activity {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     /**
+     * The application's context, for looking a string up off the worker: a route
+     * outlives a rotation, and a string looked up on a dead screen's context is
+     * one of the ways that shows up much later.
+     */
+    private static Context strings;
+
+    /**
      * What the process is in the middle of, all main-thread only: whether a
      * route is running, what it is doing, how far through it is, and what the
      * last one that finished said. A screen is drawn from these rather than
@@ -80,6 +87,7 @@ public abstract class SetupActivity extends Activity {
     private static boolean denied;
 
     private TextView status;
+    private TextView pins;
     private ProgressBar progress;
     private View buttons;
     private View fix;
@@ -105,6 +113,7 @@ public abstract class SetupActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         setContentView(R.layout.plugin_setup);
+        strings = getApplicationContext();
 
         // The window is edge to edge and this screen has no bar of its own to
         // hang a title on, so both are done here: the label from the manifest at
@@ -119,6 +128,7 @@ public abstract class SetupActivity extends Activity {
         ((TextView) findViewById(R.id.plugin_title)).setText(getTitle());
         ((TextView) findViewById(R.id.plugin_explanation)).setText(explanation());
         status = findViewById(R.id.plugin_status);
+        pins = findViewById(R.id.plugin_pins);
         progress = findViewById(R.id.plugin_progress);
         buttons = findViewById(R.id.plugin_buttons);
         fix = findViewById(R.id.plugin_fix_network);
@@ -135,6 +145,9 @@ public abstract class SetupActivity extends Activity {
             return;
         }
 
+        pins.setText(pins());
+        pins.setVisibility(View.VISIBLE);
+
         findViewById(R.id.plugin_from_file).setOnClickListener(v -> picker.launch(
                 new Intent(Intent.ACTION_OPEN_DOCUMENT)
                         .addCategory(Intent.CATEGORY_OPENABLE)
@@ -144,8 +157,19 @@ public abstract class SetupActivity extends Activity {
             final File apk = File.createTempFile("download", ".apk", getCacheDir());
             try {
                 requireNetwork();
-                say(R.string.plugin_downloading);
-                Download.toFile(downloads(), apk, SetupActivity::progress);
+                // Named as it goes rather than up front, since which mirror is
+                // answering is the part of this that is not decided in advance.
+                Download.toFile(downloads(), apk, SetupActivity::progress, new Download.Where() {
+                    @Override
+                    public void asking(String host) {
+                        say(R.string.plugin_asking, host);
+                    }
+
+                    @Override
+                    public void fetching(String host) {
+                        say(R.string.plugin_downloading, host);
+                    }
+                });
                 return take(apk);
             } finally {
                 //noinspection ResultOfMethodCallIgnored
@@ -207,9 +231,39 @@ public abstract class SetupActivity extends Activity {
 
     /** The half both routes share: what is in the archive, checked. */
     private Map<String, String> take(File apk) throws IOException {
-        say(R.string.plugin_checking);
+        say(R.string.plugin_opening);
         progress(0, -1);
-        return Apks.take(this, List.of(apk), abi(), wanted());
+        // Each one named as it comes out: a library is hashed while it is being
+        // written, so this line is also which of them is being verified.
+        return Apks.take(this, List.of(apk), abi(), wanted(),
+                name -> say(R.string.plugin_extracting, name));
+    }
+
+    /**
+     * The small print under the line: where in the archive each library is
+     * looked for, and what it has to hash to.
+     *
+     * <p>This screen's whole claim is that it keeps a copy only if it is the
+     * build these declarations were read from, and a claim nobody can check is
+     * worth about as much as no claim. So the pins are on the screen making it,
+     * where somebody who has unzipped their own copy of the APK and hashed what
+     * was in it has something to compare that against.
+     */
+    private CharSequence pins() {
+        final StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> e : wanted().entrySet()) {
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append("lib/").append(abi()).append('/').append(e.getKey());
+            // A SHA-256 is 64 characters and a phone is not that wide: broken
+            // in half here rather than left to wrap wherever the font runs out.
+            final String sha256 = e.getValue();
+            for (int at = 0; at < sha256.length(); at += 32) {
+                sb.append("\n  ").append(sha256, at, Math.min(at + 32, sha256.length()));
+            }
+        }
+        return sb;
     }
 
     /** Nothing here has a build for this phone: see {@link #onCreate}. */
@@ -270,10 +324,6 @@ public abstract class SetupActivity extends Activity {
         done = 0;
         total = -1;
         working(true);
-        // The application's, not this screen's: the route outlives a rotation
-        // and a string looked up on a dead context is one of the ways that
-        // shows up much later.
-        final Context strings = getApplicationContext();
         WORKER.execute(() -> {
             String said = null;
             try {
@@ -315,17 +365,43 @@ public abstract class SetupActivity extends Activity {
     }
 
     /**
-     * What the route is doing now, for the line above the bar. Called from the
-     * worker, so it goes through the same slot a rotation redraws from.
+     * How long a step is held either side of being said.
+     *
+     * <p>Most of these steps are quick — an archive already in the cache is
+     * opened and both libraries are out of it in well under a second — and a
+     * line nobody can read is not a line that says anything. Half a second
+     * before and half a second after means each one is on the screen for a
+     * second at least, whatever it went on to do.
      */
-    private static void say(int what) {
+    private static final long LINGER = 500;
+
+    /**
+     * What the route is doing now, for the line above the bar. Called from the
+     * worker, so it goes through the same slot a rotation redraws from — and it
+     * blocks the worker for {@link #LINGER} either side, which is the point of
+     * it and the reason nothing calls it from the main thread.
+     */
+    private static void say(int what, Object... args) {
+        final String message = strings.getString(what, args);
+        linger();
         MAIN.post(() -> {
+            doing = message;
             final SetupActivity host = onScreen;
-            doing = host == null ? null : host.getString(what);
             if (host != null && busy) {
-                host.show(doing, true);
+                host.show(message, true);
             }
         });
+        linger();
+    }
+
+    private static void linger() {
+        try {
+            Thread.sleep(LINGER);
+        } catch (InterruptedException e) {
+            // Nothing interrupts this worker, and a route that is somehow being
+            // stopped should stop rather than sleep through it again.
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**

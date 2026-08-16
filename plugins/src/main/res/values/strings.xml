@@ -10,10 +10,11 @@
     <string name="plugin_from_file">Choose an APK</string>
     <string name="plugin_from_download">Download it</string>
 
-    <!-- While a route is running, in place of what went wrong. -->
-    <string name="plugin_downloading">Downloading APK</string>
-    <string name="plugin_reading">Extracting APK</string>
-    <string name="plugin_checking">Verifying checksums</string>
+    <string name="plugin_asking">Looking for APK on %1$s</string>
+    <string name="plugin_downloading">Downloading the APK from %1$s</string>
+    <string name="plugin_reading">Copying the chosen APK</string>
+    <string name="plugin_opening">Reading the APK</string>
+    <string name="plugin_extracting">Extracting and verifying %1$s</string>
 
     <string name="plugin_wrong_device">There is no build of this library for this phone.</string>
     <!-- Named as the switch is, since that is where the button goes. -->

@@ -28,6 +28,11 @@ public final class Apks {
     private Apks() {
     }
 
+    /** Which library is coming out, for a screen to name. */
+    public interface Taking {
+        void library(String name);
+    }
+
     /**
      * Reads every wanted library out of the archives, in order, and stores the
      * ones that verify.
@@ -38,7 +43,8 @@ public final class Apks {
      * @return what is still missing afterwards, empty if it all arrived
      */
     public static Map<String, String> take(Context context, List<File> apks, String abi,
-                                           Map<String, String> wanted) throws IOException {
+                                           Map<String, String> wanted, Taking taking)
+            throws IOException {
         final Map<String, String> missing = new LinkedHashMap<>(wanted);
         IOException last = null;
         for (File apk : apks) {
@@ -62,6 +68,7 @@ public final class Apks {
                     if (entry == null) {
                         continue;
                     }
+                    taking.library(e.getKey());
                     try (InputStream in = zip.getInputStream(entry)) {
                         LibraryStore.store(context, e.getKey(), e.getValue(), in);
                     }
