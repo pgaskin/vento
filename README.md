@@ -16,6 +16,8 @@ It has the best touchpad-style controls of any remote desktop app I am currently
 - Multiple client backends for VNC (TigerVNC, LibVNC, Rust) and RDP (IronRDP, FreeRDP).
 - Optional RealVNC backend (separate APK, fetches the library at runtime).
 
+[**`Download`**](https://github.com/pgaskin/vento/releases/latest) [**`Website`**](https://pgaskin.net/vento/)
+
 ### Vibe-coding
 
 This is mostly vibe-coded, but I've tested it extensively and worked alongside it, reading most of the thinking output (and intervening where required, especially where it started making incorrect assumptions or writing unmaintainable code), and I had a clear vision of what I wanted the final result to look like.
