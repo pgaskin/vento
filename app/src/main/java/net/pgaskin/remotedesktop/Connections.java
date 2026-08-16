@@ -66,10 +66,53 @@ public final class Connections {
             Log.w(TAG, "reading connections", e);
         }
         // Stable, so pinning one card does not reshuffle the rest — the file's
-        // order is the order things were added, and that is what somebody has
+        // order is the order things were added, unless somebody has said
+        // otherwise with {@link #reorder}, and either way that is what they have
         // learned the shape of.
+        //
+        // Every write goes through this list, so the file comes back out of a
+        // write already in this order. Which is what settles the two questions
+        // pinning would otherwise raise: a newly pinned connection is behind
+        // every pinned one in the file and therefore lands at the end of them,
+        // and an unpinned one is ahead of every unpinned one and lands at the
+        // start of those. Both are where somebody looking for what they just
+        // did would look.
         out.sort((x, y) -> Boolean.compare(y.pinned(), x.pinned()));
         return out;
+    }
+
+    /**
+     * Put these connections in this order, leaving every other one where it is.
+     *
+     * <p>What moves is the occupants of the places they already had between
+     * them, rather than the places: the ids given are shuffled among their own
+     * slots, so reordering the pinned ones cannot disturb the unpinned list
+     * underneath — the pins are a contiguous run at the front by the time
+     * {@link #all} has sorted, but nothing here needs them to be.
+     *
+     * <p>Ignored if the list is no longer the one that was ordered — a
+     * connection deleted from another window while the sheet was open — since
+     * the alternative is applying half of somebody's arrangement.
+     */
+    public static void reorder(Context ctx, List<String> idsInOrder) {
+        final List<Connection> list = all(ctx);
+        final Map<String, Connection> moving = new LinkedHashMap<>();
+        for (Connection c : list) {
+            if (idsInOrder.contains(c.id())) {
+                moving.put(c.id(), c);
+            }
+        }
+        if (moving.size() != idsInOrder.size()) {
+            Log.w(TAG, "not reordering: the list has changed underneath");
+            return;
+        }
+        int next = 0;
+        for (int i = 0; i < list.size(); i++) {
+            if (moving.containsKey(list.get(i).id())) {
+                list.set(i, moving.get(idsInOrder.get(next++)));
+            }
+        }
+        write(ctx, list);
     }
 
     /** Pin or unpin several at once, which is what the selection acts on. */

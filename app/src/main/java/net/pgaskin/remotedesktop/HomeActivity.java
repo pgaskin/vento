@@ -69,6 +69,14 @@ public final class HomeActivity extends AppCompatActivity {
     /** The editor sheet, while one is open — a dialog does not survive a rotation. */
     private ConnectionEditorPanel editor;
 
+    /**
+     * The reorder sheet, likewise. Nothing of it has to be carried across a
+     * rotation, unlike the editor's half-typed form: what it shows is read from
+     * the saved connections and what it does is written as it is done, so the
+     * bundle needs only to say that it was open.
+     */
+    private PinnedOrderPanel reorder;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -112,6 +120,9 @@ public final class HomeActivity extends AppCompatActivity {
         if (sheet != null) {
             editor = ConnectionEditorPanel.restore(this, sheet, adapter::reload);
         }
+        if (savedInstanceState != null && savedInstanceState.getBoolean("reorder")) {
+            reorderPinned();
+        }
     }
 
     @Override
@@ -120,15 +131,20 @@ public final class HomeActivity extends AppCompatActivity {
         if (editor != null && editor.isShowing()) {
             out.putBundle("editor", editor.saveState());
         }
+        out.putBoolean("reorder", reorder != null && reorder.isShowing());
     }
 
     @Override
     protected void onDestroy() {
-        // A dialog outliving its activity is a leaked window, and this one is
+        // A dialog outliving its activity is a leaked window, and these are
         // shown from a screen that is recreated on every rotation.
         if (editor != null) {
             editor.dismiss();
             editor = null;
+        }
+        if (reorder != null) {
+            reorder.dismiss();
+            reorder = null;
         }
         super.onDestroy();
     }
@@ -265,6 +281,10 @@ public final class HomeActivity extends AppCompatActivity {
                 toggleViewMode();
                 return true;
             }
+            if (id == R.id.action_reorder) {
+                reorderPinned();
+                return true;
+            }
             if (id == R.id.action_settings) {
                 startActivity(new Intent(this, SettingsActivity.class));
                 return true;
@@ -278,6 +298,26 @@ public final class HomeActivity extends AppCompatActivity {
         final MenuItem item = toolbar.getMenu().findItem(R.id.action_view_mode);
         item.setIcon(listView ? R.drawable.ic_view_grid : R.drawable.ic_view_list);
         item.setTitle(listView ? R.string.home_view_grid : R.string.home_view_list);
+    }
+
+    /**
+     * Reordering is offered once there are two pins to be in the wrong order.
+     * One pin has no order, and none is a sheet that would open empty — and an
+     * item that is always there and does nothing on most phones is worse than
+     * one that appears when it means something.
+     *
+     * <p>Counted off the front of the list rather than over all of it, because
+     * that is what {@link Connections#all} sorting pinned first means.
+     */
+    private void showReorder() {
+        int pinned = 0;
+        for (Connection c : adapter.items) {
+            if (!c.pinned()) {
+                break;
+            }
+            pinned++;
+        }
+        toolbar.getMenu().findItem(R.id.action_reorder).setVisible(pinned > 1);
     }
 
     /**
@@ -325,6 +365,16 @@ public final class HomeActivity extends AppCompatActivity {
      */
     private void editConnection(String id) {
         editor = ConnectionEditorPanel.show(this, id, adapter::reload);
+    }
+
+    /**
+     * The pinned connections, in a sheet that does nothing but let them be
+     * dragged past one another — see {@link PinnedOrderPanel} for why the drag
+     * is not on the cards themselves. Reloading behind it as it writes, since
+     * the list under the sheet is the thing being rearranged.
+     */
+    private void reorderPinned() {
+        reorder = PinnedOrderPanel.show(this, adapter::reload);
     }
 
     /**
@@ -379,6 +429,9 @@ public final class HomeActivity extends AppCompatActivity {
             // still true with a card above it, and a plugin waiting to be set
             // up is a good deal of what somebody would do first.
             empty.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
+            // Whether there is an order to change is a fact about the list, so
+            // it is answered wherever the list is read.
+            showReorder();
             notifyDataSetChanged();
             // The plugins land when they land: asking one whether it is set up
             // can mean hashing a library, and the connections are not made to

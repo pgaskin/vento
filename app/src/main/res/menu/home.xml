@@ -2,9 +2,23 @@
 <!--
     SPDX-FileCopyrightText: 2026 Patrick Gaskin
     SPDX-License-Identifier: GPL-3.0-or-later
+
+    Left to right: what the list is arranged as, what shape it is drawn in, and
+    then everything else. The two that are about the list in front of you come
+    before the one that leaves it, and the one that only sometimes applies is
+    outermost — so nothing moves when it appears and disappears.
 -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- Only while there is an order to change: two pinned connections are the
+         fewest that can be in the wrong one, and HomeActivity hides the item
+         below that rather than opening a sheet with nothing to drag. -->
+    <item
+        android:id="@+id/action_reorder"
+        android:icon="@drawable/ic_low_priority"
+        android:title="@string/home_reorder"
+        android:visible="false"
+        app:showAsAction="always" />
     <!-- The icon and the title are the shape being switched *to*, and
          HomeActivity sets both: this is one item in two states rather than two
          items of which one is always wrong. -->

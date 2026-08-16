@@ -19,6 +19,10 @@
     <string name="home_pin">Pin</string>
     <string name="home_unpin">Unpin</string>
     <string name="home_pinned">Pinned</string>
+    <string name="home_reorder">Reorder pinned</string>
+    <string name="home_reorder_drag">Drag to reorder</string>
+    <string name="home_reorder_up">Move up</string>
+    <string name="home_reorder_down">Move down</string>
     <string name="home_connected">Connected</string>
     <string name="home_delete_title">Delete %1$s?</string>
     <string name="home_delete_message">The connection, saved credentials, and preview will be permanently deleted.</string>
