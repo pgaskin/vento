@@ -122,7 +122,7 @@
     <string name="settings_clipboard_out">Send clipboard</string>
     <string name="settings_clipboard_out_summary">Send locally copied text to the remote machine.</string>
     <string name="settings_clipboard_in">Receive clipboard</string>
-    <string name="settings_clipboard_in_summary">Upadte the local clipboard with copied text.</string>
+    <string name="settings_clipboard_in_summary">Update the local clipboard with copied text.</string>
     <string name="settings_release_keys">Release keys when losing focus</string>
     <string name="settings_release_keys_summary">Release all locally held keys when switching apps.</string>
     <string name="settings_region_hints">Show touch region hints</string>
