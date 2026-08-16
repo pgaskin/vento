@@ -13,9 +13,11 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.loadingindicator.LoadingIndicator;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.res.TypedArray;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.util.TypedValue;
@@ -62,6 +64,33 @@ public final class SessionActivity extends Activity
         implements SessionView.Host, ConnectionPanel.Host, Prompt.Handler {
 
     public static final String EXTRA_CONNECTION = "connection"; // else a bare address
+
+    /**
+     * The way in to one saved connection, wherever it is asked for: the home
+     * screen, a launcher shortcut, an icon on a home screen.
+     *
+     * <p>One factory rather than one per caller, because this intent is an
+     * identity as well as a request. A session's window is a document, and what
+     * decides whether a launch lands in the one that is already open is
+     * {@link Intent#filterEquals} — the component, the action <em>and</em> the
+     * data together. Two callers that agreed about the URI and differed about
+     * the action would open the same machine in two windows, each with a live
+     * connection to it.
+     *
+     * <p>So: the data URI is what names the document, and the action is here
+     * because a shortcut's intent must have one and the home screen must then
+     * have the same. {@code NEW_DOCUMENT} is what asks for a window per session
+     * — {@code intoExisting} in the manifest is the other half of that rule.
+     * The extra is what the screen actually reads; the URI is for the system
+     * and for {@link SessionService}, which reads it back off a task that has
+     * been swiped away.
+     */
+    public static Intent intentFor(Context ctx, String connectionId) {
+        return new Intent(Intent.ACTION_VIEW,
+                Uri.fromParts("connection", connectionId, null), ctx, SessionActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
+                .putExtra(EXTRA_CONNECTION, connectionId);
+    }
 
     /**
      * The live connection, which this screen <em>attaches</em> to rather than
@@ -148,6 +177,14 @@ public final class SessionActivity extends Activity
             tv.setPadding(48, 96, 48, 48);
             setContentView(tv);
             return;
+        }
+        // Which machine this phone is actually used to connect to, which is
+        // what the launcher ranks its short menu by. Here rather than at each
+        // way in, so that every one of them counts and none counts twice, and
+        // only once there is a session: a window that came up to say there is
+        // no backend for this connection is not somebody using it.
+        if (connection != null) {
+            Shortcuts.used(this, connection.id());
         }
         // No TaskDescription naming the machine: a window per session makes that
         // the obvious thing to want, and the launcher does not offer it — the

@@ -147,6 +147,12 @@ public final class Connections {
             return;
         }
         prefs(ctx).edit().putString(KEY, a.toString()).apply();
+        // Every add, edit, pin, import and delete comes through here, which is
+        // why the launcher is told from here rather than from each of them: a
+        // shortcut menu and a home screen icon are the list seen from outside
+        // the app, and there is no such thing as a change to the list that they
+        // are not a change to.
+        Shortcuts.publish(ctx);
     }
 
     // ---- options -----------------------------------------------------------

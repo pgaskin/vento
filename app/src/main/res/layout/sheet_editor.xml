@@ -172,6 +172,27 @@
             android:layout_weight="1" />
 
         <!--
+            The other place this connection can be put, and next to the pin
+            because they are one question asked twice: where does this machine
+            appear. Not a toggle, unlike its neighbour — what is on the home
+            screen is the launcher's to say and this app is not told, so the
+            button can only ever offer, and a control that showed a state it
+            cannot read would be guessing.
+
+            Which is also why it is drawn without the outline its neighbour
+            has: on a toggle that container is what fills in when it is on, so
+            an action wearing one is a switch that is always off.
+        -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/home_screen"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:contentDescription="@string/editor_home_screen"
+            app:icon="@drawable/ic_add_home" />
+
+        <!--
             Pinned is a state rather than an action, so the control is a toggle
             that shows it and not a button that inverts it. Down here beside
             Save because it is the other thing this sheet writes, even though

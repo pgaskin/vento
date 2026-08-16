@@ -28,5 +28,13 @@ public final class RemoteDesktopApp extends Application {
         // Before anything can ask what this app can connect with, and here
         // rather than in an activity because the service is an entry point too.
         Backends.discover(this);
+
+        // The launcher's copy of the connection list, which is otherwise only
+        // rewritten when the list is. Every other way one can be wrong happens
+        // while this app is not running: a restored backup, or an upgrade from
+        // a version that published none. Off the main thread, and cheap enough
+        // that asking on every start is simpler than remembering whether it
+        // has been asked.
+        Shortcuts.publish(this);
     }
 }

@@ -6,7 +6,6 @@ package net.pgaskin.remotedesktop;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
-import android.net.Uri;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
@@ -343,16 +342,12 @@ public final class HomeActivity extends AppCompatActivity {
      * lingered there as a window somebody could go back to — an empty one, since
      * the only thing in it had gone.
      *
-     * <p>The data URI is that document's identity, which is why it is here and
-     * not in the activity: it is what makes a second window for the same
-     * connection impossible, and what lets the notification land in the window
-     * its session already has.
+     * <p>The intent itself is {@link SessionActivity#intentFor}'s, and shared
+     * rather than built here because a launcher shortcut opens the same
+     * connection and the two must be the same document — see there.
      */
     private void openConnection(Connection conn) {
-        startActivity(new Intent(this, SessionActivity.class)
-                .setData(Uri.fromParts("connection", conn.id(), null))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
-                .putExtra(SessionActivity.EXTRA_CONNECTION, conn.id()));
+        startActivity(SessionActivity.intentFor(this, conn.id()));
         finishAndRemoveTask();
     }
 

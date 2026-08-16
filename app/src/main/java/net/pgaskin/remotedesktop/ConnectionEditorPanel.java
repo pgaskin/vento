@@ -13,6 +13,7 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.activity.ComponentDialog;
 import androidx.activity.OnBackPressedCallback;
@@ -88,6 +89,10 @@ final class ConnectionEditorPanel {
     private final MaterialButton credentials;
     private final TextView credentialsSummary;
     private final MaterialButton pin;
+    private final MaterialButton homeScreen;
+    /** Whether the launcher takes shortcuts, asked once: it cannot change while
+     * a sheet is open, and the answer is a binder call. */
+    private final boolean canPin;
     /** Whether this connection is pinned, which the toggle beside Save both
      * shows and sets; see the listener for why it does not wait for Save. */
     private boolean pinned;
@@ -269,6 +274,10 @@ final class ConnectionEditorPanel {
         title = content.findViewById(R.id.title);
         delete = content.findViewById(R.id.delete);
         delete.setOnClickListener(v -> confirmDelete());
+        homeScreen = content.findViewById(R.id.home_screen);
+        canPin = Shortcuts.canPin(activity);
+        homeScreen.setTooltipText(activity.getString(R.string.editor_home_screen));
+        homeScreen.setOnClickListener(v -> addToHomeScreen());
         pin = content.findViewById(R.id.pin);
         pin.setOnClickListener(v -> {
             // Written straight through rather than held until Save: pinning is
@@ -320,6 +329,36 @@ final class ConnectionEditorPanel {
         pin.setChecked(pinned);
         pin.setContentDescription(activity.getString(
                 pinned ? R.string.home_unpin : R.string.home_pin));
+        pin.setTooltipText(pin.getContentDescription());
+        // The same "there has to be a record" as the other two, and one more
+        // condition: a launcher that does not take shortcuts is not offered a
+        // button that can only fail.
+        homeScreen.setVisibility(existing && canPin ? View.VISIBLE : View.GONE);
+    }
+
+    /**
+     * Offer this connection to the launcher as an icon of its own.
+     *
+     * <p>The stored record rather than what is in the form, which is the same
+     * rule the credentials button follows: what goes to the launcher is a name
+     * and an address, and half-typed ones are not those yet. Nothing is lost by
+     * that — {@link Shortcuts} rewrites every shortcut whenever the list is
+     * written, so a Save afterwards reaches the icon, and the only cost of
+     * pinning first is a label that is right a moment later.
+     *
+     * <p>Nothing is said when it works: what happens then is the system's own
+     * dialog asking whether to add it, which is a better answer than anything
+     * this sheet could put underneath it.
+     */
+    private void addToHomeScreen() {
+        final Connection stored = Connections.byId(activity, id);
+        if (stored == null) {
+            return;
+        }
+        if (!Shortcuts.requestPin(activity, stored)) {
+            Toast.makeText(activity, R.string.editor_home_screen_failed, Toast.LENGTH_SHORT)
+                    .show();
+        }
     }
 
     // ---- the credentials ----------------------------------------------------

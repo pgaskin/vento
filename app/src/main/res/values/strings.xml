@@ -23,6 +23,12 @@
     <string name="home_delete_title">Delete %1$s?</string>
     <string name="home_delete_message">The connection, saved credentials, and preview will be permanently deleted.</string>
 
+    <!-- launcher shortcuts: the menu behind the app icon, and icons on the home screen -->
+    <string name="shortcut_label">%1$s (%2$s)</string>
+    <!-- What a home screen icon says when pressed once its connection has gone. Not
+         "deleted": it is also what a phone restored without it would say. -->
+    <string name="shortcut_deleted">This connection no longer exists.</string>
+
     <!-- plugins: cards on the home screen, and one dialog wherever a backend of theirs is used -->
     <string name="plugin_needs_setup">The %1$s backend requires additional setup.</string>
     <!-- Both reasons a plugin can be refused before it is loaded, since the line under it says which. -->
@@ -50,6 +56,8 @@
     <string name="editor_option_default">App default: %1$s</string>
     <string name="editor_option_on">On</string>
     <string name="editor_option_off">Off</string>
+    <string name="editor_home_screen">Add to home screen</string>
+    <string name="editor_home_screen_failed">The default launcher does not support shortcuts.</string>
     <string name="editor_save">Save</string>
     <string name="editor_discard">Discard</string>
     <string name="editor_keep_editing">Keep editing</string>
