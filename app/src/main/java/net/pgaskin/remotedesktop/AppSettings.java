@@ -32,6 +32,7 @@ public final class AppSettings {
     public static final String KEY_REGION_HINTS = "regionHints";  // where the controls are
     public static final String KEY_RELEASE_KEYS = "releaseKeys";
     public static final String KEY_SESSION_TIMEOUT = "sessionTimeout";  // minutes off screen
+    public static final String KEY_DEVELOPER_MODE = "developerMode";    // the hidden rows
 
     /**
      * Every key in this file with the answer it gives when nothing is stored.
@@ -63,6 +64,7 @@ public final class AppSettings {
         m.put(KEY_REGION_HINTS, true);
         m.put(KEY_RELEASE_KEYS, true);
         m.put(KEY_SESSION_TIMEOUT, "0");
+        m.put(KEY_DEVELOPER_MODE, false);
         return Collections.unmodifiableMap(m);
     }
 
@@ -216,6 +218,32 @@ public final class AppSettings {
         } catch (NumberFormatException e) {
             return 0;
         }
+    }
+
+    /**
+     * Whether this phone has asked to be shown the rows that are not for
+     * everybody: the playground's two recorders and the row that deletes what
+     * they wrote.
+     *
+     * <p>Unlocked the way Android's own developer options are — ten taps on the
+     * version row — because what is behind it is worth nothing to somebody who
+     * was not looking for it: a fixture recorder writes raw touch and key
+     * streams to a folder, which is a thing to pull off the phone and commit,
+     * not a thing to find. Hidden rather than absent, since the alternative is a
+     * separate build, and then what is tested is not what ships.
+     *
+     * <p>A switch and not a one-way door: "Restore defaults" clears this file,
+     * and this key with it, which is the way back for a phone that got here by
+     * curiosity. It travels in an export like everything else in the table —
+     * what it unlocks is a test surface, so a second phone of the same person's
+     * arriving already unlocked is the answer they gave the first one.
+     */
+    public static boolean developerMode(Context ctx) {
+        return get(ctx, KEY_DEVELOPER_MODE);
+    }
+
+    public static void setDeveloperMode(Context ctx, boolean on) {
+        prefs(ctx).edit().putBoolean(KEY_DEVELOPER_MODE, on).apply();
     }
 
     /** What the row offers, in minutes, in the order it offers them. */

@@ -109,18 +109,30 @@ public final class PlaygroundView extends View
         this(ctx, Config.improved(ctx.getResources().getDisplayMetrics().density));
     }
 
+    public PlaygroundView(Context ctx, Config cfg) {
+        this(ctx, cfg, true);
+    }
+
     /**
      * @param cfg the settings to start from. The app hands its stored ones in,
      *            so what is being exercised here is what a session would run —
      *            the PRESET square still swaps presets on top of them, which is
      *            what makes this a playground rather than a preview.
+     * @param recorders whether the fixture recorder and the key trace are
+     *            offered as squares. They write raw streams to files meant to be
+     *            pulled off the phone, which is a thing a library's own demo and
+     *            a host that has asked for it both want and an app's test
+     *            surface does not — hence the parameter, and hence the
+     *            constructors above it leaving them on. {@link #setRecording}
+     *            and {@link #setKeyTrace} still work either way: a host that
+     *            hides the squares can still arm one from a script.
      */
-    public PlaygroundView(Context ctx, Config cfg) {
+    public PlaygroundView(Context ctx, Config cfg, boolean recorders) {
         super(ctx);
         this.cfg = cfg;
         viewport = new Viewport(cfg.density);
         viewport.setDesktopSize(DESKTOP_W, DESKTOP_H);
-        desktop = new FakeDesktop(DESKTOP_W, DESKTOP_H, this);
+        desktop = new FakeDesktop(DESKTOP_W, DESKTOP_H, this, recorders);
         cursor = new CursorController(cfg, viewport, desktop, scheduler);
         cursor.setListener(this);
         gestures = new GestureRecognizer(cfg, cursor, this, scheduler);

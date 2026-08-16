@@ -86,6 +86,14 @@
     <string name="settings_source">Source code</string>
     <string name="settings_source_summary">github.com/pgaskin/vento</string>
     <string name="settings_version">Version</string>
+    <!-- Ten taps on the version row, as in Android's own developer options. Said
+         only for the last three, so nobody arrives here by mistake. -->
+    <string name="settings_developer_on">You are now a developer!</string>
+    <string name="settings_developer_already">No need, you are already a developer.</string>
+    <plurals name="settings_developer_steps">
+        <item quantity="one">You are now %1$d step away from being a developer.</item>
+        <item quantity="other">You are now %1$d steps away from being a developer.</item>
+    </plurals>
     <string name="settings_session_timeout">Session timeout</string>
     <string name="settings_session_timeout_summary">Automatically disconnect inactive sessions.</string>
     <string name="settings_session_timeout_never">Never</string>

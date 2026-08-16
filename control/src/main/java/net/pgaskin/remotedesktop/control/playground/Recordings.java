@@ -42,6 +42,24 @@ public final class Recordings {
     }
 
     /**
+     * Whether either recorder has left anything behind, for a host deciding
+     * whether to offer the deletion at all. A directory listing rather than a
+     * count, because the question is only ever "any": both directories are
+     * empty on every phone that has not recorded, and a recorder makes its own
+     * so neither need exist.
+     */
+    public static boolean any(Context ctx) {
+        for (String name : new String[]{TOUCH, KEYS}) {
+            final File dir = dir(ctx, name);
+            final String[] files = dir == null ? null : dir.list();
+            if (files != null && files.length > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Delete every recording, and say how many went. The directories stay: a
      * recorder makes its own, and an empty one is not worth a special case.
      */

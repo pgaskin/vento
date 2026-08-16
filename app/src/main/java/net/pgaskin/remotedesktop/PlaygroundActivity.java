@@ -16,7 +16,8 @@ import net.pgaskin.remotedesktop.control.playground.PlaygroundView;
  *
  * <p>It was the whole app before there was a protocol to speak, and is now
  * reachable from the settings tree: a test surface with known geometry for
- * exercising the input options, and where the fixture recorder lives.
+ * exercising the input options, and — for a phone that has asked to be a
+ * developer — where the fixture recorder lives.
  */
 public final class PlaygroundActivity extends Activity {
 
@@ -29,12 +30,22 @@ public final class PlaygroundActivity extends Activity {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setDecorFitsSystemWindows(false);
-        final PlaygroundView view = new PlaygroundView(this,
-                InputSettings.config(this, getResources().getDisplayMetrics().density));
         // adb shell am start -n net.pgaskin.remotedesktop/.PlaygroundActivity --ez record true
-        view.setRecording(getIntent().getBooleanExtra("record", false));
+        final boolean record = getIntent().getBooleanExtra("record", false);
         // ... and --ez keys true for the key trace, which is what a keyboard walk reads.
-        view.setKeyTrace(getIntent().getBooleanExtra("keys", false));
+        final boolean keys = getIntent().getBooleanExtra("keys", false);
+        // The two recorders are the playground's developer half: they write raw
+        // touch and key streams to a folder to be pulled off the phone, which is
+        // of no use to somebody who came here to try the controls. So the
+        // squares are there for a phone that has asked to be a developer — or
+        // for a launch that asked for one by name, since arriving with an extra
+        // means adb, and adb is developer access however this app has been told
+        // about it. That is what keeps the fixture scripts working unchanged.
+        final PlaygroundView view = new PlaygroundView(this,
+                InputSettings.config(this, getResources().getDisplayMetrics().density),
+                AppSettings.developerMode(this) || record || keys);
+        view.setRecording(record);
+        view.setKeyTrace(keys);
         // ... and --ez relative true for a far end that owns the cursor.
         view.setRelativePointer(getIntent().getBooleanExtra("relative", false));
         setContentView(view);

@@ -35,6 +35,9 @@ public final class FakeDesktop implements CursorController.PointerSink, KeySink 
      * The enum constant's name is what is drawn on the square; the current
      * <em>value</em> comes from {@link ToggleHandler#label}, since the
      * configuration lives in {@code Config}, not here.
+     *
+     * <p>Every one of them is drawn except the two recorders, which are there
+     * only when the host asked for them — see the constructor.
      */
     public enum Toggle {
         PRESET, ACCEL, AXISLOCK, MOMENTUM, CURSOR, NATSCROLL, HUD, RECORD,
@@ -138,7 +141,14 @@ public final class FakeDesktop implements CursorController.PointerSink, KeySink 
     private final Paint ink = new Paint();
     private final RectF tmp = new RectF();
 
-    public FakeDesktop(int width, int height, ToggleHandler toggles) {
+    /**
+     * @param recorders whether the {@code RECORD} and {@code KEYTRACE} squares
+     *                  are among the ones drawn. Off, they are not laid out at
+     *                  all and the block closes up behind them: a square that is
+     *                  present but dead is a thing to explain, and there is
+     *                  nothing here to explain it with.
+     */
+    public FakeDesktop(int width, int height, ToggleHandler toggles, boolean recorders) {
         this.width = width;
         this.height = height;
         this.toggles = toggles;
@@ -170,12 +180,17 @@ public final class FakeDesktop implements CursorController.PointerSink, KeySink 
             squares.add(new Square("SQ" + (i + 1), colors[i], at[i][0], at[i][1], 180, 120, true, null));
         }
 
-        final Toggle[] toggleDefs = Toggle.values();
-        for (int i = 0; i < toggleDefs.length; i++) {
+        final List<Toggle> toggleDefs = new ArrayList<>();
+        for (Toggle t : Toggle.values()) {
+            if (recorders || (t != Toggle.RECORD && t != Toggle.KEYTRACE)) {
+                toggleDefs.add(t);
+            }
+        }
+        for (int i = 0; i < toggleDefs.size(); i++) {
             final float tx = 60 + (i % 4) * 170;
             final float ty = 60 + (i / 4) * 70;
-            squares.add(new Square(toggleDefs[i].name(), 0xff3a3f4b, tx, ty, 150, 54,
-                    false, toggleDefs[i]));
+            squares.add(new Square(toggleDefs.get(i).name(), 0xff3a3f4b, tx, ty, 150, 54,
+                    false, toggleDefs.get(i)));
         }
     }
 

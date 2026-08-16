@@ -17,6 +17,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.CheckBox;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -266,6 +267,7 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
         @Override
         public void onResume() {
             super.onResume();
+            versionTaps = 0; // a count that spans two visits is not a run of taps
             final String notSetUp = getString(R.string.settings_backend_setup);
             for (Map.Entry<String, Preference> row : backendRows.entrySet()) {
                 final Preference p = row.getValue();
@@ -303,10 +305,9 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
 
         /**
          * Which build this is, under the licences and the source it was built
-         * from. Not selectable rather than disabled, which is how the library is
-         * asked for an informational row: it draws the title in the summary's
-         * colour, so the two lines read as one statement rather than as an
-         * action that has been greyed out.
+         * from. An informational row that is nonetheless selectable, because it
+         * is also the way in to {@link #tapVersion the developer rows} and a row
+         * that cannot be selected cannot be tapped ten times either.
          */
         private Preference version() {
             final Preference p = new Preference(requireContext());
@@ -315,8 +316,54 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             p.setIconSpaceReserved(false);
             p.setSingleLineTitle(false);
             p.setPersistent(false);
-            p.setSelectable(false);
+            p.setOnPreferenceClickListener(x -> {
+                tapVersion();
+                return true;
+            });
             return p;
+        }
+
+        /** Where the count is kept, and reset by leaving the screen. */
+        private int versionTaps;
+
+        /** The last thing said about it, cancelled so taps do not queue up. */
+        private Toast versionToast;
+
+        /**
+         * The way in, and the same one Android uses for its own developer
+         * options: ten taps on the version, silent for the first six so that
+         * nobody arrives here by mistake, then counting down so that somebody
+         * who has started can tell they are getting somewhere.
+         *
+         * <p>Toasts rather than this screen's snackbars: what is being said is
+         * about the tapping rather than about the row, it has to survive the
+         * next tap replacing it, and a countdown that shoves the list up and
+         * down nine times is a worse joke than the one being told.
+         */
+        private void tapVersion() {
+            final Context ctx = requireContext();
+            if (versionToast != null) {
+                versionToast.cancel();
+            }
+            if (AppSettings.developerMode(ctx)) {
+                versionToast = Toast.makeText(ctx, R.string.settings_developer_already,
+                        Toast.LENGTH_SHORT);
+            } else {
+                final int remaining = 10 - ++versionTaps;
+                if (remaining > 3) {
+                    return;
+                }
+                if (remaining > 0) {
+                    versionToast = Toast.makeText(ctx, getResources().getQuantityString(
+                            R.plurals.settings_developer_steps, remaining, remaining),
+                            Toast.LENGTH_SHORT);
+                } else {
+                    AppSettings.setDeveloperMode(ctx, true);
+                    versionToast = Toast.makeText(ctx, R.string.settings_developer_on,
+                            Toast.LENGTH_SHORT);
+                }
+            }
+            versionToast.show();
         }
 
         private Preference link(int title, int summary, Runnable go) {
@@ -534,8 +581,18 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                 screen.addPreference(link(R.string.settings_clear_libraries,
                         R.string.settings_clear_libraries_summary, this::confirmClearLibraries));
             }
-            screen.addPreference(link(R.string.settings_delete_recordings,
-                    R.string.settings_delete_recordings_summary, this::confirmDeleteRecordings));
+            // Same rule as the row above it, and for the same reason: only where
+            // there is something for it to be about. Nothing writes a recording
+            // on a phone that has not asked for the playground's recorders, and
+            // one that has since stopped asking — "Restore defaults" clears the
+            // flag — still gets the row while its recordings are on disk, since
+            // a folder with no way to empty it is worse than a row nobody needs.
+            if (AppSettings.developerMode(requireContext())
+                    || Recordings.any(requireContext())) {
+                screen.addPreference(link(R.string.settings_delete_recordings,
+                        R.string.settings_delete_recordings_summary,
+                        this::confirmDeleteRecordings));
+            }
         }
 
         /**
@@ -821,9 +878,14 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
         private void confirmDeleteRecordings() {
             confirm(R.string.settings_delete_recordings_confirm,
                     R.string.settings_delete_recordings_summary,
-                    R.string.settings_delete, () -> said(
-                            R.string.settings_delete_recordings_done,
-                            Recordings.clear(requireContext())));
+                    R.string.settings_delete, () -> {
+                        said(R.string.settings_delete_recordings_done,
+                                Recordings.clear(requireContext()));
+                        // As with the libraries: on a phone that is no longer a
+                        // developer, this row was the last of them and has just
+                        // finished being needed.
+                        rebuild();
+                    });
         }
 
         // ---- plumbing -----------------------------------------------------
