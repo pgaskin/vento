@@ -203,23 +203,30 @@ public final class Config {
      */
     public boolean dedupePointerEvents = true;
     /**
-     * Let a pan carry the desktop past its own edges, leaving blank beside it
-     * ({@link net.pgaskin.remotedesktop.control.Viewport#setPanMargins}). Off is
-     * the original: an edge of the desktop stops at the edge of the window,
-     * which on a phone is not a rectangle — a rounded corner, a camera cutout
-     * and a system bar all sit over the picture, and the last row of pixels
-     * against one of them cannot be looked at squarely or clicked comfortably.
+     * Keep the desktop's edges clear of the shape of the window
+     * ({@link net.pgaskin.remotedesktop.control.Viewport#setPanMargins}): a pan
+     * may carry each edge in by whatever the caller measures that edge to cost,
+     * leaving blank beside it. Off is the original: an edge of the desktop stops
+     * at the edge of the window, which on a phone is not a rectangle — a rounded
+     * corner, a camera cutout and a system bar all sit over the picture, and the
+     * last row of pixels against one of them cannot be looked at squarely or
+     * clicked comfortably.
      *
      * <p>Off by default, because it is blank space in exchange for reach, and
      * whether that is worth it depends on the phone.
      */
-    public boolean panMarginEnabled = false;
+    public boolean panMarginInsets = false;
     /**
-     * How much margin, <em>beyond</em> whatever the caller measured the window's
-     * own edges to cost it: the desktop clears an obstruction and then some, so
-     * that an edge pixel is reachable rather than merely visible.
+     * A margin on every edge, the same on each and answering to nothing about
+     * the window: room to bring an edge of the desktop in from the edge of the
+     * screen because that is where it is easier to look at, whatever is or is
+     * not over it there.
+     *
+     * <p>Independent of {@link #panMarginInsets}, which is a different reason
+     * to want the same thing — either alone is a margin, and both is the sum.
+     * Zero by default, like the other off.
      */
-    public float panMarginPx; // dp(8)
+    public float panMarginPx;
 
     // ---- physical mouse and keyboard --------------------------------------
 
@@ -261,7 +268,6 @@ public final class Config {
         this.keyboardScrollSlopPx = dp(8);
         this.keyboardFlingMinPx = dp(0.3f);
         this.keyboardFlingStopPx = dp(0.02f);
-        this.panMarginPx = dp(8);
     }
 
     public float dp(float v) {
@@ -344,7 +350,7 @@ public final class Config {
         recentreCursorOnZoom = o.recentreCursorOnZoom;
         coalescePointerEvents = o.coalescePointerEvents;
         dedupePointerEvents = o.dedupePointerEvents;
-        panMarginEnabled = o.panMarginEnabled;
+        panMarginInsets = o.panMarginInsets;
         panMarginPx = o.panMarginPx;
         mouseCapture = o.mouseCapture;
         mouseSpeed = o.mouseSpeed;

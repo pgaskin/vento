@@ -151,22 +151,74 @@ public class ViewportTest {
     }
 
     /**
-     * A desktop that does not fill its window is centred, margin or no margin:
-     * every pixel of it is already on screen, so the margin would be blank in
-     * exchange for nothing.
+     * A margin is a distance from the edge of the window, so blank that is
+     * already there counts towards it: an axis with a wider gap beside the
+     * desktop than the margin asks for is where the margin wanted it anyway.
      */
     @Test
-    public void anAxisWithBlankOnBothSidesAlreadyIgnoresItsMargin() {
-        v.setPanMargins(20, 30, 40, 50);
-        v.zoomToFit(); // fits the width exactly; the height has blank above and below
+    public void anAxisFurtherFromItsEdgesThanTheMarginDoesNotMove() {
+        v.setPanMargins(20, 20, 40, 20);
+        v.zoomToFit(); // fits the width exactly; the height has 25 above and below
         v.centreOn(FB_W / 2f, FB_H / 2f);
         final float oy = v.originY();
-        assertEquals(0f, v.originX(), 1e-3);
+        assertEquals(25f, oy, 1e-3);
         v.panBy(80, 80);
         assertEquals("the axis that exactly fills the window still has an edge to bring in",
                 20f, v.originX(), 1e-3);
-        assertEquals("the axis with blank on both sides of it does not move",
+        assertEquals("the axis already 25 clear of a 20 margin does not move",
                 oy, v.originY(), 1e-3);
+        v.panBy(-160, -160);
+        assertEquals(-40f, v.originX(), 1e-3);
+        assertEquals(oy, v.originY(), 1e-3);
+    }
+
+    /** And an axis with a narrower gap than that may be slid the difference. */
+    @Test
+    public void anAxisNearerItsEdgesThanTheMarginMakesUpTheDifference() {
+        v.setPanMargins(0, 40, 0, 100);
+        v.zoomToFit(); // 750 of the 800 high window, so 25 above and 25 below
+        v.centreOn(FB_W / 2f, FB_H / 2f);
+        assertEquals(25f, v.originY(), 1e-3);
+        v.panBy(0, 80);
+        assertEquals("the top edge brought out to the 40 asked for", 40f, v.originY(), 1e-3);
+        v.panBy(0, -200);
+        assertEquals("and the bottom edge to the 100, which is further than it started",
+                VIEW_H - 750f - 100f, v.originY(), 1e-3);
+    }
+
+    /**
+     * The scale at which the desktop exactly fills its window is a float, and
+     * {@code fbW * (cw / fbW)} lands either side of {@code cw} depending on the
+     * numbers — this pair lands 0.00006 px below it. Whether an edge is under a
+     * rounded corner is not a question about the last fraction of a pixel, so
+     * neither is whether the margin applies.
+     */
+    @Test
+    public void aFitThatRoundsToAHairInsideTheWindowKeepsItsMargin() {
+        final Viewport u = new Viewport(DENSITY);
+        u.setDesktopSize(1920, 1080);
+        u.setViewSize(963, 2000);
+        u.setPanMargins(50, 50, 50, 50);
+        u.zoomToFit();
+        assertTrue("the desktop is a hair narrower than the window it fits",
+                1920 * u.getScale() < 963);
+        u.centreOn(0, 0);
+        assertEquals(50f, u.originX(), 1e-3);
+    }
+
+    /** A margin that shrinks takes the picture back with it. */
+    @Test
+    public void aMarginThatGoesDoesNotLeaveThePictureOutsideIt() {
+        v.setPanMargins(60, 60, 60, 60);
+        v.centreOn(0, 0, 1.0f);
+        assertEquals(60f, v.originX(), 1e-3);
+        v.setPanMargins(20, 20, 20, 20);
+        assertEquals("no re-centring in between, and the picture is already back",
+                20f, v.originX(), 1e-3);
+        assertEquals(20f, v.originY(), 1e-3);
+        v.setPanMargins(0, 0, 0, 0);
+        assertEquals(0f, v.originX(), 1e-3);
+        assertEquals(0f, v.originY(), 1e-3);
     }
 
     /** Insets shrink what is derived from the window; a margin does not. */

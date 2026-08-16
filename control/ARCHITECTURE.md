@@ -668,12 +668,25 @@ of pixels against one of them can be seen but not squarely looked at or
 comfortably tapped. A margin is room to slide the picture *past* its own edge,
 leaving blank beside it, so that edge can be brought out from under the
 obstruction. Unlike an inset it changes nothing derived from the window — not
-the fit scale, the zoom ladder, or the centre the cursor sits at — and applies
-only where there is a pan to make: a desktop already smaller than its window is
-centred by the same rule as before. The app sizes them per side as what that
-edge costs (the bars and cutout inset, or the larger radius of the two rounded
-corners on that side, whichever is bigger) plus 8 dp, less any inset that has
-already moved the picture clear.
+the fit scale, the zoom ladder, or the centre the cursor sits at.
+
+It is a distance from the edge of the window rather than an amount of travel, so
+blank that is already there counts towards it: an axis whose desktop overflows
+may be slid the whole margin, one where the desktop is smaller than the window
+and the gap beside it is narrower than the margin may be slid the difference,
+and one where the gap is already wider than the margin does not move, because it
+is where the margin wanted it anyway. Which makes the rule continuous across the
+size at which the desktop exactly fills its window — a float, and one the fit
+scale lands either side of by a fraction of a pixel, whereas whether an edge is
+under a rounded corner plainly is not that question.
+
+The app sizes them from two settings, which are two reasons to want the same
+thing and are added rather than gated on each other, so either alone is a
+margin. One is what that side costs: the bars and cutout inset, or the larger
+radius of the two rounded corners on that side, whichever is bigger, less any
+inset that has already moved the picture clear. The other is a flat number of
+pixels on every side, about where an edge is comfortable rather than what is
+over it. Both are off — false and zero — by default.
 
 ### 3.5 Toolbar tap regions
 

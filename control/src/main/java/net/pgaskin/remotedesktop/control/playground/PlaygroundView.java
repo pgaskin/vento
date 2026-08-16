@@ -207,6 +207,10 @@ public final class PlaygroundView extends View
             cursor.setPosition(DESKTOP_W / 2f, DESKTOP_H / 2f);
             // A mode asked for before there was a window to place it in.
             desktop.setRelative(cursor.isRelative(), cursor.x(), cursor.y());
+            // Once, for the settings that are already on: everything else here
+            // waits for something to move, and a pan margin asked for in the
+            // settings has nothing to wait for.
+            applyInsets();
         } else {
             // Rotation, or any other resize. The remote desktop does not rotate
             // with the phone, so the cursor keeps its desktop position and only
@@ -682,6 +686,13 @@ public final class PlaygroundView extends View
         bottom = Math.max(bottom, (int) keyboard.insetBottomPx());
         // The IME on its own, in case it outlives the row that asked for it.
         bottom = Math.max(bottom, imeHeight);
+        // The flat margin, and only that: the other half of the setting is what
+        // the shape of the window costs its edges, and the shape of this one is
+        // a rectangle inside another app's screen — the fake insets above are
+        // what stands in for a system bar here, and the desktop is already clear
+        // of those.
+        final int margin = (int) cfg.panMarginPx;
+        viewport.setPanMargins(margin, margin, margin, margin);
         cursor.setInsets(left, top, right, bottom);
         baseScale = viewport.getScale();
     }

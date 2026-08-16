@@ -175,8 +175,13 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
      * session is meant to run edge to edge. It is the answer to "how far in from
      * this edge is the picture actually square, unclipped and clickable", which
      * is a different number and is only used when the margin is asked for.
+     *
+     * <p>Starts at "not measured", which costs nothing and is not a measurement
+     * either — a window whose edges really do cost nothing must still differ
+     * from this, or the first insets would look like no news and the margin
+     * would never be set at all.
      */
-    private int[] windowEdges = new int[4];
+    private int[] windowEdges = {-1, -1, -1, -1};
 
     // Volatile because damaged() is the one thing here that arrives on the
     // protocol's thread; everything that replaces the mirror is the main
@@ -1180,8 +1185,9 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         // The IME on its own, in case it outlives the row that asked for it.
         bottom = Math.max(bottom, imeHeight);
         // Nothing insets the left or the top, so there those margins are the
-        // whole of what the edge costs. Before the insets rather than after,
-        // since setting them re-clamps against these.
+        // whole of what the edge costs. Before the insets rather than after, so
+        // that the re-clamp the insets end with is the one that has the last
+        // word; a margin that changed alone re-clamps itself.
         viewport.setPanMargins(panMargin(windowEdges[0], 0), panMargin(windowEdges[1], 0),
                 panMargin(windowEdges[2], right), panMargin(windowEdges[3], bottom));
         cursor.setInsets(0, 0, right, bottom);
@@ -1190,14 +1196,19 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     }
 
     /**
-     * How far past one edge of the desktop a pan may go, if this setting is on:
-     * what the window's edge costs, less whatever an inset has already moved the
-     * picture clear of it — the keyboard stands on the navigation bar, and the
-     * desktop above the keyboard is already above the bar — and then the margin
-     * proper, so an edge pixel can be aimed at rather than merely seen.
+     * How far in from one edge of the window a pan may bring the desktop's edge:
+     * the two settings, which are two reasons to want the same thing and are
+     * added rather than gated on each other, so either alone is a margin.
+     *
+     * <p>What this edge costs, if that setting is on — less whatever an inset
+     * has already moved the picture clear of it, since the extension keyboard
+     * stands on the navigation bar and the desktop above the keyboard is already
+     * above the bar. Plus the flat margin, if there is one, which is about where
+     * an edge is comfortable rather than what is over it and so is not something
+     * an inset answers.
      */
     private int panMargin(int edge, int inset) {
-        return cfg.panMarginEnabled ? Math.max(edge - inset, 0) + (int) cfg.panMarginPx : 0;
+        return (cfg.panMarginInsets ? Math.max(edge - inset, 0) : 0) + (int) cfg.panMarginPx;
     }
 
     // ---- RegionSink --------------------------------------------------------

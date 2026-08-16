@@ -79,27 +79,44 @@ public final class Viewport {
     }
 
     /**
-     * How far <em>past</em> each edge of the desktop a pan may go: room for
-     * blank beside the picture, so that an edge of the desktop can be brought
-     * out from under whatever the window's own edges are lost to.
+     * How far the desktop's edge may be brought in from the edge of the window:
+     * room for blank beside the picture, so that an edge of the desktop can be
+     * brought out from under whatever the window's own edges are lost to.
      *
      * <p>Not an inset, which is the opposite question. An inset says the desktop
      * may not be <em>drawn</em> in a strip, and so shrinks the window it is
      * clamped inside and is subtracted from everything derived from it — the fit
      * scale, the zoom ladder, the centre the cursor sits at. A margin changes
-     * only how far the clamp lets the picture slide, and only on an axis where
-     * there is something to slide: a desktop that already fits its window is
-     * centred by the same rule as before, because a margin around a picture that
-     * is entirely visible is blank in exchange for nothing.
+     * only how far the clamp lets the picture slide.
+     *
+     * <p>It is a distance from the edge rather than an amount of travel, so
+     * blank that is <em>already</em> there counts towards it: an axis where the
+     * desktop is smaller than the window and the gap beside it is wider than the
+     * margin does not move at all, one where the gap is narrower may be slid the
+     * difference, and one where the desktop overflows may be slid the whole
+     * margin. Which makes the rule continuous across the size the desktop fills
+     * its window at — where "is any of it off screen" is a question about the
+     * last fraction of a pixel, and "is its edge somewhere it can be looked at"
+     * plainly is not.
      *
      * <p>Capped at half the content on each axis, so no margin anybody asks for
      * can leave a window with more blank in it than desktop.
      */
     public void setPanMargins(int left, int top, int right, int bottom) {
-        marginL = Math.max(left, 0);
-        marginT = Math.max(top, 0);
-        marginR = Math.max(right, 0);
-        marginB = Math.max(bottom, 0);
+        final int l = Math.max(left, 0), t = Math.max(top, 0);
+        final int r = Math.max(right, 0), b = Math.max(bottom, 0);
+        if (l == marginL && t == marginT && r == marginR && b == marginB) {
+            return;
+        }
+        marginL = l;
+        marginT = t;
+        marginR = r;
+        marginB = b;
+        // A margin that shrank can leave the picture outside what the clamp now
+        // allows, and the origin is not state that anything else here rewrites —
+        // so re-centring on the focus, which is what every other thing that
+        // changes the shape of the window ends with, is what brings it back.
+        centreOn(focusX, focusY);
     }
 
     public int panMarginLeft() {
@@ -276,24 +293,8 @@ public final class Viewport {
         final float dw = fbW * s;
         final float dh = fbH * s;
 
-        // The margins, capped at half the content so that no window can end up
-        // with more blank in it than desktop. Applied to the overflowing axes
-        // only, which is where there is a pan for them to lengthen.
-        final float ml = Math.min(marginL, cw / 2.0f), mr = Math.min(marginR, cw / 2.0f);
-        final float mt = Math.min(marginT, ch / 2.0f), mb = Math.min(marginB, ch / 2.0f);
-
-        // A desktop smaller than the window is centred in the *view*, then pushed
-        // inside the content rect — not centred in the content rect, which is
-        // what makes the original's picture jump by half the inset whenever an
-        // overlay appears. Nothing clamps this axis, so the rule has to be one
-        // that comes back on its own: this moves only when an inset leaves it
-        // nowhere else to be, and moves back when that inset goes.
-        originX = (dw < cw)
-                ? clamp((viewW - dw) / 2.0f, insetL, insetL + cw - dw)
-                : clamp(ox, insetL + cw - dw - mr, insetL + ml);
-        originY = (dh < ch)
-                ? clamp((viewH - dh) / 2.0f, insetT, insetT + ch - dh)
-                : clamp(oy, insetT + ch - dh - mb, insetT + mt);
+        originX = clampAxis(ox, insetL, cw, dw, (viewW - dw) / 2.0f, marginL, marginR);
+        originY = clampAxis(oy, insetT, ch, dh, (viewH - dh) / 2.0f, marginT, marginB);
 
         // The original stores the viewport centre back as the scale focus.
         focusX = toDesktopX(centreScreenX());
@@ -302,6 +303,46 @@ public final class Viewport {
         if (scaleChanged) {
             selectNearestLadderEntry(s);
         }
+    }
+
+    /**
+     * One axis of the clamp: where the origin may be, given where the centring
+     * asked for it to be.
+     *
+     * <p>A desktop smaller than the window has one place to be, and it is
+     * centred in the <em>view</em>, then pushed inside the content rect — not
+     * centred in the content rect, which is what makes the original's picture
+     * jump by half the inset whenever an overlay appears. Nothing else clamps
+     * that axis, so the rule has to be one that comes back on its own: it moves
+     * only when an inset leaves it nowhere else to be, and moves back when that
+     * inset goes. A desktop that overflows may be anywhere that keeps the
+     * window full of it, which is the pan.
+     *
+     * <p>The margins ({@link #setPanMargins}) widen that by however much of one
+     * is not already there as blank, so the two cases meet: at the size the
+     * desktop exactly fills its window the pinned place is the only place and
+     * the whole margin is free either side of it, which is what the overflowing
+     * case says too. Without them — the default — this is the original: the
+     * small case is pinned and the overflowing one is clamped to its edges.
+     */
+    private static float clampAxis(float o, int inset, int content, float desktop,
+                                   float centred, int marginLo, int marginHi) {
+        // Capped at half the content, so that no window can end up with more
+        // blank in it than desktop.
+        final float mLo = Math.min(marginLo, content / 2.0f);
+        final float mHi = Math.min(marginHi, content / 2.0f);
+        final float lo, hi;
+        if (desktop < content) {
+            final float rest = clamp(centred, inset, inset + content - desktop);
+            final float blankLo = rest - inset;
+            final float blankHi = inset + content - desktop - rest;
+            lo = rest - Math.max(mHi - blankHi, 0.0f);
+            hi = rest + Math.max(mLo - blankLo, 0.0f);
+        } else {
+            lo = inset + content - desktop - mHi;
+            hi = inset + mLo;
+        }
+        return clamp(o, lo, hi);
     }
 
     /**
