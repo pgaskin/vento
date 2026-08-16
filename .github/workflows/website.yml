@@ -1,0 +1,40 @@
+name: website
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y imagemagick
+      - run: ./website/build.sh
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: website/build
+
+  deploy:
+    if: github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5

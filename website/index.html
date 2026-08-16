@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vento VNC/RDP Client</title>
+  <link rel="icon" href="icon.png">
+  <meta name="theme-color" content="#100c0c">
+  <meta name="author" content="Patrick Gaskin">
+  <meta name="description" content="Fast, fluid VNC/RDP remote desktop client for Android with intuitive controls and support for multiple backends.">
+  <meta property="og:description" content="Fast, fluid VNC/RDP remote desktop client for Android with intuitive controls and support for multiple backends.">
+  <meta property="og:title" content="Vento VNC/RDP Client">
+  <meta property="og:type" content="website">
+  <link rel="canonical" href="https://pgaskin.net/vento/">
+  <style>
+    @font-face {
+      font-family: "Roboto";
+      src: url("roboto.woff2") format("woff2");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    :root {
+      color-scheme: dark;
+      /* material you, dark, from the red-brown source of the app icon (#410e0b) */
+      --bg-deep: #100c0c;
+      --bg: #171212;
+      --surface: #201918;
+      --surface-high: #2b2222;
+      --line: #362c2b;
+      --outline: #6b5b59;
+      --fg: #ece0de;
+      --muted: #b3a3a1;
+      --primary: #f2b8b5;
+      --primary-bright: #ffdad6;
+      --on-primary: #410e0b;
+      /* the pink from the app icon, and a muted tone of it */
+      --accent: #f2b8b5;
+      --accent-dim: #e0b6b3;
+      --sans: "Roboto", system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      --pad: clamp(1.25rem, 5vw, 2.5rem);
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: var(--bg-deep);
+      color: var(--fg);
+      font-family: var(--sans);
+      font-size: 1.0625rem;
+      line-height: 1.6;
+      font-synthesis: none;
+      -webkit-font-smoothing: antialiased;
+    }
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    a:hover {
+      color: var(--primary-bright);
+      text-decoration: underline;
+    }
+    p a {
+      text-decoration: underline;
+      text-decoration-color: var(--outline);
+      text-underline-offset: .15em;
+    }
+    img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+    h1, h2, h3 {
+      line-height: 1.15;
+      letter-spacing: -.015em;
+      margin: 0;
+    }
+    .wrap {
+      width: 100%;
+      max-width: 70rem;
+      margin-inline: auto;
+      padding-inline: var(--pad);
+    }
+    .hero {
+      padding-block: clamp(3.5rem, 9vw, 7rem) clamp(1.5rem, 3vw, 2.5rem);
+    }
+    .hero h1 {
+      font-size: clamp(2.25rem, 7vw, 4.75rem);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .tagline {
+      margin: 1.25rem 0 0;
+      max-width: 46ch;
+      font-size: clamp(1rem, 2vw, 1.1875rem);
+      color: var(--fg);
+      text-wrap: pretty;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .75rem;
+      margin-top: 2.125rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: .5em;
+      padding: .8em 1.5em;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-weight: 700;
+      font-size: 1rem;
+      text-decoration: none;
+      transition: background-color .12s ease, border-color .12s ease;
+    }
+    .btn:hover {
+      text-decoration: none;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: var(--on-primary);
+    }
+    .btn-primary:hover {
+      background: var(--primary-bright);
+      color: var(--on-primary);
+    }
+    .btn-ghost {
+      border-color: var(--outline);
+      color: var(--fg);
+      background: rgba(43, 34, 34, .4);
+    }
+    .btn-ghost:hover {
+      background: var(--surface-high);
+      border-color: var(--muted);
+      color: var(--fg);
+    }
+    .hero-meta {
+      margin-top: 1.5rem;
+      font-size: .875rem;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem 1rem;
+    }
+    .hero-meta span {
+      white-space: nowrap;
+    }
+    section {
+      padding-block: clamp(4rem, 9vw, 6.75rem);
+    }
+    .alt {
+      background: var(--bg);
+    }
+    h2 {
+      font-size: clamp(1.5rem, 3.6vw, 2.25rem);
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .lede {
+      margin: 1rem 0 0;
+      max-width: 62ch;
+      color: var(--muted);
+      font-size: clamp(1rem, 2vw, 1.125rem);
+      text-wrap: pretty;
+    }
+    .features {
+      margin-top: 3.25rem;
+      display: grid;
+      gap: clamp(2rem, 4.5vw, 3.25rem) clamp(1.75rem, 5vw, 3.75rem);
+      grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    }
+    .feature h3 {
+      font-size: 1.0625rem;
+      font-weight: 700;
+      margin-bottom: .625rem;
+      color: var(--accent-dim);
+    }
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .9375rem;
+      line-height: 1.55;
+    }
+    .backends {
+      margin-top: 2.75rem;
+      display: grid;
+      gap: clamp(.875rem, 2vw, 1.25rem);
+      grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+    }
+    .backend {
+      padding: 1.25rem 1.375rem 1.375rem;
+      border: 1px solid var(--line);
+      border-radius: .875rem;
+      background: var(--surface);
+    }
+    .backend h3 {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: .75rem;
+      font-size: 1.0625rem;
+      font-weight: 700;
+      color: var(--accent-dim);
+    }
+    .backend .tag {
+      flex: none;
+      font-size: .6875rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      color: var(--muted);
+    }
+    .backend p {
+      margin: .625rem 0 0;
+      color: var(--muted);
+      font-size: .9375rem;
+      line-height: 1.55;
+    }
+    .addon {
+      margin-top: clamp(1.75rem, 4vw, 2.5rem);
+      padding-top: clamp(1.75rem, 4vw, 2.5rem);
+      border-top: 1px solid var(--line);
+    }
+    .addon h3 {
+      font-size: 1.0625rem;
+      font-weight: 700;
+      color: var(--accent-dim);
+    }
+    .addon p {
+      margin: .625rem 0 0;
+      max-width: 62ch;
+      color: var(--muted);
+      font-size: .9375rem;
+      line-height: 1.55;
+    }
+    .addon .btn {
+      margin-top: 1.25rem;
+      padding: .6em 1.25em;
+      font-size: .9375rem;
+    }
+    .shots {
+      margin-top: 2.625rem;
+      display: grid;
+      gap: clamp(1rem, 2.5vw, 1.75rem) clamp(0.875rem, 2vw, 1.375rem);
+      grid-template-columns: repeat(3, 1fr);
+    }
+    @media (max-width: 53.75rem) {
+      .shots {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    .shot {
+      margin: 0;
+      min-width: 0;
+    }
+    .shot img {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: .75rem;
+      background: #000;
+    }
+    .shot figcaption {
+      margin-top: .625rem;
+      font-size: .8125rem;
+      line-height: 1.4;
+      color: var(--muted);
+    }
+    .changelog {
+      margin-top: 2.25rem;
+    }
+    summary {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }
+    summary::-webkit-details-marker {
+      display: none;
+    }
+    .release summary {
+      padding-block: .625rem;
+      font-weight: 700;
+    }
+    .release summary::before {
+      content: "";
+      width: .4375rem;
+      height: .4375rem;
+      border-right: 2px solid var(--outline);
+      border-bottom: 2px solid var(--outline);
+      transform: translateX(1px) rotate(-45deg);
+      transition: transform .15s ease;
+    }
+    .release[open] summary::before {
+      transform: translateY(-2px) rotate(45deg);
+    }
+    .release ul {
+      margin: 0;
+      padding: 0 0 1.125rem 1.1875rem;
+      color: var(--muted);
+      font-size: .9375rem;
+      line-height: 1.55;
+    }
+    .release li {
+      margin-bottom: .25rem;
+    }
+    .more[open]>summary {
+      display: none;
+    }
+    .more>summary {
+      width: fit-content;
+      margin-top: 1rem;
+      color: var(--primary);
+      font-size: .9375rem;
+    }
+    .more>summary:hover {
+      color: var(--primary-bright);
+      text-decoration: underline;
+    }
+    footer {
+      padding-block: 2.75rem 3.5rem;
+      color: var(--muted);
+      font-size: .875rem;
+    }
+    footer .wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .875rem 1.75rem;
+      align-items: center;
+    }
+    footer nav {
+      margin-left: auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem 1.375rem;
+    }
+    footer nav a {
+      color: var(--muted);
+    }
+    footer nav a:hover {
+      color: var(--fg);
+    }
+    @media (max-width: 43.75rem) {
+      footer .wrap {
+        flex-direction: column;
+        justify-content: center;
+        text-align: center;
+        gap: .75rem;
+      }
+      footer nav {
+        margin-left: 0;
+        justify-content: center;
+        gap: .5rem 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="hero">
+      <div class="wrap">
+        <h1>Vento</h1>
+        <p class="tagline">
+          Fast, fluid VNC/RDP remote desktop client for Android, with
+          touchpad-style controls and multiple client backends.
+        </p>
+        <div class="actions">
+          <a class="btn btn-primary" href="https://github.com/pgaskin/vento/releases/latest/download/Vento.apk">Download</a>
+          <a class="btn btn-ghost" href="https://github.com/pgaskin/vento">Source code</a>
+        </div>
+        <p class="hero-meta">
+          <!-- VERSION -->
+          <span>Android 14+</span>
+          <span>arm64 and x86_64</span>
+          <span>GPL-3.0</span>
+        </p>
+      </div>
+    </div>
+    <section id="features">
+      <div class="wrap">
+        <h2>Features</h2>
+        <div class="features">
+          <div class="feature">
+            <h3>Touchpad-style controls</h3>
+            <p>
+              Tap to click, two or three fingers to right or middle click,
+              double-tap then drag to drag, two fingers to scroll, and pinch to
+              zoom. You can also fling the cursor.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Accuracy assists</h3>
+            <p>
+              Improved precision for slow motion, axis locking, and adaptive
+              acceleration.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Keyboard and mouse</h3>
+            <p>
+              Physical keyboards and mice are supported, with proper modifier
+              and layout handling. The extension keyboard provides keys missing
+              on soft keyboards.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>IME fixes</h3>
+            <p>
+              Workarounds for composition and newline bugs in various Android
+              IMEs.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Multiple backends</h3>
+            <p>
+              Multiple open-source libraries for VNC and RDP are included. Each
+              connection can use a different one.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Hardware acceleration</h3>
+            <p>
+              H.264 is decoded by the device where the server supports it, with
+              the FreeRDP and TigerVNC client backends.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Multi-window</h3>
+            <p>
+              Sessions can be opened in multiple windows, side by side with each
+              other or another app.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Material Design 3</h3>
+            <p>
+              Follows the system colors and the light/dark theme.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Saved credentials</h3>
+            <p>
+              Saved passwords are encrypted with AES-256-GCM by a
+              hardware-backed keystore. Server fingerprints are also stored and
+              verified.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Desktop previews</h3>
+            <p>
+              Connection cards show the last state of the desktop. The previews
+              are stored encrypted, and can be disabled.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Clipboard</h3>
+            <p>
+              Copied text is sent to and from the remote machine. Each direction
+              can be turned off separately.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Import and export</h3>
+            <p>
+              Connections and settings can be exported and imported, with or
+              without saved passwords.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Playground</h3>
+            <p>
+              A fake desktop for testing input and adjusting the control
+              settings without a server.
+            </p>
+          </div>
+          <div class="feature">
+            <h3>Open source</h3>
+            <p>
+              GPL-3.0, no ads, no tracking, and reproducible builds. The
+              <a href="https://github.com/pgaskin/vento/tree/master/control">control
+              library</a> is MIT so it can be used in other apps.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="alt" id="backends">
+      <div class="wrap">
+        <h2>Backends</h2>
+        <p class="lede">
+          Each connection can use a different client implementation.
+        </p>
+        <div class="backends">
+          <div class="backend">
+            <h3>LibVNC<span class="tag">VNC</span></h3>
+            <p>
+              Usually the best option for typical usage. Has the lowest
+              bandwidth usage for small incremental updates, and is the most CPU
+              efficient.
+            </p>
+          </div>
+          <div class="backend">
+            <h3>TigerVNC<span class="tag">VNC</span></h3>
+            <p>
+              Fastest implementation, dropping the fewest frames, but using 2-5x
+              the CPU usage. This is the only VNC backend which supports H.264
+              encoding, which is the most bandwidth-efficient for large screen
+              updates, where supported by the server.
+            </p>
+          </div>
+          <div class="backend">
+            <h3>Rust<span class="tag">VNC</span></h3>
+            <p>
+              Rust RFB implementation. Does not support Tight encoding, and
+              typically uses more bandwidth and performs worse on slow networks.
+              Allows remote pointer position updates, where supported by the
+              server.
+            </p>
+          </div>
+          <div class="backend">
+            <h3>FreeRDP<span class="tag">RDP</span></h3>
+            <p>
+              The most robust RDP implementation. Supports EGFX with
+              hardware-accelerated H.264 video, and supports audio. This is the
+              best one to use with a Windows RDP server.
+            </p>
+          </div>
+          <div class="backend">
+            <h3>IronRDP<span class="tag">RDP</span></h3>
+            <p>
+              Rust RDP implementation. Uses less CPU than FreeRDP, but drops
+              more frames and does not properly support EGFX.
+            </p>
+          </div>
+          <div class="backend">
+            <h3>RealVNC<span class="tag">VNC</span></h3>
+            <p>
+              RealVNC's proprietary client implementation. This is the only one
+              which supports UDP, ZRLE2, and RealVNC's proprietary
+              authentication/encryption. It performs significantly better than
+              the others when connecting to a RealVNC server.
+            </p>
+          </div>
+        </div>
+        <div class="addon">
+          <h3>RealVNC plugin</h3>
+          <p>
+            The RealVNC backend is a separate APK since RealVNC's client library
+            is proprietary and can't be redistributed. The standalone plugin
+            does not contain the client library either, and you will need to
+            provide a RealVNC APK (e.g., from APKMirror) to use it.
+          </p>
+          <a class="btn btn-ghost" href="https://github.com/pgaskin/vento/releases/latest/download/vento-rvnc.apk">Download</a>
+        </div>
+      </div>
+    </section>
+    <section id="screenshots">
+      <div class="wrap">
+        <h2>Screenshots</h2>
+        <div class="shots">
+          <figure class="shot">
+            <img src="shot-1.jpg" alt="The connection list, with a card for each saved connection showing a preview of its desktop" loading="lazy" width="540" height="1200">
+            <figcaption>Connection list.</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="shot-4.jpg" alt="The connection info panel open over a session, showing the backend, desktop size, options, and stats" loading="lazy" width="540" height="1200">
+            <figcaption>Connection info panel.</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="shot-3.jpg" alt="The protocol picker in the connection editor, listing each backend with its description" loading="lazy" width="540" height="1200">
+            <figcaption>Backend selection.</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="shot-5.jpg" alt="The settings screen with the session, backend, and app groups" loading="lazy" width="540" height="1200">
+            <figcaption>Settings.</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="shot-2.jpg" alt="A connected session with the touch keyboard and the extension keyboard row" loading="lazy" width="540" height="1200">
+            <figcaption>Session with the keyboard.</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="shot-9.jpg" alt="The playground, a fake desktop used for testing the controls" loading="lazy" width="540" height="1200">
+            <figcaption>Input test view.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+    <section class="alt" id="changelog">
+      <div class="wrap">
+        <h2>What's new</h2>
+        <div class="changelog">
+          <!-- CHANGELOG -->
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <div class="wrap">
+      <span>&copy; 2026 Patrick Gaskin</span>
+      <nav>
+        <a href="https://github.com/pgaskin/vento">Source</a>
+        <a href="https://github.com/pgaskin/vento/releases">Releases</a>
+        <a href="https://github.com/pgaskin/vento/issues">Issues</a>
+        <a href="https://pgaskin.net">pgaskin.net</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>
