@@ -136,6 +136,59 @@ public class ViewportTest {
         assertEquals(ox, v.originX(), 1e-3);
     }
 
+    // ---- pan margins -------------------------------------------------------
+
+    @Test
+    public void aPanMarginLetsTheDesktopSlidePastItsOwnEdges() {
+        v.setPanMargins(20, 30, 40, 50);
+        v.centreOn(50, 50, 1.0f); // top left, where the origin was pinned at 0
+        assertEquals("blank to the left of the desktop", 20f, v.originX(), 1e-3);
+        assertEquals(30f, v.originY(), 1e-3);
+
+        v.centreOn(FB_W - 10, FB_H - 10, 1.0f);
+        assertEquals(VIEW_W - FB_W - 40f, v.originX(), 1e-3);
+        assertEquals(VIEW_H - FB_H - 50f, v.originY(), 1e-3);
+    }
+
+    /**
+     * A desktop that does not fill its window is centred, margin or no margin:
+     * every pixel of it is already on screen, so the margin would be blank in
+     * exchange for nothing.
+     */
+    @Test
+    public void anAxisWithBlankOnBothSidesAlreadyIgnoresItsMargin() {
+        v.setPanMargins(20, 30, 40, 50);
+        v.zoomToFit(); // fits the width exactly; the height has blank above and below
+        v.centreOn(FB_W / 2f, FB_H / 2f);
+        final float oy = v.originY();
+        assertEquals(0f, v.originX(), 1e-3);
+        v.panBy(80, 80);
+        assertEquals("the axis that exactly fills the window still has an edge to bring in",
+                20f, v.originX(), 1e-3);
+        assertEquals("the axis with blank on both sides of it does not move",
+                oy, v.originY(), 1e-3);
+    }
+
+    /** Insets shrink what is derived from the window; a margin does not. */
+    @Test
+    public void aMarginIsNotAnInset() {
+        final float fit = v.minScale();
+        final int ladder = v.zoomLadder().length;
+        v.setPanMargins(100, 100, 100, 100);
+        assertEquals(fit, v.minScale(), 1e-6);
+        assertEquals(VIEW_W, v.contentWidth());
+        assertEquals(VIEW_H, v.contentHeight());
+        assertEquals(ladder, v.zoomLadder().length);
+    }
+
+    @Test
+    public void aMarginCannotLeaveMoreBlankThanDesktop() {
+        v.setPanMargins(10000, 10000, 10000, 10000);
+        v.centreOn(0, 0, 1.0f);
+        assertEquals("half the content, and no further", VIEW_W / 2f, v.originX(), 1e-3);
+        assertEquals(VIEW_H / 2f, v.originY(), 1e-3);
+    }
+
     @Test
     public void scaleLimits() {
         assertEquals(Math.min(VIEW_W / (float) FB_W, VIEW_H / (float) FB_H), v.minScale(), 1e-6);

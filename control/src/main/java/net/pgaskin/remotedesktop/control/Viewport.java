@@ -26,6 +26,10 @@ import java.util.Arrays;
  * shrink the window onto the desktop without moving the desktop under the
  * remaining pixels. With zero insets — the default — the content rect is the
  * view and nothing changes.
+ *
+ * <p>It can also be given <em>pan margins</em> ({@link #setPanMargins}), which
+ * are the other direction: room to slide the desktop past its own edges, so
+ * that an edge can be brought out from under the shape of the window itself.
  */
 public final class Viewport {
 
@@ -34,6 +38,7 @@ public final class Viewport {
     private int fbW = 1, fbH = 1;
     private int viewW, viewH;
     private int insetL, insetT, insetR, insetB;
+    private int marginL, marginT, marginR, marginB;
 
     private float scale = 1.0f;
     private float originX, originY;
@@ -71,6 +76,46 @@ public final class Viewport {
         insetR = Math.max(right, 0);
         insetB = Math.max(bottom, 0);
         rebuildLadder();
+    }
+
+    /**
+     * How far <em>past</em> each edge of the desktop a pan may go: room for
+     * blank beside the picture, so that an edge of the desktop can be brought
+     * out from under whatever the window's own edges are lost to.
+     *
+     * <p>Not an inset, which is the opposite question. An inset says the desktop
+     * may not be <em>drawn</em> in a strip, and so shrinks the window it is
+     * clamped inside and is subtracted from everything derived from it — the fit
+     * scale, the zoom ladder, the centre the cursor sits at. A margin changes
+     * only how far the clamp lets the picture slide, and only on an axis where
+     * there is something to slide: a desktop that already fits its window is
+     * centred by the same rule as before, because a margin around a picture that
+     * is entirely visible is blank in exchange for nothing.
+     *
+     * <p>Capped at half the content on each axis, so no margin anybody asks for
+     * can leave a window with more blank in it than desktop.
+     */
+    public void setPanMargins(int left, int top, int right, int bottom) {
+        marginL = Math.max(left, 0);
+        marginT = Math.max(top, 0);
+        marginR = Math.max(right, 0);
+        marginB = Math.max(bottom, 0);
+    }
+
+    public int panMarginLeft() {
+        return marginL;
+    }
+
+    public int panMarginTop() {
+        return marginT;
+    }
+
+    public int panMarginRight() {
+        return marginR;
+    }
+
+    public int panMarginBottom() {
+        return marginB;
     }
 
     public int insetLeft() {
@@ -231,6 +276,12 @@ public final class Viewport {
         final float dw = fbW * s;
         final float dh = fbH * s;
 
+        // The margins, capped at half the content so that no window can end up
+        // with more blank in it than desktop. Applied to the overflowing axes
+        // only, which is where there is a pan for them to lengthen.
+        final float ml = Math.min(marginL, cw / 2.0f), mr = Math.min(marginR, cw / 2.0f);
+        final float mt = Math.min(marginT, ch / 2.0f), mb = Math.min(marginB, ch / 2.0f);
+
         // A desktop smaller than the window is centred in the *view*, then pushed
         // inside the content rect — not centred in the content rect, which is
         // what makes the original's picture jump by half the inset whenever an
@@ -239,10 +290,10 @@ public final class Viewport {
         // nowhere else to be, and moves back when that inset goes.
         originX = (dw < cw)
                 ? clamp((viewW - dw) / 2.0f, insetL, insetL + cw - dw)
-                : clamp(ox, insetL + cw - dw, insetL);
+                : clamp(ox, insetL + cw - dw - mr, insetL + ml);
         originY = (dh < ch)
                 ? clamp((viewH - dh) / 2.0f, insetT, insetT + ch - dh)
-                : clamp(oy, insetT + ch - dh, insetT);
+                : clamp(oy, insetT + ch - dh - mb, insetT + mt);
 
         // The original stores the viewport centre back as the scale focus.
         focusX = toDesktopX(centreScreenX());

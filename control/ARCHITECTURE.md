@@ -661,6 +661,20 @@ them, so the content rectangle is the window minus whatever the system bars or
 an on-screen keyboard occupy, and the clamp keeps the cursor inside the part of
 the window the user can actually see.
 
+The clamp also takes **pan margins**, which are the opposite question and are
+off by default. A phone's window is not a rectangle: a rounded corner, a camera
+cutout and a system bar all sit over a desktop drawn edge to edge, and the row
+of pixels against one of them can be seen but not squarely looked at or
+comfortably tapped. A margin is room to slide the picture *past* its own edge,
+leaving blank beside it, so that edge can be brought out from under the
+obstruction. Unlike an inset it changes nothing derived from the window — not
+the fit scale, the zoom ladder, or the centre the cursor sits at — and applies
+only where there is a pan to make: a desktop already smaller than its window is
+centred by the same rule as before. The app sizes them per side as what that
+edge costs (the bars and cutout inset, or the larger radius of the two rounded
+corners on that side, whichever is bigger) plus 8 dp, less any inset that has
+already moved the picture clear.
+
 ### 3.5 Toolbar tap regions
 
 The original puts a floating toolbar on top of the desktop. Instead, rectangles
@@ -1097,7 +1111,7 @@ neither.
 
 | | |
 |---|---|
-| `Viewport` | scale, origin, the centre-and-clamp rule, snapping, the zoom ladder, insets, the pan |
+| `Viewport` | scale, origin, the centre-and-clamp rule, snapping, the zoom ladder, insets, the pan and its margins |
 | `CursorController` | cursor position in desktop pixels, button state, event coalescing and deduplication |
 | `input/TouchRouter` | touch events → per-pointer callbacks, keyed by pointer id |
 | `input/GestureRecognizer` | the state machine of §1.2–1.7 |

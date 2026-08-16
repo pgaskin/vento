@@ -18,6 +18,7 @@ import android.text.InputType;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.RoundedCorner;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowMetrics;
@@ -48,6 +49,7 @@ import net.pgaskin.remotedesktop.control.ui.Hud;
 import net.pgaskin.remotedesktop.control.ui.TextInput;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -163,6 +165,18 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     private int imeHeight;                    // the system IME's, from the window insets
     private boolean imeUp;                    // ... which is not the same as it being up
     private boolean imeRequested;             // asked for and not arrived yet
+
+    /**
+     * What each edge of this window costs the desktop drawn under it, left, top,
+     * right, bottom — the system bars, the display cutout, and the rounded
+     * corners, which is what the pan margin is measured from.
+     *
+     * <p>Not an inset: none of it stops the desktop being drawn there, and a
+     * session is meant to run edge to edge. It is the answer to "how far in from
+     * this edge is the picture actually square, unclipped and clickable", which
+     * is a different number and is only used when the margin is asked for.
+     */
+    private int[] windowEdges = new int[4];
 
     // Volatile because damaged() is the one thing here that arrives on the
     // protocol's thread; everything that replaces the mirror is the main
@@ -873,6 +887,12 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         // that never falls. Reading the dismissal off the height alone left the
         // extension row up after a back gesture had taken the system keyboard.
         final boolean up = insets.isVisible(WindowInsets.Type.ime());
+        // The window's own shape, which changes for a rotation or a split screen
+        // rather than for anything the user did here — and which the IME test
+        // below would not catch, since neither of those moves the IME.
+        final int[] edges = windowEdges(insets);
+        boolean changed = !Arrays.equals(edges, windowEdges);
+        windowEdges = edges;
         if (ime != imeHeight || up != imeUp) {
             // Only while this window has focus, and only while we are not asking
             // for the IME back. An IME also closes when the app is switched away
@@ -892,10 +912,48 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
             if (closed && keyboard.visible()) {
                 setKeyboardVisible(false);
             }
+            changed = true;
+        }
+        if (changed) {
             applyInsets();
             invalidate();
         }
         return super.onApplyWindowInsets(insets);
+    }
+
+    /**
+     * What the far edges of this window are lost to. The bars and the cutout are
+     * an inset and arrive as one; the rounded corners are not an inset at all —
+     * they are a radius per corner, of which each side takes the larger of the
+     * two it has, since a picture pulled that far in from an edge clears the arc
+     * at both of its ends.
+     *
+     * <p>Ignoring visibility, for the reason {@link #deviceSize} gives: a bar
+     * hidden this instant comes back, and limits that moved every time sticky
+     * immersive flashed one up would drag the picture about with them.
+     */
+    private static int[] windowEdges(WindowInsets insets) {
+        final android.graphics.Insets bars = insets.getInsetsIgnoringVisibility(
+                WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+        final int tl = cornerRadius(insets, RoundedCorner.POSITION_TOP_LEFT);
+        final int tr = cornerRadius(insets, RoundedCorner.POSITION_TOP_RIGHT);
+        final int br = cornerRadius(insets, RoundedCorner.POSITION_BOTTOM_RIGHT);
+        final int bl = cornerRadius(insets, RoundedCorner.POSITION_BOTTOM_LEFT);
+        return new int[]{
+                Math.max(bars.left, Math.max(tl, bl)),
+                Math.max(bars.top, Math.max(tl, tr)),
+                Math.max(bars.right, Math.max(tr, br)),
+                Math.max(bars.bottom, Math.max(bl, br)),
+        };
+    }
+
+    /**
+     * A corner this window has not got — a square display, or the half of a
+     * split screen that does not reach it — costs it nothing.
+     */
+    private static int cornerRadius(WindowInsets insets, int position) {
+        final RoundedCorner corner = insets.getRoundedCorner(position);
+        return corner == null ? 0 : corner.getRadius();
     }
 
     /** Showing one overlay hides the other, and a displaced one comes back. */
@@ -1121,9 +1179,25 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         int bottom = (int) Math.max(overlay.insetBottomPx(), keyboard.insetBottomPx());
         // The IME on its own, in case it outlives the row that asked for it.
         bottom = Math.max(bottom, imeHeight);
+        // Nothing insets the left or the top, so there those margins are the
+        // whole of what the edge costs. Before the insets rather than after,
+        // since setting them re-clamps against these.
+        viewport.setPanMargins(panMargin(windowEdges[0], 0), panMargin(windowEdges[1], 0),
+                panMargin(windowEdges[2], right), panMargin(windowEdges[3], bottom));
         cursor.setInsets(0, 0, right, bottom);
         baseScale = viewport.getScale();
         invalidate();
+    }
+
+    /**
+     * How far past one edge of the desktop a pan may go, if this setting is on:
+     * what the window's edge costs, less whatever an inset has already moved the
+     * picture clear of it — the keyboard stands on the navigation bar, and the
+     * desktop above the keyboard is already above the bar — and then the margin
+     * proper, so an edge pixel can be aimed at rather than merely seen.
+     */
+    private int panMargin(int edge, int inset) {
+        return cfg.panMarginEnabled ? Math.max(edge - inset, 0) + (int) cfg.panMarginPx : 0;
     }
 
     // ---- RegionSink --------------------------------------------------------
