@@ -5,6 +5,7 @@ package net.pgaskin.remotedesktop;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.hardware.biometrics.BiometricManager;
 import android.hardware.biometrics.BiometricPrompt;
 import android.net.Uri;
@@ -70,10 +71,33 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
     /** The host of this is also the source row's summary, in strings.xml. */
     private static final String SOURCE_URL = "https://github.com/pgaskin/vento";
 
+    /** Which section this is, worked out once and before the fragment asks. */
+    private String section;
+
+    /**
+     * The extra where there is one, and otherwise what the component that was
+     * started says it is: the system's "Manage space" button can only name a
+     * component, so the alias it names carries the section as meta-data (see the
+     * manifest). Null for the root, which is how every other caller opens this.
+     */
+    private String resolveSection() {
+        final String extra = getIntent().getStringExtra(EXTRA_SECTION);
+        if (extra != null) {
+            return extra;
+        }
+        try {
+            final Bundle meta = getPackageManager().getActivityInfo(getComponentName(),
+                    PackageManager.GET_META_DATA).metaData;
+            return meta == null ? null : meta.getString(EXTRA_SECTION);
+        } catch (PackageManager.NameNotFoundException e) {
+            return null; // we are installed
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        final String section = getIntent().getStringExtra(EXTRA_SECTION);
+        section = resolveSection();
         setTitle(switch (section == null ? "" : section) {
             case SECTION_GENERAL -> getString(R.string.settings_general);
             case SECTION_INPUT -> getString(R.string.settings_input);
@@ -106,8 +130,7 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             final SettingsActivity a = (SettingsActivity) requireActivity();
-            final String section = a.getIntent().getStringExtra(EXTRA_SECTION);
-            switch (section == null ? "" : section) {
+            switch (a.section == null ? "" : a.section) {
                 case SECTION_GENERAL -> general();
                 case SECTION_INPUT -> input();
                 case SECTION_TRANSFER -> transfer();

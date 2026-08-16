@@ -50,6 +50,7 @@
         android:dataExtractionRules="@xml/backup_rules"
         android:appComponentFactory="net.pgaskin.remotedesktop.AppFactory"
         tools:replace="android:appComponentFactory"
+        android:manageSpaceActivity="net.pgaskin.remotedesktop.ManageSpaceActivity"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"
@@ -68,6 +69,40 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false" />
+
+        <!--
+            "Manage space", in the system's own storage page for this app.
+            Declaring it replaces the platform's "Clear storage" button, which is
+            the trade: that button deletes everything at once with no idea what
+            any of it is, and this one lands on the screen where each store — the
+            settings, the connections, the accepted servers, the plugin
+            libraries, the recordings — is deleted knowing what it is.
+
+            An alias rather than a screen of its own, because it *is* that
+            screen: `manageSpaceActivity` can only name a component and cannot
+            carry an extra, so which section it means is said here, in the
+            meta-data SettingsActivity falls back to. Exported because the system
+            settings app is the one starting it — so any app on the phone can
+            open this screen too, which is a screen where nothing happens
+            without somebody answering a dialog on it.
+
+            The attribute above spells the class out, where every other name here
+            is written against the package. Nothing expands that one at build
+            time, so it is the *installed* package a leading dot is resolved
+            against — and this build has a debug variant whose applicationId is
+            not the namespace these classes are in. A relative name there is a
+            button that opens nothing, in the one variant nobody would think to
+            check.
+        -->
+        <activity-alias
+            android:name=".ManageSpaceActivity"
+            android:targetActivity=".SettingsActivity"
+            android:label="@string/settings_transfer"
+            android:exported="true">
+            <meta-data
+                android:name="section"
+                android:value="transfer" />
+        </activity-alias>
 
         <!-- The licence page the build generates into the assets. -->
         <activity
