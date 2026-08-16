@@ -126,10 +126,11 @@
             android:orientation="vertical" />
 
         <!--
-            Two buttons: Log always, and at the end of the row whichever of
-            Disconnect and Reconnect the session is in a state for — the text
-            and the action are ConnectionPanel's, since no session is ever in
-            both states at once.
+            Three buttons, in two halves. At the end of the row: Log always, and
+            beside it whichever of Disconnect and Reconnect the session is in a
+            state for — the text and the action are ConnectionPanel's, since no
+            session is ever in both states at once. At the start, alone, the one
+            that takes a picture away rather than doing anything to the session.
 
             Disconnect was taken out of this footer once, on the grounds that it
             was a third way to do what the disconnect tap region and the back
@@ -149,11 +150,34 @@
             android:id="@+id/action_row"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical|end"
+            android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingStart="12dp"
             android:paddingTop="@dimen/group_spacing"
             android:paddingEnd="16dp">
+
+            <!--
+                The desktop, photographed and handed to the share sheet. Off on
+                its own at the other end of the row because it is the one thing
+                down here that does not act on the session: the other two end it
+                or explain it, and this takes a copy of it away.
+
+                Drawn without the outline the editor's pin has, for the reason
+                written there: that container is what a toggle fills in when it
+                is on, and this is an action that has no state to show.
+            -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/screenshot"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="@string/panel_screenshot"
+                app:icon="@drawable/ic_screenshot_region" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/log"

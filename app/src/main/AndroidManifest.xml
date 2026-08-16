@@ -189,6 +189,30 @@
             android:name=".Session$Timeout"
             android:exported="false" />
 
+        <!--
+            How a screenshot leaves: a file in this app's own cache, handed to
+            whichever app the share sheet lands on as a read grant for that one
+            URI. Not shared storage — a picture of somebody's desktop has no
+            business in the gallery, and this way nothing outside the chosen app
+            can read it and even that ends with the task.
+
+            `exported` false and no permission of its own: the grant travelling
+            with the intent is the whole of the access, so nothing that was not
+            handed a URI can ask for one. The authority is written against
+            ${applicationId} rather than the namespace, because the debug
+            variant's package is not the namespace and two authorities that are
+            the same string cannot both be installed on one phone.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/shared_files" />
+        </provider>
+
     </application>
 
 </manifest>

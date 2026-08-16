@@ -220,6 +220,14 @@
     <string name="panel_desktop_size_value">%1$d × %2$d</string>
     <string name="panel_desktop_size_device">%1$d × %2$d (this phone)</string>
 
+    <!-- The camera button, as its tooltip and to anything reading the screen
+         aloud. What it shares is the desktop, whole, at whatever size the far
+         end is — not what this phone happens to be looking at. -->
+    <string name="panel_screenshot">Screenshot the desktop</string>
+    <!-- Both ways it can fail: nothing to photograph, or nothing to write it
+         to. Neither is worth two sentences. -->
+    <string name="screenshot_failed">The desktop could not be captured.</string>
+
     <string name="panel_log">View log</string>
     <string name="log_title">Log</string>
     <string name="log_copy">Copy</string>

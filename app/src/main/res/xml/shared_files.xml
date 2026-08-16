@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    What the provider will hand out, which is one directory and nothing else.
+    Everything this app keeps that matters — the connections, the sealed
+    passwords, the previews — is under files/, and none of it is named here: a
+    provider that could reach it would be one misrouted URI away from serving
+    it to whatever asked.
+-->
+<paths>
+    <cache-path
+        name="screenshots"
+        path="screenshots/" />
+</paths>

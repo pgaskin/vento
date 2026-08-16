@@ -101,6 +101,7 @@ final class ConnectionPanel {
     private final ViewGroup facts;
     private final ViewGroup diagnostics;
     private final MaterialButton action;
+    private final MaterialButton screenshot;
 
     private final String backendName;       // which client this session is on
     private final List<BackendOption> live; // changeable on a running session
@@ -169,9 +170,15 @@ final class ConnectionPanel {
         facts = content.findViewById(R.id.facts);
         diagnostics = content.findViewById(R.id.diagnostics);
         action = content.findViewById(R.id.action);
+        screenshot = content.findViewById(R.id.screenshot);
 
         content.findViewById(R.id.close).setOnClickListener(v -> dialog.dismiss());
         content.findViewById(R.id.log).setOnClickListener(v -> SessionLog.show(activity));
+        // The panel stays open behind the share sheet, and the desktop behind
+        // it stays live: this takes a copy of the connection rather than doing
+        // anything to it, so there is nothing here to come back to.
+        screenshot.setTooltipText(activity.getString(R.string.panel_screenshot));
+        screenshot.setOnClickListener(v -> Screenshot.share(activity, session));
         action.setOnClickListener(v -> {
             // Which of the two it is now, not which it was when the panel
             // opened: a session can end while this is on screen.
@@ -210,6 +217,7 @@ final class ConnectionPanel {
         });
         controls.setVisibility(optionRows.isEmpty() ? View.GONE : View.VISIBLE);
         refreshAction();    // before it is shown, so the button is never briefly the other one
+        screenshot.setEnabled(connected());  // ... and the same for this one
         refreshResize();
         setFacts(List.of());
 
@@ -291,7 +299,7 @@ final class ConnectionPanel {
      * to say something before any answer has come back over the wire.
      */
     private String stateLine() {
-        if (session.state() != Backend.State.CONNECTED || session.isClosed()) {
+        if (!connected()) {
             return session.status();
         }
         final int w = session.backend().desktopWidth();
@@ -314,6 +322,19 @@ final class ConnectionPanel {
     }
 
     /**
+     * A session with a desktop behind it, which is what everything on this
+     * panel that acts on the connection needs and none of it can assume: one
+     * that is still connecting has no picture to photograph and no option that
+     * would take effect.
+     *
+     * <p>Not {@code !ended()} — the two differ for a session that has not
+     * connected yet, which is neither.
+     */
+    private boolean connected() {
+        return session.state() == Backend.State.CONNECTED && !session.isClosed();
+    }
+
+    /**
      * The footer. One button at the end of the row, and which one it is follows
      * the session: Disconnect while there is something to disconnect, Reconnect
      * once there is not — two states of a slot rather than two buttons, since
@@ -333,9 +354,13 @@ final class ConnectionPanel {
      * switch that moves and does nothing is a lie.
      */
     private void refreshControls() {
-        final boolean enabled = session.state() == Backend.State.CONNECTED && !session.isClosed();
+        final boolean enabled = connected();
         optionRows.setEnabled(enabled);
         optionRows.refresh();
+        // On the same poll rather than on the click, so that a session which
+        // has gone while the panel was open says so by going grey instead of
+        // by a toast after the fact.
+        screenshot.setEnabled(enabled);
         refreshResize();
     }
 
