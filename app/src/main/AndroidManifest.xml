@@ -32,8 +32,14 @@
     -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
+    <!--
+        A restore may not carry a picture of somebody's desktop, or anything a
+        backend acquired for the device it was acquired on. The rules say what
+        it may.
+    -->
     <application
         android:name=".RemoteDesktopApp"
+        android:dataExtractionRules="@xml/backup_rules"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"
