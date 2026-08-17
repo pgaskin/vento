@@ -4,17 +4,17 @@
 package net.pgaskin.remotedesktop.backend;
 
 /**
- * One of the far end's monitors, as a rectangle of the desktop.
+ * One of the far end's screens, as a rectangle in its coordinates.
  *
- * <p>A multi-head desktop is one framebuffer with the heads laid out inside it,
- * and that is true of every protocol here — there is no per-monitor mode, no
- * chooser and no second connection. So this is not a thing the picture or the
- * pointer is built on: it is the far end describing where the joins are, for the
- * two places a join is worth knowing about, and everything else works in desktop
- * pixels and never asks.
- *
- * <p>Coordinates are the desktop's own, so the rectangles tile the framebuffer
- * and the first one is not necessarily at the origin.
+ * <p>Two questions use this shape and they are not the same question.
+ * {@link Backend#monitors} is a multi-head desktop as every protocol here but
+ * one serves it: <em>one</em> framebuffer with the heads laid out inside it, so
+ * the rectangles tile the picture, the first is not necessarily at the origin,
+ * and nothing about the pixels or the pointer is built on them — it is the far
+ * end saying where the joins are, and everything else works in desktop pixels
+ * and never asks. {@link Backend#displays} is RustDesk's, where the far end
+ * sends one screen at a time: the rectangles are then a menu rather than a map,
+ * since only one of them is the picture and the others are nowhere in it.
  */
 public record Monitor(int x, int y, int width, int height) {
 

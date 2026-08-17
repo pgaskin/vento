@@ -97,6 +97,13 @@ final class RfbNative {
          */
         void onTrustNeeded(String fingerprint);
 
+        /**
+         * Never called: this client refuses the security types that have no
+         * server identity in them, rather than asking whether to go on without
+         * one. Declared because the interface is the one every backend answers.
+         */
+        void onUnverified(String why);
+
         /** Terminal. Empty {@code detail} for an ordinary disconnect. */
         void onClosed(String detail);
     }

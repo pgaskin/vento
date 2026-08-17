@@ -1,13 +1,12 @@
-//! What more than one protocol needs and none of them owns.
+//! What a backend's JNI half needs of Android rather than of a protocol: a
+//! locked bitmap, the calls back into Java, a slot to park a protocol thread in
+//! until somebody answers a dialog.
 //!
-//! Both halves arrived the same way — the second protocol wanted the first's
-//! answer unchanged — and they have nothing else in common, which is why they
-//! are modules of one small crate rather than crates of their own: nothing here
-//! is published, and a crate boundary between two things that are always built
-//! together buys a manifest and no checking.
-
-pub mod pinning;
-pub mod tls;
+//! It held the TLS half as well until a protocol arrived that reaches no TLS at
+//! all. What decided the split was neither taste nor compile time: cargo
+//! resolves a workspace's features as a union, so a crate that depends on this
+//! one is a crate whose dependency graph names rustls whether it uses it or
+//! not — and an artefact's licence page is generated from that graph.
 
 #[cfg(target_os = "android")]
 pub mod android;

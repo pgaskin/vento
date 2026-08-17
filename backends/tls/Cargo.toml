@@ -1,0 +1,30 @@
+# What a protocol that reaches TLS needs, and what one that does not must not
+# be built with: the trust decision and the connection two threads share.
+#
+# A crate rather than two more modules of `remotedesktop-common`, and the reason
+# is an artefact's licence page. Cargo resolves a workspace's features as a
+# union, so an optional dependency any member turns on appears in every member's
+# graph — and a page generated from that graph would tell somebody the RustDesk
+# add-on carries a TLS stack that is in none of its binaries. A crate boundary
+# is the only thing cargo will not unify across.
+[package]
+name = "remotedesktop-tls"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "tls"
+
+[dependencies]
+log.workspace = true
+sha2 = "0.11"
+# `ring` because aws-lc-rs wants cmake and bindgen for Android. No
+# `webpki-roots`: what replaces an authority here is a pin (`pinning`).
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+    "logging",
+] }

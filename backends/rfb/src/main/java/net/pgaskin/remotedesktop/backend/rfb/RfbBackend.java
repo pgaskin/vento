@@ -513,6 +513,15 @@ public final class RfbBackend implements Backend, RfbNative.Callbacks {
         main.post(() -> KnownHosts.ask(context, address, fingerprint, prompts, this::answerTrust));
     }
 
+    /**
+     * Never called: the security types with no identity in them are the ones
+     * this client's TLS stack cannot speak at all, so there is nothing to ask
+     * about. The two borrowed VNC clients offer them and do ask.
+     */
+    @Override
+    public void onUnverified(String why) {
+    }
+
     private void answerTrust(boolean accept) {
         final long h = handle;
         if (h != 0) {

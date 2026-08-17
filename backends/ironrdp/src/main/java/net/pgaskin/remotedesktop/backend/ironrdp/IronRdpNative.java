@@ -100,6 +100,13 @@ final class IronRdpNative {
          */
         void onTrustNeeded(String fingerprint);
 
+        /**
+         * Never called: an RDP server always presents a certificate, so the
+         * question is which one rather than whether there is one. Declared
+         * because the interface is the one every backend answers.
+         */
+        void onUnverified(String why);
+
         /** Terminal. Empty {@code detail} for an ordinary disconnect. */
         void onClosed(String detail);
     }

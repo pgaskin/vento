@@ -12,8 +12,8 @@
 #   ./check-reproducible.sh debug
 #   ./check-reproducible.sh -k release  # keep the copies, to diff by hand
 #
-# Both artefacts are compared: the app and the add-on, which are released
-# together and neither of which contains anything of anybody else's.
+# Every artefact is compared: the app and each add-on, which are released
+# together and none of which contains anything of anybody else's.
 #
 # Neither build is this working tree's, which is deliberate: a tree somebody
 # develops in has a warm CMake cache, and a cache that has outlived the option
@@ -42,7 +42,9 @@ command -v go >/dev/null || { echo "error: go is not on the PATH" >&2; exit 1; }
 
 capitalized=$(echo "${buildType:0:1}" | tr '[:lower:]' '[:upper:]')${buildType:1}
 outputs=app/build/outputs/apk/$buildType
-pluginOutputs=plugins/realvnc/build/outputs/apk/$buildType
+# One per add-on: each is released with the app and none of them contains
+# anything of anybody else's.
+pluginModules=(realvnc rustdesk)
 
 here=$PWD
 # Two copies and two builds of them is around 40 GB, so they go beside the
@@ -72,12 +74,20 @@ done
 
 for dir in "$a" "$b"; do
     echo "==> building $buildType in $dir"
-    (cd "$dir" && ./gradlew ":app:assemble$capitalized" ":plugins:realvnc:assemble$capitalized")
+    tasks=(":app:assemble$capitalized")
+    for plugin in "${pluginModules[@]}"; do
+        tasks+=(":plugins:$plugin:assemble$capitalized")
+    done
+    (cd "$dir" && ./gradlew "${tasks[@]}")
 done
 
 status=0
 shopt -s nullglob
-for out in "$outputs" "$pluginOutputs"; do
+artefacts=("$outputs")
+for plugin in "${pluginModules[@]}"; do
+    artefacts+=("plugins/$plugin/build/outputs/apk/$buildType")
+done
+for out in "${artefacts[@]}"; do
     for apk in "$a/$out"/*.apk; do
         name=$(basename "$apk")
         echo

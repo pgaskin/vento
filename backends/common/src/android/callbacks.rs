@@ -31,6 +31,7 @@ pub struct Callbacks {
     clipboard: jni::objects::JMethodID,
     credentials_needed: jni::objects::JMethodID,
     trust_needed: jni::objects::JMethodID,
+    unverified: jni::objects::JMethodID,
     closed: jni::objects::JMethodID,
 }
 
@@ -64,6 +65,11 @@ impl Callbacks {
             trust_needed: env.get_method_id(
                 &class,
                 jni_str!("onTrustNeeded"),
+                jni_sig!("(Ljava/lang/String;)V"),
+            )?,
+            unverified: env.get_method_id(
+                &class,
+                jni_str!("onUnverified"),
                 jni_sig!("(Ljava/lang/String;)V"),
             )?,
             closed: env.get_method_id(
@@ -180,6 +186,15 @@ impl Callbacks {
     /// pin store, so the decision is not ours to take here.
     pub fn trust_needed(&self, fingerprint: &str) {
         self.with_string(self.trust_needed, fingerprint);
+    }
+
+    /// Ask whether to go on with a far end that could not be verified at all,
+    /// which is a different question from whether an identity is the right one:
+    /// there is nothing to pin and nothing to compare, so what the app can offer
+    /// is the reason and a way out. Answered through `Session::answer_trust`,
+    /// since a yes and a no mean the same things to the protocol thread.
+    pub fn unverified(&self, why: &str) {
+        self.with_string(self.unverified, why);
     }
 
     fn with_string(&self, method: jni::objects::JMethodID, text: &str) {

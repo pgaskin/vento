@@ -463,6 +463,12 @@ public final class Backends {
         return p == null ? List.of() : p.options();
     }
 
+    /** Null where the app's own wording is what the field should say. */
+    public static String addressLabel(String id, Map<String, String> options) {
+        final BackendProvider p = provider(id);
+        return p == null ? null : p.addressLabel(options);
+    }
+
     /**
      * Whether a backend can be connected with, for a screen deciding whether to
      * offer {@link #setup} instead of what it would otherwise do.

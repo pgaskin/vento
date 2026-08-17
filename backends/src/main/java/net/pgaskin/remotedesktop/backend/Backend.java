@@ -178,6 +178,42 @@ public interface Backend {
     }
 
     /**
+     * The far end's displays, where it sends <em>one of them at a time</em> and
+     * will send another if asked — empty for every protocol that does not, which
+     * is all but one of them.
+     *
+     * <p>Not {@link #monitors}, and the difference is which picture is on
+     * screen. A monitor is a region of the one framebuffer everything else here
+     * serves, so a caller with the layout can jump the viewport between heads
+     * and the pixels are already there. A display is a picture the far end is
+     * <em>not</em> sending: choosing another is a message, a new size and a new
+     * framebuffer, and the rectangles are only in the far end's own coordinates
+     * so that a person can tell which screen is which.
+     *
+     * <p>Polled, and for {@link #canResize}'s reason: it is a fact about the
+     * live session, arrives after the connection and changes when a screen is
+     * plugged in over there.
+     */
+    default java.util.List<Monitor> displays() {
+        return java.util.List.of();
+    }
+
+    /** Which of {@link #displays} is on screen, or -1 where there is no choice. */
+    default int display() {
+        return -1;
+    }
+
+    /**
+     * Ask the far end to send another of its displays.
+     *
+     * <p>A request, like {@link #requestDesktopSize}: the far end may answer
+     * with a different one or with nothing, and what actually happened arrives
+     * as {@link Listener#desktopSize} and in the next {@link #display}.
+     */
+    default void requestDisplay(int index) {
+    }
+
+    /**
      * Whether the far end will take a new desktop size right now.
      *
      * <p>Deliberately not a {@link BackendOption}: an option is a static

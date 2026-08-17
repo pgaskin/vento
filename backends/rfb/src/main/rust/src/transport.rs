@@ -7,14 +7,14 @@
 //!
 //! ## Two threads, one TLS session
 //!
-//! Which is `common::tls`, where the locking argument is written down: RDP
+//! Which is `tls::stream`, where the locking argument is written down: RDP
 //! reached the same problem and wanted the same answer. What stays here is the
 //! upgrade itself, because VeNCrypt's is unlike anybody else's.
 //!
 //! ## What is trusted
 //!
 //! Nothing, by a certificate authority — that argument and the verifier that
-//! implements it are `common::pinning`, because RDP reaches the same conclusion
+//! implements it are `tls::pinning`, because RDP reaches the same conclusion
 //! about the same problem. What is left here is *where* the question is asked:
 //! after the handshake and before a byte of the sub-authentication, which is
 //! where the password would go. A completed TLS handshake carries nothing
@@ -92,8 +92,8 @@ impl Wire {
             )));
         }
 
-        let (config, verifier) = common::pinning::client_config().map_err(tls_error)?;
-        let name = common::pinning::server_name(server_name);
+        let (config, verifier) = tls::pinning::client_config().map_err(tls_error)?;
+        let name = tls::pinning::server_name(server_name);
         let mut conn = ClientConnection::new(Arc::new(config), name).map_err(tls_error)?;
 
         // The handshake runs on the raw socket, which still carries the
@@ -115,12 +115,12 @@ impl Wire {
         let fingerprint = verifier
             .fingerprint()
             .ok_or_else(|| Error::Protocol("the server sent no certificate".into()))?;
-        let description = common::pinning::describe(conn.protocol_version(), conn.negotiated_cipher_suite());
+        let description = tls::pinning::describe(conn.protocol_version(), conn.negotiated_cipher_suite());
 
         // The counters come across with the streams they were counting: this
         // is the same session, and the handshake's own records are the only
         // bytes of it nothing here sees.
-        let handle = common::tls::Handle::new(conn, &self.socket)?;
+        let handle = tls::stream::Handle::new(conn, &self.socket)?;
         self.r = Reader::counting(Box::new(handle.clone_handle()) as Reads, self.r.counter());
         self.w = Writer::counting(Box::new(handle) as Writes, self.w.counter());
         self.peer = Some(Peer {

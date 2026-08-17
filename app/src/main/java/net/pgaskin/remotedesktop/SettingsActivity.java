@@ -535,6 +535,15 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             final String plugin = Backends.packageOf(id);
             if (plugin != null) {
                 screen.addPreference(heading(0));
+                // An add-on carrying anything of anybody else's generates a
+                // licence page of its own, since it is a separate build under
+                // its own terms and the app's page says nothing about it. It
+                // has no screen to show one on, so it is shown here, above the
+                // row that leads out of the app.
+                if (LicensesActivity.has(requireContext(), plugin)) {
+                    screen.addPreference(link(R.string.settings_licenses, 0,
+                            () -> startActivity(LicensesActivity.of(requireContext(), plugin))));
+                }
                 final Preference p = link(R.string.settings_plugin, 0, () -> startActivity(
                         new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                                 Uri.fromParts("package", plugin, null))));

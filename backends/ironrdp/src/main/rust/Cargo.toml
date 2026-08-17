@@ -18,6 +18,7 @@ crate-type = ["lib", "cdylib"]
 [dependencies]
 log.workspace = true
 remotedesktop-common.workspace = true
+remotedesktop-tls.workspace = true
 
 # `ironrdp-blocking` rather than the async one: this client owns its threads and
 # blocks on a socket, which keeps a tokio runtime out of the app.

@@ -92,6 +92,18 @@
             android:orientation="vertical" />
 
         <!--
+            Which of the far end's screens it is sending, above the size of it
+            for the reason that is the order the two are decided in. Only one
+            protocol here sends one screen at a time, so this is usually gone.
+        -->
+        <LinearLayout
+            android:id="@+id/display"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/group_spacing"
+            android:orientation="vertical" />
+
+        <!--
             The desktop size, which is a control and not an option: whether it
             can be offered at all is a fact about the live connection, so the
             row appears and disappears while the panel is open and is built by

@@ -527,6 +527,11 @@ public final class IronRdpBackend implements Backend, IronRdpNative.Callbacks {
         main.post(() -> KnownHosts.ask(context, address, fingerprint, prompts, this::answerTrust));
     }
 
+    /** Never called: an RDP server always presents a certificate. */
+    @Override
+    public void onUnverified(String why) {
+    }
+
     private void answerTrust(boolean accept) {
         final long h = handle;
         if (h != 0) {

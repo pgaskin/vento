@@ -18,6 +18,7 @@ crate-type = ["lib", "cdylib"]
 [dependencies]
 log.workspace = true
 remotedesktop-common.workspace = true
+remotedesktop-tls.workspace = true
 # Pure-Rust inflate for ZRLE's zlib stream: no C toolchain beyond the NDK's
 # linker, which is the same argument rustls makes below.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

@@ -5,12 +5,12 @@
 //! security" is RC4 with a key the protocol hands over — so unlike VeNCrypt
 //! this is not an option, it is the transport. What is the same as the RFB
 //! client is everything around it: the certificate is pinned rather than
-//! verified (`common::pinning`), the question is asked on the protocol thread after the
+//! verified (`tls::pinning`), the question is asked on the protocol thread after the
 //! handshake and before anything secret goes out, and one TLS session has to be
 //! reachable from a reader and a writer at once.
 //!
 //! That last part is not this protocol's problem to solve: sharing one session
-//! between a reader and a writer is `common::tls`, which is where the locking
+//! between a reader and a writer is `tls::stream`, which is where the locking
 //! argument is written down. What is left here is the handshake and what it
 //! yields.
 
@@ -33,17 +33,17 @@ pub struct Peer {
     pub public_key: Vec<u8>,
 }
 
-/// One thread's view of the TLS session, which is `common::tls`' — the shape is
+/// One thread's view of the TLS session, which is `tls::stream`' — the shape is
 /// the same in both protocols and the argument for it is written down there.
-pub use common::tls::Handle;
+pub use tls::stream::Handle;
 
 /// Do the handshake on `socket`, which must have nothing outstanding on it.
 ///
 /// `server_name` is only what rustls insists on having: nothing checks it,
-/// because the pin is the identity (`common::pinning`).
+/// because the pin is the identity (`tls::pinning`).
 pub fn connect(socket: &TcpStream, server_name: &str) -> Result<(Handle, Peer)> {
-    let (config, verifier) = common::pinning::client_config().map_err(tls_error)?;
-    let name = common::pinning::server_name(server_name);
+    let (config, verifier) = tls::pinning::client_config().map_err(tls_error)?;
+    let name = tls::pinning::server_name(server_name);
     let mut conn = ClientConnection::new(Arc::new(config), name).map_err(tls_error)?;
 
     // The handshake runs on the raw socket, which still carries the connect
@@ -56,8 +56,8 @@ pub fn connect(socket: &TcpStream, server_name: &str) -> Result<(Handle, Peer)> 
         .certificate()
         .ok_or_else(|| Error::Protocol("the server sent no certificate".into()))?;
     let peer = Peer {
-        fingerprint: common::pinning::fingerprint(&certificate),
-        description: common::pinning::describe(conn.protocol_version(), conn.negotiated_cipher_suite()),
+        fingerprint: tls::pinning::fingerprint(&certificate),
+        description: tls::pinning::describe(conn.protocol_version(), conn.negotiated_cipher_suite()),
         public_key: public_key(&certificate),
     };
 

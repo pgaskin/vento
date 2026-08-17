@@ -1,0 +1,45 @@
+# The RustDesk backend's native half. The protocol is plain Rust and
+# `src/bindings` is Android-only, so `cargo test` and
+# `cargo run --example rustdesk-probe` exercise it on the host — bar the
+# picture, which is the phone's own decoder and is stubbed off Android.
+[package]
+name = "remotedesktop-rustdesk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+# `lib` for the tests and the example, `cdylib` for the library the app loads —
+# one crate for one protocol.
+name = "remotedesktop_rustdesk"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+log.workspace = true
+remotedesktop-common.workspace = true
+# Their session cipher and both signatures: xsalsa20-poly1305, curve25519 boxes
+# and ed25519, which is libsodium's set and is what they link. Pure Rust, so
+# nothing here needs a C library that is not already being built.
+dryoc = "0.7"
+# For the one socket option std does not reach: a peer is dialled from the local
+# port the rendezvous server saw, which is what makes a punch a punch.
+socket2 = { version = "0.6", features = ["all"] } # SO_REUSEPORT is behind it
+# Theirs rather than prost, so the generated code is what their own client
+# would have produced from the same `.proto`. `protobuf-codegen`'s `.pure()`
+# needs no `protoc`, which is a host tool this build would otherwise have to
+# find and pin.
+protobuf = "3.7"
+# The password hash, which is two rounds of it.
+sha2 = "0.11"
+# Their clipboard and their cursors are zstd, and this is the one C dependency
+# in here: it builds under the NDK without being asked anything.
+zstd = "0.13"
+
+# The only part of this crate that knows a phone exists.
+[target.'cfg(target_os = "android")'.dependencies]
+jni.workspace = true
+android_logger.workspace = true
+
+[build-dependencies]
+protobuf-codegen = "3.7"

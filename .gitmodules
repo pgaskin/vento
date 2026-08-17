@@ -38,3 +38,8 @@
 	url = https://github.com/Devolutions/IronRDP.git
 	shallow = true
 	ignore = all
+[submodule "third_party/hbb_common"]
+	path = third_party/hbb_common
+	url = https://github.com/rustdesk/hbb_common.git
+	shallow = true
+	ignore = all

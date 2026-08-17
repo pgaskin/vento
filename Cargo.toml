@@ -5,6 +5,7 @@
 resolver = "2"
 members = [
     "backends/common",
+    "backends/tls",
     "backends/*/src/main/rust",
 ]
 exclude = ["third_party"]
@@ -17,6 +18,7 @@ publish = false
 
 [workspace.dependencies]
 remotedesktop-common = { path = "backends/common", version = "0.0.1" }
+remotedesktop-tls = { path = "backends/tls", version = "0.0.1" }
 log = "0.4"
 # One version across the crates: a `Callbacks` built in one is used in another.
 jni = "0.22"

@@ -1,8 +1,6 @@
-# What more than one protocol needs and none owns, each here because the second
-# protocol wanted it unchanged: `pinning` is what "trusted" means when nothing
-# vouches for a remote desktop's certificate, and `android` is what a JNI half
-# needs — a locked bitmap, the calls back into Java, a slot to park a protocol
-# thread in until somebody answers a dialog.
+# What a JNI half needs of Android and no protocol owns. Everything that is
+# about TLS rather than about a phone is `remotedesktop-tls`, and why the two
+# are separate crates is in that one's manifest.
 [package]
 name = "remotedesktop-common"
 version.workspace = true
@@ -15,13 +13,6 @@ name = "common"
 
 [dependencies]
 log.workspace = true
-sha2 = "0.11"
-rustls = { version = "0.23", default-features = false, features = [
-    "ring",
-    "std",
-    "tls12",
-    "logging",
-] }
 
 # The `android` module is not compiled off Android, and this is all it needs.
 [target.'cfg(target_os = "android")'.dependencies]

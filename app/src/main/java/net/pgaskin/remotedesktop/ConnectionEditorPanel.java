@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -109,6 +110,8 @@ final class ConnectionEditorPanel {
     private final Map<String, String> openedChosen = new LinkedHashMap<>();
 
     private PanelOptions fieldRows;
+    /** What the address field is labelled now, so a change to it can rebuild. */
+    private String addressLabel;
     private PanelOptions optionRows;
 
     /**
@@ -504,6 +507,12 @@ final class ConnectionEditorPanel {
                 if (chosen.containsKey(o.key()) || !value.equals(get(o))) {
                     chosen.put(o.key(), value);
                 }
+                // An option can decide what the address field is asking for,
+                // and a row's label is fixed when the row is built — so the
+                // form is rebuilt where the answer has moved.
+                if (!Objects.equals(addressLabel, Backends.addressLabel(value(BACKEND), chosen))) {
+                    rebuild();
+                }
             }
 
             @Override
@@ -571,7 +580,12 @@ final class ConnectionEditorPanel {
         // goes in them, and the address carries its own format.
         out.add(BackendOption.text(NAME, activity.getString(R.string.editor_name),
                 null, "", BackendOption.Scope.CONNECTION, false));
-        out.add(BackendOption.text(ADDRESS, activity.getString(R.string.editor_address),
+        // The backend's word for it where it has one: one protocol here reaches
+        // a machine by digits rather than by a host and a port, and which of
+        // those the box holds moves with an option below it.
+        addressLabel = Backends.addressLabel(value(BACKEND), chosen);
+        out.add(BackendOption.text(ADDRESS,
+                addressLabel != null ? addressLabel : activity.getString(R.string.editor_address),
                 null, "", BackendOption.Scope.CONNECTION, false));
         // No user name and no password: both are kept in {@link #record} and
         // written back by {@link #save} untouched, but neither is a field here.

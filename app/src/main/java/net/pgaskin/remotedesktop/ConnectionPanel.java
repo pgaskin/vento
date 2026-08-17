@@ -23,6 +23,7 @@ import net.pgaskin.remotedesktop.backend.Backend;
 import net.pgaskin.remotedesktop.backend.BackendOption;
 import net.pgaskin.remotedesktop.backend.Backends;
 import net.pgaskin.remotedesktop.backend.ConnectionFact;
+import net.pgaskin.remotedesktop.backend.Monitor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -49,10 +50,11 @@ import java.util.Map;
  *       becomes visible as something other than a feeling.
  *   <li><b>Both lists are generated</b>, so this class knows no parameter names
  *       and no protocol vocabulary.
- *   <li><b>The desktop size is here rather than in the editor</b>, and is the
- *       one control that is not an option: whether the far end will take a size
- *       at all is a fact about the connection in front of you, which is exactly
- *       what this panel is for.
+ *   <li><b>The desktop size and the far end's display are here rather than in
+ *       the editor</b>, and are the two controls that are not options: whether
+ *       the far end will take a size at all, and whether it has another screen
+ *       to send, are facts about the connection in front of you, which is
+ *       exactly what this panel is for.
  * </ol>
  *
  * <p>A sheet over the desktop rather than a screen replacing it, which the
@@ -97,6 +99,7 @@ final class ConnectionPanel {
     private final TextView title;
     private final TextView subtitle;
     private final ViewGroup controls;
+    private final ViewGroup displayRow;
     private final ViewGroup resize;
     private final ViewGroup facts;
     private final ViewGroup diagnostics;
@@ -122,6 +125,10 @@ final class ConnectionPanel {
      */
     private PanelOptions resizeRow;
     private List<BackendOption.Choice> resizeChoices = List.of();
+
+    /** The same again for the far end's displays, where it sends one at a time. */
+    private PanelOptions displayOptions;
+    private List<BackendOption.Choice> displayChoices = List.of();
 
     /** The fact rows on screen: what they are, and where their values go. */
     private List<String> factShape = List.of();
@@ -166,6 +173,7 @@ final class ConnectionPanel {
         title = content.findViewById(R.id.title);
         subtitle = content.findViewById(R.id.subtitle);
         controls = content.findViewById(R.id.controls);
+        displayRow = content.findViewById(R.id.display);
         resize = content.findViewById(R.id.resize);
         facts = content.findViewById(R.id.facts);
         diagnostics = content.findViewById(R.id.diagnostics);
@@ -217,6 +225,7 @@ final class ConnectionPanel {
         });
         controls.setVisibility(optionRows.isEmpty() ? View.GONE : View.VISIBLE);
         refreshAction();    // before it is shown, so the button is never briefly the other one
+        refreshDisplays();
         screenshot.setEnabled(connected());  // ... and the same for this one
         refreshResize();
         setFacts(List.of());
@@ -357,11 +366,62 @@ final class ConnectionPanel {
         final boolean enabled = connected();
         optionRows.setEnabled(enabled);
         optionRows.refresh();
+        refreshDisplays();
         // On the same poll rather than on the click, so that a session which
         // has gone while the panel was open says so by going grey instead of
         // by a toast after the fact.
         screenshot.setEnabled(enabled);
         refreshResize();
+    }
+
+    // ---- the far end's displays ----------------------------------------------
+
+    /**
+     * Which screen the far end is sending, for the one protocol that sends one
+     * of them at a time. A live fact for {@link #refreshResize}'s reason, and
+     * gone entirely where the far end has a single screen or reports none.
+     *
+     * <p>Its value is the display the session <em>has</em>, asked for again
+     * every poll: a switch is a request, and a peer that answers with a
+     * different screen than the one tapped is a tick that moves somewhere else.
+     */
+    private void refreshDisplays() {
+        final Backend backend = session.backend();
+        final List<Monitor> displays = session.isClosed() ? List.of() : backend.displays();
+        displayRow.setVisibility(displays.size() > 1 ? View.VISIBLE : View.GONE);
+        if (displays.size() < 2) {
+            displayOptions = null;
+            displayChoices = List.of();
+            displayRow.removeAllViews();
+            return;
+        }
+        final List<BackendOption.Choice> choices = new ArrayList<>();
+        for (int i = 0; i < displays.size(); i++) {
+            final Monitor m = displays.get(i);
+            choices.add(new BackendOption.Choice(String.valueOf(i),
+                    activity.getString(R.string.panel_display_value, i + 1, m.width(), m.height())));
+        }
+        if (displayOptions != null && choices.equals(displayChoices)) {
+            displayOptions.refresh();
+            return;
+        }
+        displayChoices = choices;
+        displayRow.removeAllViews();
+        final BackendOption option = BackendOption.choice("", // no backend owns this one
+                activity.getString(R.string.panel_display), null,
+                "", BackendOption.Scope.CONNECTION, true,
+                choices.toArray(new BackendOption.Choice[0]));
+        displayOptions = new PanelOptions(displayRow, List.of(option), new PanelOptions.Values() {
+            @Override
+            public String get(BackendOption o) {
+                return String.valueOf(session.backend().display());
+            }
+
+            @Override
+            public void set(BackendOption o, String value) {
+                session.backend().requestDisplay(Integer.parseInt(value));
+            }
+        });
     }
 
     // ---- the desktop size ----------------------------------------------------

@@ -1,0 +1,41 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// An add-on's licence page, in the APK that needs one.
+//
+// The app's page says what the *app* is made of, and an add-on is a different
+// build under different terms — so an add-on carrying anything of anybody
+// else's says so itself, in the same generated page, and the app shows it
+// beside that backend's own rows when the package it came from has one. An
+// add-on made only of this project's code needs none and applies nothing:
+// `plugins/realvnc` is that case, and the app's page already sets out those
+// terms in full for the same code.
+//
+// The contract is the asset's path, `licenses/index.html`, which is where the
+// app looks. Applied as:
+//
+//     apply from: rootProject.file('plugins/licenses.gradle')
+//     licensePage(
+//         cargoPackages: ['remotedesktop-something'],
+//         firstParty: [[name: …, spdx: …, text: …]],
+//         otherComponents: [[name: …, spdx: …, text: …]])
+
+ext.licensePage = { Map spec ->
+    androidComponents {
+        onVariants(selector().all()) { variant ->
+            final cap = variant.name.substring(0, 1).toUpperCase(Locale.ROOT) + variant.name.substring(1)
+            final generate = tasks.register("generate${cap}Licenses", GenerateLicensesTask) {
+                cargoLock.set(rootProject.file('Cargo.lock'))
+                workspaceDir.set(project(':backends').cargoWorkspace)
+                // What this APK ships, which is a subset of the workspace: the
+                // page is about an artefact rather than about the repository.
+                cargoPackages.set(spec.cargoPackages as Set)
+                abiFilters.set(android.defaultConfig.ndk.abiFilters as Set)
+                ownHeading.set('This add-on')
+                firstParty.set(spec.firstParty as List)
+                otherComponents.set(spec.otherComponents as List)
+            }
+            variant.sources.assets?.addGeneratedSourceDirectory(generate) { it.assetsOutputDir }
+        }
+    }
+}

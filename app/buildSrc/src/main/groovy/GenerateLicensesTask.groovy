@@ -15,6 +15,7 @@ import org.gradle.api.provider.SetProperty
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
@@ -74,13 +75,29 @@ abstract class GenerateLicensesTask extends DefaultTask {
     abstract ListProperty<Map<String, String>> getOtherComponents()
 
     /**
-     * The Cargo workspace whose dependencies are listed. Every member of it is
-     * a root here, because what is packaged is one shared library per protocol
-     * and the workspace is exactly the set of them: a protocol added or deleted
-     * is a directory, and this page follows it with nothing to edit.
+     * The Cargo workspace whose dependencies are listed.
      */
     @Internal
     abstract DirectoryProperty getWorkspaceDir()
+
+    /**
+     * Which of the workspace's members this artefact actually contains, by
+     * package name. Every member when it is empty.
+     *
+     * <p>The workspace holds one crate per protocol and an artefact holds the
+     * protocols it ships, which stopped being the same set the first time a
+     * backend shipped in an add-on: a page that listed the whole workspace
+     * would tell somebody the app carries code that is in a different APK
+     * under a different licence.
+     */
+    @Input
+    @Optional
+    abstract SetProperty<String> getCargoPackages()
+
+    /** What the first section is called; an add-on is not "this app". */
+    @Input
+    @Optional
+    abstract Property<String> getOwnHeading()
 
     @OutputDirectory
     abstract DirectoryProperty getAssetsOutputDir()
@@ -116,8 +133,8 @@ abstract class GenerateLicensesTask extends DefaultTask {
             }
         }
 
-        asset.setText(renderHtml(firstParty.get(), otherComponents.get(),
-                crates.values().toList()), 'UTF-8')
+        asset.setText(renderHtml(ownHeading.getOrElse('This app'), firstParty.get(),
+                otherComponents.get(), crates.values().toList()), 'UTF-8')
         logger.lifecycle("described ${firstParty.get().size()} modules, " +
                 "${otherComponents.get().size()} other components and " +
                 "${crates.size()} rust crates in ${ASSET}")
@@ -141,7 +158,16 @@ abstract class GenerateLicensesTask extends DefaultTask {
         // and then it is the only root.
         final members = new HashSet<>(metadata.workspace_members as List)
         final root = (metadata.resolve as Map).root
-        final roots = root != null ? [root] : (metadata.workspace_default_members ?: members).toList()
+        def roots = root != null ? [root] : (metadata.workspace_default_members ?: members).toList()
+        final wanted = cargoPackages.getOrElse([] as Set)
+        if (!wanted.isEmpty()) {
+            final byName = roots.collectEntries { [(packages.get(it).name.toString()): it] }
+            final missing = wanted - byName.keySet()
+            if (!missing.isEmpty()) {
+                throw new GradleException("${missing} is not a member of the cargo workspace")
+            }
+            roots = wanted.toSorted().collect { byName.get(it) }
+        }
         if (roots.isEmpty()) {
             throw new GradleException(
                     "cargo metadata resolved no packages for ${workspaceDir.get().asFile}")
@@ -221,10 +247,10 @@ abstract class GenerateLicensesTask extends DefaultTask {
         ]
     }
 
-    static String renderHtml(List<Map<String, String>> modules, List<Map<String, String>> others,
-                             List<Map> crates) {
+    static String renderHtml(String ownHeading, List<Map<String, String>> modules,
+                             List<Map<String, String>> others, List<Map> crates) {
         final body = new StringBuilder()
-        body << "<h2>This app</h2>\n"
+        body << "<h2>${htmlEscape(ownHeading)}</h2>\n"
         modules.each { module ->
             body << "<details>\n<summary>${htmlEscape(module.name)}</summary>\n"
             body << "<div class=\"src\">${htmlEscape(module.spdx)}</div>\n"

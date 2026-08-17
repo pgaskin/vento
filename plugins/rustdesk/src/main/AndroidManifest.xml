@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        Both of these come from `:plugins`, where an add-on that acquires
+        something needs them. This one acquires nothing: its backend runs in the
+        app's process and spends the app's network permission, and a package
+        asking for one it never uses is a package saying something untrue about
+        itself.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+
+    <!--
+        Nothing is stored here and nothing is acquired: this add-on is the
+        backend and its library, and the only reason it is a package of its own
+        is what it would put on the app's listing. So there is no activity, no
+        provider, and no data directory worth carrying anywhere.
+
+        The marker service the app discovers by comes from `:plugins`, along
+        with the two permissions an acquiring add-on needs and this one does
+        not use.
+    -->
+    <application
+        android:label="@string/app_name"
+        android:allowBackup="false" />
+
+</manifest>

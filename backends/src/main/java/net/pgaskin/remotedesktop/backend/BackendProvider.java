@@ -60,6 +60,20 @@ public interface BackendProvider {
                    Map<String, String> options);
 
     /**
+     * What the editor's address field is called for this backend, or null for
+     * the app's own wording.
+     *
+     * <p>It takes the connection's options because for one protocol here the
+     * answer moves with them: a peer reached through a rendezvous server is
+     * named by digits rather than by a host and a port, and a field labelled
+     * for the other mode would be asking for the wrong thing. The app rebuilds
+     * the form when the answer changes.
+     */
+    default String addressLabel(Map<String, String> options) {
+        return null;
+    }
+
+    /**
      * Whether this backend can be connected with yet.
      *
      * <p>False only for one that needs something the build cannot contain — a

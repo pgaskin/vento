@@ -79,21 +79,30 @@ android {
     }
 }
 
+// The protocols this build has, and what each one's crate is called where it
+// has one: a module carries its own native library and declares itself as a
+// `BackendProvider` service, so this table is the whole of what the app can
+// connect with, along with any add-on installed beside it. Nothing in the app
+// names a protocol.
+//
+// One table rather than a dependency list, because the licence page needs the
+// second column: the Cargo workspace holds a crate per protocol including the
+// ones that ship in an add-on, and the page is about this APK.
+final backendModules = [
+        ':backends:rfb'     : 'remotedesktop-rfb',
+        ':backends:libvnc'  : null, // CMake, and named under `otherComponents`
+        ':backends:tigervnc': null,
+        ':backends:ironrdp' : 'remotedesktop-ironrdp',
+        ':backends:freerdp' : null,
+]
+
 dependencies {
     // The input stack, from `control/`. Its tests live with it, which is why
     // this module has none.
     implementation project(':control')
 
-    // The seam, and the protocols this build has: each carries its own native
-    // library and declares itself as a `BackendProvider` service, so these
-    // lines are the whole of what this app can connect with, along with any
-    // add-on installed beside it. Nothing in the app names a protocol.
     implementation project(':backends')
-    implementation project(':backends:rfb')
-    implementation project(':backends:libvnc')
-    implementation project(':backends:tigervnc')
-    implementation project(':backends:ironrdp')
-    implementation project(':backends:freerdp')
+    backendModules.keySet().each { implementation project(it) }
 
     implementation 'androidx.recyclerview:recyclerview:1.4.0'
     implementation 'androidx.preference:preference:1.2.1'
@@ -101,9 +110,12 @@ dependencies {
 }
 
 // The licence page, as an asset: what this build is made of and what that means
-// for handing it on. The crates are resolved from the Cargo workspace rather
-// than named, per ABI, so a protocol added or deleted changes nothing here.
+// for handing it on. Each crate's own terms are resolved out of the Cargo
+// workspace, per ABI, and which crates are in the page is the table above —
+// this APK's, not the repository's, since a backend that ships in an add-on has
+// a page of its own over there.
 def rustAbiFilters = provider { shippedAbis as Set }
+def rustCrates = provider { backendModules.values().findAll { it != null } as Set }
 
 androidComponents {
     onVariants(selector().all()) { variant ->
@@ -114,6 +126,7 @@ androidComponents {
             cargoLock.set(rootProject.file('Cargo.lock'))
             workspaceDir.set(backends.cargoWorkspace)
             abiFilters.set(rustAbiFilters)
+            cargoPackages.set(rustCrates)
             firstParty.set(provider {
                 final modules = [[
                         name: 'control',

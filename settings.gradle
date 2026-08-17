@@ -26,10 +26,12 @@ include ':backends:tigervnc'
 include ':backends:ironrdp'
 include ':backends:freerdp'
 include ':backends:realvnc'
+include ':backends:rustdesk'
 include ':control'
 
 include ':plugins'
 include ':plugins:realvnc'
+include ':plugins:rustdesk'
 
 include ':realvnc-jni'
 project(':realvnc-jni').projectDir = file('realvnc')
