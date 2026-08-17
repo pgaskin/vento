@@ -55,6 +55,8 @@ public final class FakeDesktop implements CursorController.PointerSink, KeySink 
         MOUSE,
         /** The extension keyboard and the system IME; the {@code keyboard} region too. */
         KEYBOARD,
+        /** Which key list the row is drawn from: one line of keys, or two. */
+        TWOLINE,
         /** The hover detent, and the round trip its news is pretended to take. */
         HOVER, LAG
     }

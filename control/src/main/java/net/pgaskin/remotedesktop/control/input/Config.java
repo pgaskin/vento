@@ -170,6 +170,17 @@ public final class Config {
     // ---- extension keyboard (ui.ExtensionKeyboard / ui.InfoBar) -----------
 
     public float keyboardKeyHeightPx;   // extension_keyboard_height, 46 dp
+    /**
+     * One line of a key list that has more than one, which is shorter than a
+     * row on its own: 46 dp twice over is most of what is left of a phone, and
+     * a line with another above or below it is aimed at against its neighbour
+     * rather than against the picture, so it can lose a little padding and still
+     * be hit. 40 dp is where it stops — the size of the overlay's dismiss
+     * button, which is the smallest target this screen already asks a finger
+     * for, and a key that is hard to hit sends the wrong keysym to somebody
+     * else's machine with no undo at that end.
+     */
+    public float keyboardKeyHeightMultiPx;
     public float keyboardInfoHeightPx;  // the info bar above the keys, 30 dp
     public float keyboardKeyPadPx;      // key_horizontal_margin
     public float keyboardKeyPadWidePx;  // key_horizontal_margin_wide
@@ -293,6 +304,7 @@ public final class Config {
         this.overlayDismissMarginPx = dp(17.5f);
         this.overlayMiddleMinPx = dp(100);
         this.keyboardKeyHeightPx = dp(46);
+        this.keyboardKeyHeightMultiPx = dp(40);
         this.keyboardInfoHeightPx = dp(30);
         this.keyboardKeyPadPx = dp(8);
         this.keyboardKeyPadWidePx = dp(12);
@@ -355,6 +367,7 @@ public final class Config {
         overlayWheelTicksPerClick = o.overlayWheelTicksPerClick;
         overlayWheelStartDelayTicks = o.overlayWheelStartDelayTicks;
         keyboardKeyHeightPx = o.keyboardKeyHeightPx;
+        keyboardKeyHeightMultiPx = o.keyboardKeyHeightMultiPx;
         keyboardInfoHeightPx = o.keyboardInfoHeightPx;
         keyboardKeyPadPx = o.keyboardKeyPadPx;
         keyboardKeyPadWidePx = o.keyboardKeyPadWidePx;

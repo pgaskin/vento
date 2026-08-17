@@ -284,7 +284,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         overlay = new MouseOverlay(cfg, cursor.newButtonSource(), scheduler);
         overlay.setListener(this);
         router.addClaim(overlay);
-        keyboard = new ExtensionKeyboard(cfg, this, scheduler, ExtensionKeyboard.standardKeys());
+        keyboard = new ExtensionKeyboard(cfg, this, scheduler, keyList(ctx));
         keyboard.setListener(this);
         router.addClaim(keyboard);
         // A third button source, for the same reason the overlay has the second:
@@ -332,6 +332,34 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         cfg.copyFrom(now);
         syncPointerCapture();
         applyInsets();
+    }
+
+    /**
+     * Which keys the extension row offers, from this phone's preferences: the
+     * one scrolling line this app has always had, or the two-line grouping.
+     */
+    private static List<ExtensionKeyboard.Key> keyList(Context ctx) {
+        return AppSettings.twoLineKeys(ctx)
+                ? ExtensionKeyboard.twoLineKeys()
+                : ExtensionKeyboard.standardKeys();
+    }
+
+    /**
+     * The key list, as the preferences have it now. Separate from
+     * {@link #applySettings}, which is about the input stack's own file.
+     *
+     * <p>Only when it differs: a swap lets go of every modifier held at the far
+     * end, so making one for a settings screen that was opened and closed again
+     * would drop a chord somebody had armed.
+     */
+    public void applyKeyList() {
+        final List<ExtensionKeyboard.Key> want = keyList(getContext());
+        if (want.equals(keyboard.allKeys())) {
+            return;
+        }
+        keyboard.setKeys(want);
+        applyInsets();
+        invalidate();
     }
 
     public void setHudVisible(boolean show) {

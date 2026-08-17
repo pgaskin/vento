@@ -272,7 +272,10 @@ public final class Chrome {
             }
             final boolean down = keyboard.pressedKey() == b.key();
             final ExtensionKeyboard.Sticky s = keyboard.sticky(b.key());
-            box.set(b.left(), rowTop, b.right(), rowBottom);
+            // The key's own bounds, not the row's: a list of more than one line
+            // puts them on different lines, and the two are the same rectangle
+            // only while there is one.
+            box.set(b.left(), b.top(), b.right(), b.bottom());
 
             // Flush rectangles with no chrome of their own, as the original draws
             // them: borders and margins turn forty keys into forty slabs, and

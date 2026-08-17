@@ -410,6 +410,9 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             screen.addPreference(switchPref(AppSettings.KEY_MODIFIER_RESETS_IME,
                     R.string.settings_modifier_resets_ime,
                     R.string.settings_modifier_resets_ime_summary, true));
+            screen.addPreference(switchPref(AppSettings.KEY_TWO_LINE_KEYS,
+                    R.string.settings_two_line_keys,
+                    R.string.settings_two_line_keys_summary, false));
             screen.addPreference(switchPref(AppSettings.KEY_CLIPBOARD_OUT,
                     R.string.settings_clipboard_out,
                     R.string.settings_clipboard_out_summary, true));

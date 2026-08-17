@@ -4,6 +4,7 @@
 package net.pgaskin.remotedesktop.control.input;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
@@ -76,11 +77,18 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
 
     /**
      * One key. {@code group} only separates: keys with different group numbers
-     * get a gap between them. {@code wide} is roomier padding, for keys whose
+     * get a gap between them. {@code row} is which line of the group it sits on,
+     * where a group of more than one line is laid out as a grid (§{@link
+     * #layout()}). {@code wide} is roomier padding, for keys whose
      * label is short enough to come out a sliver. {@code icon} names a glyph the
      * renderer may know — an arrow, ⇧, ⌘ — and stays a <em>name</em> because
      * this package must not know what a bitmap is; a renderer that does not
      * recognise it falls back to the label, so an unknown icon costs nothing.
+     *
+     * <p>{@code row} is a layout attribute exactly as {@code group} and
+     * {@code wide} are, and the key list stays <em>flat</em> because a key's
+     * position in that list is its state slot and its id at the far end: a list
+     * of lists would make all three two-dimensional for the sake of one of them.
      *
      * <p>{@code action} makes the key mean something this package has no idea
      * about: instead of a keysym it reports the name to the listener, and the
@@ -89,12 +97,12 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
      * screen, neither of which belongs in a plain-JVM model.
      */
     public record Key(String label, String icon, int keysym,
-                      boolean modifier, boolean repeats, int group, boolean wide,
+                      boolean modifier, boolean repeats, int group, int row, boolean wide,
                       String action) {
 
         public Key(String label, String icon, int keysym,
                    boolean modifier, boolean repeats, int group, boolean wide) {
-            this(label, icon, keysym, modifier, repeats, group, wide, null);
+            this(label, icon, keysym, modifier, repeats, group, 0, wide, null);
         }
 
         /**
@@ -103,7 +111,12 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
          * presses is a mistake, and there is no undo at the far end.
          */
         public Key repeating() {
-            return new Key(label, icon, keysym, modifier, true, group, wide, action);
+            return new Key(label, icon, keysym, modifier, true, group, row, wide, action);
+        }
+
+        /** The same key, on line {@code r} of its group. */
+        public Key onRow(int r) {
+            return new Key(label, icon, keysym, modifier, repeats, group, r, wide, action);
         }
 
         public static Key normal(String label, int keysym, int group) {
@@ -127,7 +140,7 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
          * {@code name} is the host's word, not this package's.
          */
         public static Key action(String label, String icon, String name, int group) {
-            return new Key(label, icon, 0, false, false, group, icon != null, name);
+            return new Key(label, icon, 0, false, false, group, 0, icon != null, name);
         }
     }
 
@@ -166,7 +179,7 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
     private final Config cfg;
     private final KeySink sink;
     private final Scheduler scheduler;
-    private final List<Key> keyList;
+    private List<Key> keyList;
     /**
      * Where each key sits in {@link #keyList}, which is its state slot and its
      * id at the far end. A map rather than {@code indexOf}: the row is drawn
@@ -176,7 +189,8 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
      */
     private final IdentityHashMap<Key, Integer> keyIndex = new IdentityHashMap<>();
     private final List<Key> modifiers = new ArrayList<>();
-    private final Sticky[] state;
+    private Sticky[] state;
+    private int rows = 1;   // lines of keys: max(Key.row) + 1
     private Listener listener;
     private LabelWidth labelWidth = ExtensionKeyboard::estimateWidth;
 
@@ -247,16 +261,46 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
         this.cfg = cfg;
         this.sink = sink;
         this.scheduler = scheduler;
+        adopt(keys);
+    }
+
+    /**
+     * Swap the key list of a keyboard that is already running, so that a host
+     * offering a choice of layouts does not have to reconnect to apply one.
+     *
+     * <p><b>Every held modifier is let go of first, through the old list.</b> A
+     * key id is a position in that list, so re-indexing before releasing would
+     * send a key-up for an id the far end never saw a key-down for — and leave a
+     * modifier held down on somebody's machine for the rest of the session. The
+     * active touch, the timers and the fling go with it, since each of them
+     * holds a {@link Key} that may not be in the new list.
+     */
+    public void setKeys(List<Key> keys) {
+        clearModifiers();
+        release();
+        heldIds.clear();
+        adopt(keys);
+        layout();
+        changed();
+    }
+
+    /** Take the list as it is: state, index, modifiers and the line count. */
+    private void adopt(List<Key> keys) {
         this.keyList = List.copyOf(keys);
         this.state = new Sticky[this.keyList.size()];
+        this.rows = 1;
+        keyIndex.clear();
+        modifiers.clear();
         for (int i = 0; i < this.keyList.size(); i++) {
             keyIndex.put(this.keyList.get(i), i);
         }
         for (int i = 0; i < state.length; i++) {
             state[i] = Sticky.OFF;
-            if (this.keyList.get(i).modifier()) {
-                modifiers.add(this.keyList.get(i));
+            final Key k = this.keyList.get(i);
+            if (k.modifier()) {
+                modifiers.add(k);
             }
+            rows = Math.max(rows, k.row() + 1);
         }
     }
 
@@ -300,6 +344,64 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
 
         for (int i = 1; i <= 12; i++) {
             k.add(Key.wide("F" + i, Keysym.f(i), 6));
+        }
+        return k;
+    }
+
+    /**
+     * The same keys in two lines, grouped the way a keyboard groups them:
+     *
+     * <pre>
+     *   modifiers                home  up   end      pgup    paste    f1-f6
+     *   bksp del esc tab ins     left  down right    pgdn    return   f7-f12
+     * </pre>
+     *
+     * <p>The arrows are why the columns of a group are shared between its lines
+     * rather than each line being laid out on its own: sharing them puts
+     * {@code home up end} over {@code left down right} as an inverted T, with
+     * Home above Left and End above Right — the two keys that mean "the far end
+     * of this line, that way" on the axis they mean. The modifiers are the one
+     * group whose columns do not correspond, six over five, and that costs
+     * nothing.
+     *
+     * <p>It is a line of somebody else's screen dearer than {@link
+     * #standardKeys()} and reaches the F-keys without scrolling for them, which
+     * is a trade only the person using it can make.
+     */
+    public static List<Key> twoLineKeys() {
+        final List<Key> k = new ArrayList<>();
+        k.add(Key.modifier("Shift", "shift", Keysym.SHIFT_L, 0));
+        k.add(Key.modifier("Ctrl", null, Keysym.CONTROL_L, 0));
+        k.add(Key.modifier("Alt", null, Keysym.ALT_L, 0));
+        k.add(Key.modifier("Windows", "windows", Keysym.SUPER_L, 0));
+        k.add(Key.modifier("Option", "option", Keysym.ISO_LEVEL3_SHIFT, 0));
+        k.add(Key.modifier("CMD", "command", Keysym.SUPER_L, 0));
+        k.add(Key.icon("Backspace", "backspace", Keysym.BACKSPACE, 0).repeating().onRow(1));
+        k.add(Key.normal("Del", Keysym.DELETE, 0).repeating().onRow(1));
+        k.add(Key.normal("Esc", Keysym.ESCAPE, 0).onRow(1));
+        k.add(Key.normal("Tab", Keysym.TAB, 0).repeating().onRow(1));
+        k.add(Key.normal("Ins", Keysym.INSERT, 0).onRow(1));
+
+        // Home and End are drawn as arrows here, where they sit over Left and
+        // Right: at that width a word beside three arrow glyphs is what breaks
+        // the cluster up, and the shape is the thing that says which is which.
+        k.add(Key.icon("Home", "home", Keysym.HOME, 1));
+        k.add(Key.icon("Up", "arrow_up", Keysym.UP, 1).repeating());
+        k.add(Key.icon("End", "end", Keysym.END, 1));
+        k.add(Key.icon("Left", "arrow_left", Keysym.LEFT, 1).repeating().onRow(1));
+        k.add(Key.icon("Down", "arrow_down", Keysym.DOWN, 1).repeating().onRow(1));
+        k.add(Key.icon("Right", "arrow_right", Keysym.RIGHT, 1).repeating().onRow(1));
+
+        // Abbreviated, since the pair is a column of its own and "Page Down" is
+        // the widest label on the row by half again.
+        k.add(Key.normal("PgUp", Keysym.PAGE_UP, 2).repeating());
+        k.add(Key.normal("PgDn", Keysym.PAGE_DOWN, 2).repeating().onRow(1));
+
+        k.add(Key.action("Paste", "paste", ACTION_PASTE, 3));
+        k.add(Key.icon("Enter", "return", Keysym.RETURN, 3).onRow(1));
+
+        for (int i = 1; i <= 12; i++) {
+            k.add(Key.wide("F" + i, Keysym.f(i), 4).onRow(i <= 6 ? 0 : 1));
         }
         return k;
     }
@@ -425,7 +527,22 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
     }
 
     public float keyRowTop() {
-        return viewH - bottomOffset - cfg.keyboardKeyHeightPx;
+        return viewH - bottomOffset - rows * lineHeight();
+    }
+
+    /** How many lines of keys the current list asks for. */
+    public int rows() {
+        return rows;
+    }
+
+    /** How wide the keys come out, which is what there is to scroll through. */
+    public float contentWidth() {
+        return contentWidth;
+    }
+
+    /** How tall one line of keys is, which is not the same for one line as for two. */
+    public float lineHeight() {
+        return rows > 1 ? cfg.keyboardKeyHeightMultiPx : cfg.keyboardKeyHeightPx;
     }
 
     public float keyRowBottom() {
@@ -492,7 +609,7 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
         if (!visible) {
             return 0;
         }
-        return bottomOffset + cfg.keyboardKeyHeightPx
+        return bottomOffset + rows * lineHeight()
                 + (cfg.keyboardInfoSolid ? cfg.keyboardInfoHeightPx : 0);
     }
 
@@ -507,27 +624,49 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
         if (!visible) {
             return 0;
         }
-        return bottomOffset + cfg.keyboardKeyHeightPx + cfg.keyboardInfoHeightPx;
+        return bottomOffset + rows * lineHeight() + cfg.keyboardInfoHeightPx;
     }
 
     // ---- layout ------------------------------------------------------------
 
-    /** One row, scrolled horizontally: centred when it fits, from the left when it does not. */
+    /**
+     * The keys, scrolled horizontally: centred when they fit, from the left when
+     * they do not.
+     *
+     * <p>A group is a <b>grid</b> whose columns are shared between its lines —
+     * the <i>n</i>th key of one line sits in the same column as the <i>n</i>th
+     * key of the next, and the column is as wide as the widest of them. That is
+     * what makes the arrows an inverted T ({@link #twoLineKeys()}), and it has
+     * the useful side effect that every line is the same width, so the scroll,
+     * the clamp and the fling stay one number. A one-line list is the same rule
+     * with one row in it, laid out exactly as it always was.
+     */
     private void layout() {
         keys.clear();
         if (viewW <= 0 || viewH <= 0) {
             return;
         }
-        final float top = keyRowTop(), bottom = keyRowBottom();
+        final int n = keyList.size();
+        final List<int[]> runs = new ArrayList<>();    // {from, to} of each group
+        final List<float[]> cols = new ArrayList<>();  // its column widths
 
         contentWidth = 0;
-        int group = keyList.isEmpty() ? 0 : keyList.get(0).group();
-        for (Key k : keyList) {
-            if (k.group() != group) {
-                contentWidth += cfg.keyboardGroupGapPx;
-                group = k.group();
+        for (int i = 0; i < n; ) {
+            final int group = keyList.get(i).group();
+            int j = i;
+            while (j < n && keyList.get(j).group() == group) {
+                j++;
             }
-            contentWidth += widthOf(k);
+            final float[] w = columnWidths(i, j);
+            if (i > 0) {
+                contentWidth += cfg.keyboardGroupGapPx;
+            }
+            for (float cw : w) {
+                contentWidth += cw;
+            }
+            runs.add(new int[]{i, j});
+            cols.add(w);
+            i = j;
         }
 
         final float origin;
@@ -539,17 +678,44 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
             origin = -scrollX;
         }
 
+        final float top = keyRowTop();
+        final float height = lineHeight();
         float x = origin;
-        group = keyList.isEmpty() ? 0 : keyList.get(0).group();
-        for (Key k : keyList) {
-            if (k.group() != group) {
+        for (int g = 0; g < runs.size(); g++) {
+            if (g > 0) {
                 x += cfg.keyboardGroupGapPx;
-                group = k.group();
             }
-            final float w = widthOf(k);
-            keys.add(new Bounds(k, x, top, x + w, bottom));
-            x += w;
+            final int[] run = runs.get(g);
+            final float[] w = cols.get(g);
+            final int[] next = new int[rows];
+            for (int i = run[0]; i < run[1]; i++) {
+                final Key k = keyList.get(i);
+                final int c = next[k.row()]++;
+                float left = x;
+                for (int q = 0; q < c; q++) {
+                    left += w[q];
+                }
+                final float keyTop = top + k.row() * height;
+                keys.add(new Bounds(k, left, keyTop, left + w[c], keyTop + height));
+            }
+            for (float cw : w) {
+                x += cw;
+            }
         }
+    }
+
+    /** The column widths of the group of keys {@code [from, to)}. */
+    private float[] columnWidths(int from, int to) {
+        final float[] w = new float[to - from];
+        final int[] next = new int[rows];
+        int columns = 0;
+        for (int i = from; i < to; i++) {
+            final Key k = keyList.get(i);
+            final int c = next[k.row()]++;
+            w[c] = Math.max(w[c], widthOf(k));
+            columns = Math.max(columns, c + 1);
+        }
+        return Arrays.copyOf(w, columns);
     }
 
     private float widthOf(Key k) {

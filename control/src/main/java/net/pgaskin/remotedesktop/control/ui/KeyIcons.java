@@ -47,6 +47,8 @@ final class KeyIcons {
     static final String COMMAND = "command";
     static final String WINDOWS = "windows";
     static final String PASTE = "paste";
+    static final String HOME = "home";
+    static final String END = "end";
 
     private static final Map<String, Icon> CACHE = new HashMap<>();
 
@@ -79,6 +81,8 @@ final class KeyIcons {
             case COMMAND -> new Icon(command(), 0.08f);
             case WINDOWS -> new Icon(windows(), 0);
             case PASTE -> new Icon(paste(), 0.09f);
+            case HOME -> new Icon(toBar(false), 0.10f);
+            case END -> new Icon(toBar(true), 0.10f);
             default -> null;
         };
     }
@@ -99,6 +103,30 @@ final class KeyIcons {
         if (deg != 0) {
             final Matrix m = new Matrix();
             m.setRotate(deg, 0.5f, 0.5f);
+            p.transform(m);
+        }
+        return p;
+    }
+
+    /**
+     * ⇤ / ⇥ — the arrow of {@link #arrow}, sideways, stopped by a bar at the end
+     * it points at: the two keys that mean "as far that way as this line goes".
+     * Home and End are words on the one-line row, where there is room for them
+     * and no arrow beside them; on the two-line row they sit directly above Left
+     * and Right, where the same shape at the same weight is what says so.
+     */
+    private static Path toBar(boolean right) {
+        final Path p = new Path();
+        p.moveTo(0.12f, 0.16f);
+        p.lineTo(0.12f, 0.84f);
+        p.moveTo(0.24f, 0.50f);
+        p.lineTo(0.94f, 0.50f);
+        p.moveTo(0.50f, 0.24f);
+        p.lineTo(0.24f, 0.50f);
+        p.lineTo(0.50f, 0.76f);
+        if (right) {
+            final Matrix m = new Matrix();
+            m.setScale(-1, 1, 0.5f, 0.5f);
             p.transform(m);
         }
         return p;

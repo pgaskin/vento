@@ -119,6 +119,8 @@
     <string name="settings_private_ime_summary">Disable IME suggestions, auto-correction, and learning.</string>
     <string name="settings_modifier_resets_ime">Reset IME state when pressing modifiers</string>
     <string name="settings_modifier_resets_ime_summary">Return to the main IME view when pressing Ctrl, Alt or Shift on the extension keyboard.</string>
+    <string name="settings_two_line_keys">Two lines of extension keys</string>
+    <string name="settings_two_line_keys_summary">Group the extension keyboard onto two lines, reaching the function keys without scrolling. Costs another 40dp of the desktop.</string>
     <string name="settings_clipboard_out">Send clipboard</string>
     <string name="settings_clipboard_out_summary">Send locally copied text to the remote machine.</string>
     <string name="settings_clipboard_in">Receive clipboard</string>

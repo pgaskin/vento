@@ -27,6 +27,7 @@ public final class AppSettings {
     public static final String KEY_PREVIEWS = "previews";       // a picture on the home card
     public static final String KEY_LIST_VIEW = "listView";      // the home screen as rows
     public static final String KEY_MODIFIER_RESETS_IME = "modifierResetsIme";
+    public static final String KEY_TWO_LINE_KEYS = "twoLineKeys";  // the extension row's shape
     public static final String KEY_CLIPBOARD_OUT = "clipboardOut";
     public static final String KEY_CLIPBOARD_IN = "clipboardIn";
     public static final String KEY_REGION_HINTS = "regionHints";  // where the controls are
@@ -59,6 +60,7 @@ public final class AppSettings {
         m.put(KEY_PREVIEWS, true);
         m.put(KEY_LIST_VIEW, true);
         m.put(KEY_MODIFIER_RESETS_IME, true);
+        m.put(KEY_TWO_LINE_KEYS, false);
         m.put(KEY_CLIPBOARD_OUT, true);
         m.put(KEY_CLIPBOARD_IN, true);
         m.put(KEY_REGION_HINTS, true);
@@ -145,6 +147,19 @@ public final class AppSettings {
      */
     public static boolean modifierResetsIme(Context ctx) {
         return get(ctx, KEY_MODIFIER_RESETS_IME);
+    }
+
+    /**
+     * Whether the extension keyboard is drawn as two lines of keys grouped the
+     * way a keyboard groups them, rather than as the one scrolling line this app
+     * has always had.
+     *
+     * <p>Off by default: the second line costs 46 dp of somebody else's desktop,
+     * and what it buys — the F-keys without scrolling for them — is worth that to
+     * the people who use them and to nobody else.
+     */
+    public static boolean twoLineKeys(Context ctx) {
+        return get(ctx, KEY_TWO_LINE_KEYS);
     }
 
     /**

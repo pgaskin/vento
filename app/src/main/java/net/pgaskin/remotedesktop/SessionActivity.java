@@ -308,6 +308,9 @@ public final class SessionActivity extends Activity
             return;
         }
         view.setHudVisible(hudWanted());
+        // App preferences rather than the input stack's, so above the comparison
+        // that follows: that one is about one file, and this is in another.
+        view.applyKeyList();
         final Map<String, ?> stored = InputSettings.prefs(this).getAll();
         if (stored.equals(inputPrefs)) {
             return;

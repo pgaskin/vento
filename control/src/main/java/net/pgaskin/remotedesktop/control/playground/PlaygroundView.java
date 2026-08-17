@@ -110,6 +110,7 @@ public final class PlaygroundView extends View
 
     private final TapRegions tapRegions = TapRegions.toolbar();
     private boolean regionsOn = true;
+    private boolean twoLine;                  // which key list the row is drawn from
     private String lastRegion = "-";          // for the HUD; what a region means is the host's
 
     private final Hud hud;
@@ -561,6 +562,13 @@ public final class PlaygroundView extends View
             // both are reachable with the regions off, and from a script.
             case MOUSE -> toggleOverlay();
             case KEYBOARD -> setKeyboardVisible(!keyboard.visible());
+            case TWOLINE -> {
+                twoLine = !twoLine;
+                keyboard.setKeys(twoLine
+                        ? ExtensionKeyboard.twoLineKeys()
+                        : ExtensionKeyboard.standardKeys());
+                applyInsets();
+            }
             case HOVER -> {
                 cfg.hoverAssistEnabled = !cfg.hoverAssistEnabled;
                 desktop.setTargets(cfg.hoverAssistEnabled);
@@ -783,6 +791,7 @@ public final class PlaygroundView extends View
             case REGIONS -> regionsOn ? "ON" : "OFF";
             case MOUSE -> overlay.visible() ? "ON" : "OFF";
             case KEYBOARD -> keyboard.visible() ? "ON" : "OFF";
+            case TWOLINE -> twoLine ? "ON" : "OFF";
             case HOVER -> cfg.hoverAssistEnabled ? "ON" : "OFF";
             case LAG -> lagMs + "MS";
         };
@@ -894,6 +903,10 @@ public final class PlaygroundView extends View
                         : "off")
                         + "   kbd " + (keyboard.visible()
                         ? "on ime " + imeHeight + " mod " + keyboard.heldModifierCount()
+                        // How many lines of keys, and how wide they are against
+                        // the window: what a key list costs is a measurement
+                        // rather than a guess about a font.
+                        + " " + keyboard.rows() + "×" + Math.round(keyboard.contentWidth())
                         + (subtleHaptics ? " tick" : " buzz")
                         : "off")
                         + "   key " + desktop.lastKey

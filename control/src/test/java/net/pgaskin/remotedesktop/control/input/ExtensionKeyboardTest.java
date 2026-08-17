@@ -720,7 +720,183 @@ public class ExtensionKeyboardTest {
         assertTrue(h.keyboard.heldModifiers().isEmpty());
     }
 
+    // ---- two lines of keys -------------------------------------------------
+
+    /**
+     * The columns of a group are shared between its lines, which is the whole
+     * of the layout rule: Home sits over Left and End over Right, so the arrows
+     * read as the inverted T a hand already knows.
+     */
+    @Test
+    public void theColumnsOfAGroupAreSharedBetweenItsLines() {
+        final Harness h = twoLine();
+        for (int g = 0; g <= 4; g++) {
+            final List<ExtensionKeyboard.Bounds> top = line(h, g, 0);
+            final List<ExtensionKeyboard.Bounds> bottom = line(h, g, 1);
+            for (int i = 0; i < Math.min(top.size(), bottom.size()); i++) {
+                assertEquals("group " + g + " column " + i,
+                        top.get(i).left(), bottom.get(i).left(), 0.01f);
+                assertEquals("group " + g + " column " + i,
+                        top.get(i).right(), bottom.get(i).right(), 0.01f);
+            }
+        }
+        assertEquals("Home over Left", left(h, "Home"), left(h, "Left"), 0.01f);
+        assertEquals("End over Right", left(h, "End"), left(h, "Right"), 0.01f);
+    }
+
+    /**
+     * Both lines come to the same width, because both are the sum of the same
+     * columns — which is what keeps the scroll, the clamp and the fling one
+     * number rather than one per line.
+     */
+    @Test
+    public void bothLinesAreTheSameWidth() {
+        final Harness h = twoLine();
+        assertEquals(leftEdge(h, 0), leftEdge(h, 1), 0.01f);
+        assertEquals(rightEdge(h, 0), rightEdge(h, 1), 0.01f);
+    }
+
+    /** A key on the second line is hit where it is drawn, and is its own key. */
+    @Test
+    public void aKeyOnTheSecondLineFiresUnderItsOwnId() {
+        final Harness h = twoLine();
+        final ExtensionKeyboard.Bounds down = bounds(h, "Down");
+        h.down(0, down.centreX(), down.centreY()).up(0);
+        assertEquals(List.of("key down Down", "key up Down"), h.keys);
+
+        // The line above it, at the same x, is a different key: the row is two
+        // lines of targets rather than one tall one.
+        h.reset();
+        final ExtensionKeyboard.Bounds up = bounds(h, "Up");
+        assertEquals(down.centreX(), up.centreX(), 0.01f);
+        h.down(0, up.centreX(), up.centreY()).up(0);
+        assertEquals(List.of("key down Up", "key up Up"), h.keys);
+    }
+
+    /**
+     * Two lines of keys cover two lines' worth of desktop, and no more — where
+     * a line among others is the shorter one, since 46 dp twice over is most of
+     * what is left of a phone.
+     */
+    @Test
+    public void twoLinesInsetByTwoLines() {
+        final Harness h = twoLine();
+        assertEquals(2, h.keyboard.rows());
+        assertEquals(h.cfg.dp(40), h.keyboard.lineHeight(), 0.01f);
+        assertEquals(2 * h.cfg.dp(40), h.keyboard.insetBottomPx(), 0.01f);
+        assertEquals(2 * h.cfg.dp(40) + h.cfg.dp(30), h.keyboard.heightPx(), 0.01f);
+        assertEquals(h.cfg.dp(30),
+                h.keyboard.keyRowTop() - h.keyboard.infoBarTop(), 0.01f);
+        for (ExtensionKeyboard.Bounds b : h.keyboard.keys()) {
+            assertEquals(h.cfg.dp(40), b.bottom() - b.top(), 0.01f);
+        }
+    }
+
+    /**
+     * A list that never says which line it wants is laid out exactly as it was
+     * before there were lines — which is what the caller's own key list (§3.7)
+     * is owed, and is also the app's default.
+     */
+    @Test
+    public void aListWithoutRowsIsOneLine() {
+        final Harness h = kbd();
+        assertEquals(1, h.keyboard.rows());
+        assertEquals(h.cfg.dp(46), h.keyboard.insetBottomPx(), 0.01f);
+        for (ExtensionKeyboard.Bounds b : h.keyboard.keys()) {
+            assertEquals(h.keyboard.keyRowTop(), b.top(), 0.01f);
+            assertEquals(h.keyboard.keyRowBottom(), b.bottom(), 0.01f);
+        }
+    }
+
+    // ---- swapping the list under a running session -------------------------
+
+    /**
+     * The list can be swapped while a session runs, and a modifier held at the
+     * far end is let go of <em>through the old list</em>: an id is a position in
+     * it, so releasing after the swap would name an id the far end never saw
+     * pressed and leave a modifier down on somebody's machine. The harness's
+     * fake remote is what notices — {@code key up ?}.
+     */
+    @Test
+    public void swappingTheListReleasesWhatIsHeldFirst() {
+        final Harness h = kbd();
+        tapKey(h, SHIFT_X);
+        assertEquals(List.of("key down Shift"), h.keys);
+        h.reset();
+
+        h.keyboard.setKeys(ExtensionKeyboard.twoLineKeys());
+        assertEquals(List.of("key up Shift"), h.keys);
+        assertEquals("nothing left held at the far end", Map.of(), h.held);
+        assertTrue(h.keyboard.heldModifiers().isEmpty());
+        assertEquals(2, h.keyboard.rows());
+    }
+
+    /** A finger down on a key that the new list may not even have lets go of it. */
+    @Test
+    public void swappingTheListAbandonsTheTouchUnderIt() {
+        final Harness h = kbd();
+        h.down(0, ESC_X, ROW_Y);
+        h.keyboard.setKeys(ExtensionKeyboard.twoLineKeys());
+        h.up(0);
+        assertEquals(List.of(), h.keys);
+        // And the repeat timer with it: a held Backspace does not go on
+        // deleting under a list it is no longer in.
+        h.down(0, BKSP_X, ROW_Y);
+        h.keyboard.setKeys(ExtensionKeyboard.standardKeys());
+        h.advance(2000);
+        assertEquals(List.of(), h.keys);
+    }
+
     // ---- helpers -----------------------------------------------------------
+
+    private static Harness twoLine() {
+        return Harness.improved().withKeyboard(ExtensionKeyboard.twoLineKeys()).reset();
+    }
+
+    /** The keys of one line of one group, left to right. */
+    private static List<ExtensionKeyboard.Bounds> line(Harness h, int group, int row) {
+        final List<ExtensionKeyboard.Bounds> out = new ArrayList<>();
+        for (ExtensionKeyboard.Bounds b : h.keyboard.keys()) {
+            if (b.key().group() == group && b.key().row() == row) {
+                out.add(b);
+            }
+        }
+        return out;
+    }
+
+    private static float leftEdge(Harness h, int row) {
+        float x = Float.MAX_VALUE;
+        for (ExtensionKeyboard.Bounds b : h.keyboard.keys()) {
+            if (b.key().row() == row) {
+                x = Math.min(x, b.left());
+            }
+        }
+        return x;
+    }
+
+    private static float rightEdge(Harness h, int row) {
+        float x = 0;
+        for (ExtensionKeyboard.Bounds b : h.keyboard.keys()) {
+            if (b.key().row() == row) {
+                x = Math.max(x, b.right());
+            }
+        }
+        return x;
+    }
+
+    private static ExtensionKeyboard.Bounds bounds(Harness h, String label) {
+        for (ExtensionKeyboard.Bounds b : h.keyboard.keys()) {
+            if (b.key().label().equals(label)) {
+                return b;
+            }
+        }
+        throw new AssertionError("no key labelled " + label);
+    }
+
+    private static float left(Harness h, String label) {
+        return bounds(h, label).left();
+    }
+
 
     /**
      * The double-tap memory does not outlive the row. Hiding it clears every

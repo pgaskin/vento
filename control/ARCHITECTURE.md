@@ -734,7 +734,8 @@ the row's height at the bottom (§2.10, §3.4).
 ### 3.7 The keyboard's key list belongs to the caller
 
 The original hard-codes an X11 key set. Ours takes the list — `standardKeys()`
-is that same set, as a default — because protocols differ in which modifiers they
+is that same set, as a default, and `twoLineKeys()` those keys in the two-line
+grouping of §3.21 — because protocols differ in which modifiers they
 even have: there is no Option on an RDP session, and Super and Meta are not
 everywhere the same key. A backend that cannot express a key should not draw it.
 Nothing in `ExtensionKeyboard` is keyed on a particular keysym; the info bar's
@@ -1168,6 +1169,54 @@ has nothing that reacts to what the far end says. The measurement is what
 shaped it: the fifth test exists because the same server software on one machine
 was ten times later than another on the same machine over the same network, so
 lateness is neither the network's nor a thing a build can be configured for.
+
+### 3.21 The key row can be two lines
+
+The same keys, grouped the way a keyboard groups them: modifiers over the
+editing keys, the arrows as an inverted T, the F-keys six over six.
+
+```
+  modifiers                ⇤   ↑   ⇥      PgUp    paste    f1-f6
+  bksp del esc tab ins     ←   ↓   →      PgDn    return   f7-f12
+```
+
+Home and End are drawn as arrows-into-a-bar here and are words on the one-line
+row, and the page keys are abbreviated: the group is three glyphs wide and a word
+in the middle of it is what stops the cluster reading as one thing.
+
+A group is a **grid whose columns are shared between its lines** — the *n*th key
+of one line sits in the same column as the *n*th key of the next, and the column
+is as wide as the wider. That is the whole of the layout rule, and the arrows are
+what it is for: sharing the columns is what puts Home above Left and End above
+Right, the two keys that mean "the far end of this line, that way" sitting on the
+axis they mean. Per-line layout is one line of code shorter and gives a ragged
+cluster. The modifiers are the one group whose columns do not correspond, six
+over five, and that costs nothing. A useful consequence: both lines are the sum
+of the same columns, so both come out the same width and the scroll, the clamp
+and the fling stay one number.
+
+A line among others is **40 dp** rather than the 46 dp of a row on its own, which
+is where it stops: 40 dp is the overlay's dismiss button, the smallest target
+this screen already asks a finger for. So the chrome over the IME is 110 dp
+instead of 76. Measured against the phone these notes are driven on, the keys
+come to **1465 dp on one line and 765 dp on two** — three screenfuls of scrolling
+in a 360 dp portrait window against not quite two, and in landscape the whole
+set fits with nothing to scroll at all, which needs no code because a row that
+fits is already centred.
+
+`Key.row` is a layout attribute exactly as `group` and `wide` are, and the key
+list stays **flat**: a key's position in it is its state slot and its id at the
+far end (§3.7), so a list of lists would make all three two-dimensional for the
+sake of one of them. A list that never sets `row` is laid out exactly as it was
+before there were lines.
+
+**The list can be swapped while a session is running** (`setKeys`), which is what
+lets a host offer a choice without a reconnect. Its ordering is the whole of the
+work: every held modifier is let go of **first, through the old list**, since an
+id is a position in that list and a release sent after the swap names an id the
+far end never saw pressed — a modifier left down on somebody's machine for the
+rest of the session. The active touch, the timers and the fling go with it, each
+of them holding a key that may not be in the new list.
 
 ---
 
