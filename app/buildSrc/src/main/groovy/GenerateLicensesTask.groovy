@@ -309,7 +309,6 @@ a { color: inherit; }
 </head>
 <body>
 <h1>Licences</h1>
-<p class="intro">What this build is made of.</p>
 ${body}</body>
 </html>
 """
