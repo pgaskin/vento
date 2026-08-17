@@ -28,7 +28,7 @@ desktop is. `vnc-compare.sh` drives these by name.
 | `animate.ps1` | the animation workload: bouncing lines on black, 30 times a second. Windows' own screen saver cannot be used — it runs on the screen-saver desktop, which the servers here do not follow, so the phone gets one frozen frame of it |
 | `kill.ps1` | both of those away again, by window title rather than process name, since both are `powershell.exe` and one of them is this script |
 | `shot.ps1` | the whole virtual screen to a PNG, which is this machine's `xwd` |
-| `info.ps1` | the screen layout and the windows on it |
+| `info.ps1` | the screen layout, where the pointer is in it, and the windows on it. A screenshot cannot answer the second: the capture APIs here do not draw the cursor |
 
 The machine's account is `user` throughout, which is what `setup.ps1` names in
 the principal and what `install.sh` copies to.
