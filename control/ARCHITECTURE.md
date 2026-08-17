@@ -1097,6 +1097,78 @@ no click. It reports `Listener.onButtonsReleased`, the host calls
 `ExtensionKeyboard.externalClick`, and a host with no such row implements
 neither.
 
+### 3.20 Hover assist
+
+The far end says one thing about what is under the pointer, and it says it by
+changing the cursor's shape. Where that arrives while the finger is moving
+slowly, the pointer **loses a little distance**: the factor steps down to
+**0.25** and comes back to 1 over **12 dp** of finger travel, on a smoothstep, so
+the whole cost of a detent is **4.5 dp** of movement and the thing the far end
+just reported has a widened dwell region around it. A small target is easier to
+stop on and harder to slide off.
+
+It is not a snap — nothing is pulled anywhere and nothing teleports — and it is
+not target detection: where the boundary was, how big the thing is and what it
+is are all unknown, and the design follows from that.
+
+**The news is a reply, and it is late.** It was caused by a position sent a
+round trip ago, so the pointer is already past the boundary when it arrives.
+Measured across eight clients and two kinds of far end, that interval is 10 to
+30 ms where the server is told its cursor changed and about 140 ms where it
+polls its own screen — 2.5 to 7.5 dp of travel against 35 dp at the speeds this
+engages at. Three things follow: the detent is applied *ahead* rather than
+centred on anything, the span has to be longer than the lag's travel, and a far
+end late enough to be reporting somewhere else must not arm it at all.
+
+Five tests before it arms, and four of them are the defence against a cursor
+that changes shape for reasons that are not a boundary:
+
+- **Slow.** Above **0.35 dp/ms** — a little above the axis lock's band — a
+  purposeful drag is not aiming at anything.
+- **Moving.** No move event in the last **120 ms** means the change was not
+  caused by us. This one alone disposes of every animation on an idle desktop.
+- **Somewhere new.** Less than **6 dp** of travel since the last change that
+  armed is a far end cycling frames, not two boundaries.
+- **Not a burst.** More than **4** changes in **600 ms** locks the whole
+  mechanism out for **2 s**. This is the animated wait cursor running *while*
+  the finger moves slowly, which is the one case the first three all pass. It
+  counts the changes that pass those three rather than everything that arrives:
+  a hand crossing a desktop full of small objects makes a dozen on the way, and
+  locking out because of them locks out the aim that follows them. Four rather
+  than three because a slow sweep across small things really does cross three
+  of them; an animated cursor runs at ten frames a second or more and still
+  trips it inside one window.
+- **Not too late.** A running estimate of the far end's own lateness, above
+  **60 ms** of which nothing arms. It is measured rather than configured, out
+  of the changes that arrive after a gesture has ended — the only ones whose
+  cause is known, because nothing has moved since. It cannot tell a late reply
+  from a change the far end made for itself, and does not have to: both are
+  arguments against arming.
+
+Two more rules keep it assistance rather than rails. **A reversal cancels it**:
+the direction turning back on itself is somebody coming back to what they
+overshot, and slowing that down is the opposite of help. And **the withheld
+distance is discarded, not banked** — conserving it would turn the assist into
+a delayed jump, which is §3.2's argument for the zeroed minor axis.
+
+**In finger travel rather than desktop pixels**, which is a decision: it costs a
+constant amount of movement and buys `4.5 dp / scale` of desktop stickiness —
+full strength zoomed out, where a link is four screen pixels tall and the help
+is wanted, and negligible zoomed in, where the same rule would cost real travel
+for nothing. It multiplies the accelerator's factor rather than replacing it,
+so inside a detent in the slow band the effective factor is about 0.28. It is
+off where the far end owns the cursor, for §3.16's reason, and a physical mouse
+never sees it: a mouse has the precision this is for.
+
+On in `improved()`, on his verdict from the phone, as §3.1 and §3.2 are; the
+input settings have a row for turning it off.
+
+*Source.* **Patrick's, idea and design, as §3.1 and §3.2 are** — the original
+has nothing that reacts to what the far end says. The measurement is what
+shaped it: the fifth test exists because the same server software on one machine
+was ten times later than another on the same machine over the same network, so
+lateness is neither the network's nor a thing a build can be configured for.
+
 ---
 
 ## What is deliberately not implemented

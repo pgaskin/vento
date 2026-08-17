@@ -90,6 +90,37 @@ public final class Config {
     public float axisLockEnterRatio = 0.30f; // smoothed minor/major below this locks
     public float axisLockExitRatio = 0.55f;  // ... and above this releases: exit > enter
 
+    // ---- hover assist (ours; §3.20) ---------------------------------------
+
+    /**
+     * Lose a little distance just after the far end changes the cursor's shape,
+     * so that whatever it changed shape over is easier to stop on. The third
+     * precision mechanism beside the adaptive gate and the axis lock, and the
+     * only one that reacts to what the far end says rather than to what the
+     * finger does.
+     */
+    public boolean hoverAssistEnabled;
+    public float hoverAssistSpanPx;         // finger travel a detent lasts
+    public float hoverAssistGain = 0.25f;   // the factor at the catch; 1 is no assist
+    /**
+     * The four tests that keep an animated cursor from making the whole desktop
+     * feel like treacle, and a fifth that keeps a far end whose news arrives too
+     * late from decorating open desktop with detents.
+     */
+    public float hoverAssistMaxSpeedPx;     // above this the finger is not aiming at anything
+    public long hoverAssistIdleMs = 120;    // a change with nothing moving was not caused by us
+    public float hoverAssistMinTravelPx;    // two shapes this close together are frames
+    public int hoverAssistBurstCount = 4;
+    public long hoverAssistBurstMs = 600;
+    public long hoverAssistLockoutMs = 2000;
+    /**
+     * Measured lateness above which nothing arms, ms. Every far end measured
+     * sits either side of this by a factor of two: ten to thirty milliseconds
+     * where the server is told its cursor changed, a hundred and forty where it
+     * polls its own screen.
+     */
+    public long hoverAssistMaxLagMs = 60;
+
     /**
      * Send a finger's motion unshaped where the far end owns the cursor: no
      * acceleration, no adaptive gate, no axis lock, and no glide after a flick.
@@ -253,6 +284,9 @@ public final class Config {
         this.accelFullSpeedPx = dp(0.60f);
         this.axisLockMaxSpeedPx = dp(0.25f);
         this.axisLockTurnSpanPx = dp(36);
+        this.hoverAssistMaxSpeedPx = dp(0.35f); // above the axis lock's band, and a little over
+        this.hoverAssistSpanPx = dp(12);        // 4.5 dp of it is withheld
+        this.hoverAssistMinTravelPx = dp(6);
         this.overlayStripWidthPx = dp(60);
         this.overlayRowHeightPx = dp(72);
         this.overlayDismissPx = dp(40);
@@ -347,6 +381,16 @@ public final class Config {
         inertiaStopSpeed = o.inertiaStopSpeed;
         inertiaCancelOnDown = o.inertiaCancelOnDown;
         inertiaResetOnDown = o.inertiaResetOnDown;
+        hoverAssistEnabled = o.hoverAssistEnabled;
+        hoverAssistSpanPx = o.hoverAssistSpanPx;
+        hoverAssistGain = o.hoverAssistGain;
+        hoverAssistMaxSpeedPx = o.hoverAssistMaxSpeedPx;
+        hoverAssistIdleMs = o.hoverAssistIdleMs;
+        hoverAssistMinTravelPx = o.hoverAssistMinTravelPx;
+        hoverAssistBurstCount = o.hoverAssistBurstCount;
+        hoverAssistBurstMs = o.hoverAssistBurstMs;
+        hoverAssistLockoutMs = o.hoverAssistLockoutMs;
+        hoverAssistMaxLagMs = o.hoverAssistMaxLagMs;
         recentreCursorOnZoom = o.recentreCursorOnZoom;
         coalescePointerEvents = o.coalescePointerEvents;
         dedupePointerEvents = o.dedupePointerEvents;
@@ -385,6 +429,7 @@ public final class Config {
         c.accelDrainHistory = true; // still the original curve; toggle separately
         c.accelAdaptive = true;
         c.axisLockEnabled = true;
+        c.hoverAssistEnabled = true;
         c.accelResetOnDown = true;
         c.inertiaCancelOnDown = true;
         c.inertiaResetOnDown = true;

@@ -10,6 +10,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
@@ -81,6 +82,9 @@ public final class PlaygroundView extends View
 
     private final Art.Cursor arrow = Art.arrowCursor();
     private final Art.Cursor cross = Art.crossCursor();
+    /** What the wallpaper shows, which the CURSOR square picks. */
+    private Art.Cursor baseShape = arrow;
+    /** ... and what is drawn now, which is whatever the far end last sent. */
     private Art.Cursor cursorShape = arrow;
 
     private final Paint bitmapPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
@@ -91,6 +95,11 @@ public final class PlaygroundView extends View
     private float baseScale = 1.0f;
     private boolean laidOut;
     private boolean hudVisible = true;
+    // The far end's half of hover assist: the shape it last decided on, how
+    // long the news of a change is held back, and how many there have been.
+    private Art.Cursor shapeUnderCursor;
+    private int lagMs;
+    private int shapeChanges;
     private boolean fakeInsets;
     private boolean overlayShown;
     private boolean keyboardShown;
@@ -134,6 +143,7 @@ public final class PlaygroundView extends View
         viewport = new Viewport(cfg.density);
         viewport.setDesktopSize(DESKTOP_W, DESKTOP_H);
         desktop = new FakeDesktop(DESKTOP_W, DESKTOP_H, this, recorders);
+        desktop.setTargets(cfg.hoverAssistEnabled);
         cursor = new CursorController(cfg, viewport, desktop, scheduler);
         cursor.setListener(this);
         gestures = new GestureRecognizer(cfg, cursor, this, scheduler);
@@ -451,7 +461,45 @@ public final class PlaygroundView extends View
 
     @Override
     public void onCursorChanged() {
+        reportShape();
         invalidate();
+    }
+
+    /**
+     * The far end's half of hover assist, with the far end being this class:
+     * hit-test what the cursor is over and report a change when the answer
+     * changes, after {@code lagMs} of pretended round trip.
+     *
+     * <p>The delay is the point of it. A shape change is a reply to a position
+     * sent a round trip ago, and every argument about how long a detent should
+     * be and where it lands is an argument about that interval — 30 ms is a
+     * server on the same network, 250 ms is one that polls its own screen at
+     * the far end of a relay.
+     */
+    private void reportShape() {
+        if (cursor.isRelative()) {
+            return; // the far end draws its own pointer, and there is no shape to send
+        }
+        final Art.Cursor over = desktop.shapeAt(cursor.x(), cursor.y());
+        final Art.Cursor shape = over != null ? over : baseShape;
+        if (shape == shapeUnderCursor) {
+            return;
+        }
+        shapeUnderCursor = shape;
+        shapeChanges++;
+        // The shape is drawn when the news arrives rather than when the pointer
+        // crossed, which is the whole of what the lag simulates: on a real
+        // session the cursor on screen is as late as the detent is.
+        final Runnable arrive = () -> {
+            cursorShape = shape;
+            gestures.remoteCursorChanged(SystemClock.uptimeMillis());
+            invalidate();
+        };
+        if (lagMs <= 0) {
+            arrive.run();
+        } else {
+            scheduler.postDelayed(arrive, lagMs);
+        }
     }
 
     /** A click consumes the armed modifiers, exactly as a key does. */
@@ -487,7 +535,10 @@ public final class PlaygroundView extends View
             }
             case AXISLOCK -> cfg.axisLockEnabled = !cfg.axisLockEnabled;
             case MOMENTUM -> cfg.inertiaEnabled = !cfg.inertiaEnabled;
-            case CURSOR -> cursorShape = (cursorShape == arrow) ? cross : arrow;
+            case CURSOR -> {
+                baseShape = (baseShape == arrow) ? cross : arrow;
+                reportShape();
+            }
             case NATSCROLL -> cfg.naturalScrolling = !cfg.naturalScrolling;
             case HUD -> hudVisible = !hudVisible;
             case RECORD -> recorder.toggle();
@@ -510,6 +561,16 @@ public final class PlaygroundView extends View
             // both are reachable with the regions off, and from a script.
             case MOUSE -> toggleOverlay();
             case KEYBOARD -> setKeyboardVisible(!keyboard.visible());
+            case HOVER -> {
+                cfg.hoverAssistEnabled = !cfg.hoverAssistEnabled;
+                desktop.setTargets(cfg.hoverAssistEnabled);
+            }
+            case LAG -> lagMs = switch (lagMs) {
+                case 0 -> 30;
+                case 30 -> 100;
+                case 100 -> 250;
+                default -> 0;
+            };
         }
         invalidate();
     }
@@ -707,7 +768,7 @@ public final class PlaygroundView extends View
                     : cfg.accelDrainHistory ? "SAWTOOTH" : "SMOOTH";
             case AXISLOCK -> cfg.axisLockEnabled ? "ON" : "OFF";
             case MOMENTUM -> cfg.inertiaEnabled ? "ON" : "OFF";
-            case CURSOR -> cursorShape.name();
+            case CURSOR -> baseShape.name();
             case NATSCROLL -> cfg.naturalScrolling ? "ON" : "OFF";
             case HUD -> hudVisible ? "ON" : "OFF";
             case RECORD -> recorder.label();
@@ -722,6 +783,8 @@ public final class PlaygroundView extends View
             case REGIONS -> regionsOn ? "ON" : "OFF";
             case MOUSE -> overlay.visible() ? "ON" : "OFF";
             case KEYBOARD -> keyboard.visible() ? "ON" : "OFF";
+            case HOVER -> cfg.hoverAssistEnabled ? "ON" : "OFF";
+            case LAG -> lagMs + "MS";
         };
     }
 
@@ -813,6 +876,12 @@ public final class PlaygroundView extends View
                         + "  glide " + String.format(Locale.ROOT, "%.1f", gestures.glideSpeed())
                         + "  events " + cursor.eventCount() + " (" + eventsPerSecond + "/s)"
                         + "  dup " + cursor.suppressedCount(),
+                "hover " + (cfg.hoverAssistEnabled ? "on" : "off")
+                        + " x" + String.format(Locale.ROOT, "%.2f", gestures.hoverGain())
+                        + "  lag " + String.format(Locale.ROOT, "%.0f", gestures.hoverLagMs())
+                        + " of " + cfg.hoverAssistMaxLagMs
+                        + "  chg " + shapeChanges + " at " + lagMs + "ms"
+                        + (gestures.hoverLockedOut(SystemClock.uptimeMillis()) ? "  LOCKED OUT" : ""),
                 "cfg " + (cfg.faithfulPreset ? "FAITHFUL" : "IMPROVED")
                         + "  accel " + label(FakeDesktop.Toggle.ACCEL)
                         + "  axlock " + label(FakeDesktop.Toggle.AXISLOCK)

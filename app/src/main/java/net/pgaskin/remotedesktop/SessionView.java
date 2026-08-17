@@ -15,6 +15,7 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
 import android.text.InputType;
+import android.util.Log;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -144,6 +145,15 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
      * resize is a round trip and, on RDP, a whole reactivation.
      */
     private static final long FOLLOW_DEBOUNCE_MS = 600;
+
+    /**
+     * Where the pointer went and when a shape came back, which together are the
+     * round trip between the two — the interval a cursor change is late by, and
+     * so how far past a boundary the pointer already is when the far end says
+     * there was one. Silent unless {@code setprop log.tag.HoverLag VERBOSE},
+     * and what set the threshold hover assist arms below.
+     */
+    private static final String LAG_TAG = "HoverLag";
 
     private final AndroidScheduler scheduler = new AndroidScheduler();
     private final Config cfg;
@@ -415,6 +425,17 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
 
     @Override
     public void cursor(Bitmap shape, int hotX, int hotY) {
+        if (shape != cursorShape) {
+            if (Log.isLoggable(LAG_TAG, Log.VERBOSE)) {
+                Log.v(LAG_TAG, "cursor " + SystemClock.uptimeMillis()
+                        + (shape == null ? " hidden" : " " + shape.getWidth() + "x" + shape.getHeight()));
+            }
+            // A reference comparison, and it is one because CursorCache hands
+            // back the same bitmap for a shape it has seen before — so a
+            // pointer crossing a window's edge between two shapes it already
+            // had is two changes rather than a pixel comparison each way.
+            gestures.remoteCursorChanged(SystemClock.uptimeMillis());
+        }
         cursorShape = shape;
         cursorHotX = hotX;
         cursorHotY = hotY;
@@ -457,6 +478,10 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
 
     @Override
     public void pointerEvent(float x, float y, int buttons) {
+        if (Log.isLoggable(LAG_TAG, Log.VERBOSE)) {
+            Log.v(LAG_TAG, "pointer " + Math.round(x) + " " + Math.round(y)
+                    + " " + SystemClock.uptimeMillis());
+        }
         backend.pointer(Math.round(x), Math.round(y), buttons);
     }
 
@@ -1365,11 +1390,14 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
                 "down " + gestures.downCount() + "  max " + gestures.maxDownCount()
                         + "  mode " + gestures.mode()
                         + "  moving " + (gestures.moving() ? "Y" : "N")
-                        + "  held " + (gestures.heldButton() == null ? "-" : gestures.heldButton())
-                        + "  accel x" + String.format(Locale.ROOT, "%.2f", gestures.accelFactor())
+                        + "  held " + (gestures.heldButton() == null ? "-" : gestures.heldButton()),
+                "accel x" + String.format(Locale.ROOT, "%.2f", gestures.accelFactor())
                         // dp/ms, so it can be read against the Config thresholds
                         + "  spd " + String.format(Locale.ROOT, "%.2f", gestures.accelSpeed() / cfg.density)
                         + "  lock " + gestures.axisLock()
+                        + "  hover x" + String.format(Locale.ROOT, "%.2f", gestures.hoverGain())
+                        + " lag " + String.format(Locale.ROOT, "%.0f", gestures.hoverLagMs())
+                        + (gestures.hoverLockedOut(SystemClock.uptimeMillis()) ? " LOCKED" : "")
                         + "  events " + cursor.eventCount()
                         + " (" + eventRate.sample(cursor.eventCount(), now) + "/s)",
                 "ovl " + (overlay.visible()

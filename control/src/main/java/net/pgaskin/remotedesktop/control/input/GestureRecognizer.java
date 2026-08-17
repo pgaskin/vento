@@ -152,6 +152,22 @@ public final class GestureRecognizer implements TouchRouter.Listener {
     }
 
     /**
+     * The far end has changed the shape of its cursor, which is the one thing
+     * it ever says about what is under the pointer — see
+     * {@code ARCHITECTURE.md} §3.20. Ignored where the far end owns the cursor:
+     * nothing here is shaping that motion, and a picture with a pointer drawn
+     * into it has no shape to arrive anyway.
+     *
+     * @param t when it arrived, not when the crossing it reports happened
+     */
+    public void remoteCursorChanged(long t) {
+        if (relative && cfg.rawMotionWhenRelative) {
+            return;
+        }
+        accel.remoteCursorChanged(t, inertia.speed() > 0);
+    }
+
+    /**
      * Tell the state machine that something outside it — the mouse overlay — is
      * holding a mouse button down. The only thing it changes is that bump
      * scroll (§1.6) arms for a drag started while that button is held, which is
@@ -201,6 +217,21 @@ public final class GestureRecognizer implements TouchRouter.Listener {
     /** How far the direction has turned recently — the axis lock's curve test. */
     public float turnDegrees() {
         return accel.turnDegrees();
+    }
+
+    /** The hover detent's factor, 1 outside one. */
+    public float hoverGain() {
+        return accel.hoverGain();
+    }
+
+    /** How late the far end's shape changes are running, ms. */
+    public float hoverLagMs() {
+        return accel.hoverLagMs();
+    }
+
+    /** Whether a burst of shape changes has shut the detent off for the moment. */
+    public boolean hoverLockedOut(long now) {
+        return accel.hoverLockedOut(now);
     }
 
     public double glideSpeed() {
@@ -494,6 +525,7 @@ public final class GestureRecognizer implements TouchRouter.Listener {
 
         bumpArmed = false;
         stopBumpScroll();
+        accel.gestureEnded();
 
         if (heldButton != null) {
             sink.mouseUp(heldButton.mask());
