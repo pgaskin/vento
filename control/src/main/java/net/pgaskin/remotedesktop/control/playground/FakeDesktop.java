@@ -51,10 +51,16 @@ public final class FakeDesktop implements CursorController.PointerSink, KeySink 
         RELATIVE,
         /** The toolbar tap regions, drawn while they are on. */
         REGIONS,
+        /** The column of buttons on the left edge, which is the other answer. */
+        TOOLBAR,
         /** The mouse button / wheel overlay; the {@code mouse} region does this too. */
         MOUSE,
         /** The extension keyboard and the system IME; the {@code keyboard} region too. */
-        KEYBOARD
+        KEYBOARD,
+        /** Which key list the row is drawn from: one line of keys, or two. */
+        TWOLINE,
+        /** The hover detent, and the round trip its news is pretended to take. */
+        HOVER, LAG
     }
 
     public interface ToggleHandler {
@@ -95,6 +101,17 @@ public final class FakeDesktop implements CursorController.PointerSink, KeySink 
     public final Bitmap wallpaper;
 
     private final List<Square> squares = new ArrayList<>();
+    /**
+     * Targets for the hover detent, {@code x, y, radius} each — small round
+     * things with a cursor of their own, which a desktop is full of and this
+     * one had none of: every object on it is 180×120 and nothing needs aiming
+     * at. The smallest is under a screen pixel across once the desktop is
+     * fitted to a phone, which is the case the assist exists for.
+     */
+    private final float[][] targets;
+    private boolean targetsShown;
+    /** What anything on this desktop changes the cursor to, the way a link does. */
+    private final Art.Cursor objectCursor = Art.handCursor();
     private final ToggleHandler toggles;
 
     private int lastButtons;
@@ -178,6 +195,19 @@ public final class FakeDesktop implements CursorController.PointerSink, KeySink 
         };
         for (int i = 0; i < at.length; i++) {
             squares.add(new Square("SQ" + (i + 1), colors[i], at[i][0], at[i][1], 180, 120, true, null));
+        }
+
+        // Three rows of them, each row a sweep from 4 px across to 44, and the
+        // rows offset so that a drag along one crosses a different set of sizes
+        // than a drag along the next. Clear of the squares' start positions,
+        // which are what a drag along a row would otherwise run into.
+        final float[] radii = {2, 4, 6, 9, 13, 18, 22};
+        targets = new float[3 * radii.length][];
+        for (int row = 0; row < 3; row++) {
+            for (int i = 0; i < radii.length; i++) {
+                targets[row * radii.length + i] = new float[]{
+                        260 + i * 200 + row * 60, 780 + row * 110, radii[i]};
+            }
         }
 
         final List<Toggle> toggleDefs = new ArrayList<>();
@@ -361,6 +391,38 @@ public final class FakeDesktop implements CursorController.PointerSink, KeySink 
         return sb.toString();
     }
 
+    /**
+     * The cursor a real desktop would be showing at this point, or null over
+     * the wallpaper, where it is whatever the host is drawing anyway. What it
+     * is worth is that the boundary's position is known exactly, which nothing
+     * at the far end of a protocol ever is — so the ink trail answers "did the
+     * detent land where the edge was" rather than merely "did something
+     * happen".
+     */
+    public Art.Cursor shapeAt(float x, float y) {
+        if (hit(x, y) != null) {
+            return objectCursor;
+        }
+        if (targetsShown) {
+            for (float[] t : targets) {
+                final float dx = x - t[0], dy = y - t[1];
+                if (dx * dx + dy * dy <= t[2] * t[2]) {
+                    return objectCursor;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether the small round targets are on the desktop at all. They are the
+     * hover detent's reason to exist, so they appear with it: an object whose
+     * cursor changes and which nothing else here provides.
+     */
+    public void setTargets(boolean shown) {
+        targetsShown = shown;
+    }
+
     private Square hit(float x, float y) {
         for (int i = squares.size() - 1; i >= 0; i--) {
             if (squares.get(i).contains(x, y)) {
@@ -374,6 +436,15 @@ public final class FakeDesktop implements CursorController.PointerSink, KeySink 
 
     public void draw(Canvas c) {
         c.drawBitmap(wallpaper, 0, 0, null);
+        // Under the ink, so a trail across one still shows where it went.
+        if (targetsShown) {
+            for (float[] t : targets) {
+                fill.setColor(0x55ffffff);
+                c.drawCircle(t[0], t[1], t[2], fill);
+                stroke.setColor(0x88ffffff);
+                c.drawCircle(t[0], t[1], t[2], stroke);
+            }
+        }
         c.drawPath(inkPath, ink);
 
         for (Square s : squares) {

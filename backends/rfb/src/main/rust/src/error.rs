@@ -19,6 +19,8 @@ pub enum Error {
     Unsupported(String),
     /// The bytes did not mean what they have to mean.
     Protocol(String),
+    /// What somebody typed is not an address, said in the words they need.
+    Address(String),
     /// `Client::close` was called; the only ordinary ending.
     Closed,
 }
@@ -46,6 +48,7 @@ impl fmt::Display for Error {
             Error::Untrusted => write!(f, "The server's certificate was not accepted."),
             Error::Unsupported(what) => write!(f, "Unsupported: {what}"),
             Error::Protocol(what) => write!(f, "The server is not making sense: {what}"),
+            Error::Address(why) => write!(f, "{why}"),
             Error::Closed => write!(f, "Disconnected"),
         }
     }

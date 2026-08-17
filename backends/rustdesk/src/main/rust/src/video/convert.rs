@@ -296,6 +296,11 @@ mod tests {
 
     /// A planar and a semi-planar buffer of the same picture, so that a wrong
     /// column increment shows up as a wrong colour rather than as nothing.
+    ///
+    /// Where the vectorised path is, since the test that compares the two is the
+    /// only caller. Off Android the module carries a blanket `allow(dead_code)`
+    /// and this would be dead there without saying so.
+    #[cfg(target_arch = "aarch64")]
     fn planes(w: usize, h: usize, interleaved: bool) -> (Vec<u8>, Layout, [usize; 3]) {
         let mut base = vec![0u8; w * h + w * h / 2 + 16];
         for i in 0..w * h {

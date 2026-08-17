@@ -56,6 +56,25 @@ public interface BackendProvider {
     /** What this backend can be told, for the editor and its settings screen. */
     List<BackendOption> options();
 
+    /**
+     * A session for one connection, not yet started.
+     *
+     * <p>The address is what somebody typed, and every backend reads it the same
+     * way: {@code host}, {@code host:port}, {@code [literal]} or
+     * {@code [literal]:port}, where a host is a name or an IPv4 literal and an
+     * <b>IPv6 literal is always bracketed</b>. The brackets are not a courtesy
+     * to the parser. The VNC backends read a port under 100 as a display number,
+     * which is what {@code :1} has meant since the 1990s, so {@code ::1:1} would
+     * have to be an address and a display at once; a bare literal is an error
+     * with a sentence in it rather than a guess, because the guesses on offer
+     * land on a different machine or on the wildcard address. What a port means
+     * when there is one is the protocol's own business, and only the VNC ones
+     * have the display rule.
+     *
+     * <p>A backend whose {@link #addressLabel} says this field is not a host —
+     * an id a rendezvous server resolves — is outside all of that, and says so
+     * where it parses.
+     */
     Backend create(Context context, String address, String userName, String password,
                    Map<String, String> options);
 

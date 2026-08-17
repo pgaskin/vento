@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop.backend.realvnc;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 
 import com.realvnc.vncviewer.jni.Library;
@@ -49,6 +50,10 @@ final class RealVncLibrary {
     }
 
     /** Both libraries, in order, from the paths that were just verified. */
+    // loadLibrary cannot be what this uses: the library is not in the APK. It is
+    // a file an add-on handed over, copied into this app's own storage and
+    // checked against a hash this build carries before it is opened.
+    @SuppressLint("UnsafeDynamicallyLoadedCode")
     static void load(Context app) throws IOException {
         final Map<String, String> wanted = Library.wanted();
         if (wanted.isEmpty()) {

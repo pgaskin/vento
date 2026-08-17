@@ -44,6 +44,17 @@ public final class KnownHosts {
         return ctx.getApplicationContext().getSharedPreferences(FILE, Context.MODE_PRIVATE);
     }
 
+    /**
+     * Folded for case and nothing else, which is right twice over: a name is
+     * case-insensitive in DNS and an IPv6 literal is case-insensitive in its
+     * own notation, so {@code [FE80::1]} and {@code [fe80::1]} are one machine
+     * rather than two prompts.
+     *
+     * <p>What it does <em>not</em> fold is a default port left off or an
+     * address written a shorter way, so one machine can still have two entries.
+     * Filling a port in needs the protocol's own default, which is below this
+     * class, and a backend that wants a key of its own already picks one.
+     */
     private static String key(String address) {
         return address == null ? "" : address.trim().toLowerCase(Locale.ROOT);
     }

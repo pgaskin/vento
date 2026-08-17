@@ -5,11 +5,15 @@ package net.pgaskin.remotedesktop.control.playground;
 
 import android.annotation.SuppressLint;
 import android.content.ClipData;
+import android.app.Activity;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.RectF;
+import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
@@ -36,12 +40,16 @@ import net.pgaskin.remotedesktop.control.input.PhysicalKeyboard;
 import net.pgaskin.remotedesktop.control.input.PhysicalMouse;
 import net.pgaskin.remotedesktop.control.input.RegionSink;
 import net.pgaskin.remotedesktop.control.input.TapRegions;
+import net.pgaskin.remotedesktop.control.input.Toolbar;
 import net.pgaskin.remotedesktop.control.input.TouchRouter;
 import net.pgaskin.remotedesktop.control.input.ZoomSink;
 import net.pgaskin.remotedesktop.control.ui.Chrome;
 import net.pgaskin.remotedesktop.control.ui.Hud;
 import net.pgaskin.remotedesktop.control.ui.TextInput;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.function.Consumer;
 
 /**
@@ -55,7 +63,7 @@ import java.util.function.Consumer;
  */
 public final class PlaygroundView extends View
         implements ZoomSink, CursorController.Listener, FakeDesktop.ToggleHandler, RegionSink,
-        MouseOverlay.Listener, ExtensionKeyboard.Listener, TextInput.Watcher,
+        MouseOverlay.Listener, ExtensionKeyboard.Listener, Toolbar.Listener, TextInput.Watcher,
         PhysicalMouse.Listener, PhysicalKeyboard.Listener {
 
     // A common laptop/remote size, so this can be compared
@@ -73,6 +81,7 @@ public final class PlaygroundView extends View
     private final TouchRecorder recorder;
     private final MouseOverlay overlay;
     private final ExtensionKeyboard keyboard;
+    private final Toolbar toolbar;
     private final PhysicalMouse mouse;
     private final PhysicalKeyboard keys;
     private final KeyTrace keyTrace;
@@ -80,6 +89,9 @@ public final class PlaygroundView extends View
 
     private final Art.Cursor arrow = Art.arrowCursor();
     private final Art.Cursor cross = Art.crossCursor();
+    /** What the wallpaper shows, which the CURSOR square picks. */
+    private Art.Cursor baseShape = arrow;
+    /** ... and what is drawn now, which is whatever the far end last sent. */
     private Art.Cursor cursorShape = arrow;
 
     private final Paint bitmapPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
@@ -90,6 +102,11 @@ public final class PlaygroundView extends View
     private float baseScale = 1.0f;
     private boolean laidOut;
     private boolean hudVisible = true;
+    // The far end's half of hover assist: the shape it last decided on, how
+    // long the news of a change is held back, and how many there have been.
+    private Art.Cursor shapeUnderCursor;
+    private int lagMs;
+    private int shapeChanges;
     private boolean fakeInsets;
     private boolean overlayShown;
     private boolean keyboardShown;
@@ -98,8 +115,18 @@ public final class PlaygroundView extends View
     private boolean imeUp;                   // ... which is not the same as it being up
     private final boolean subtleHaptics;     // or only a buzz
 
-    private final TapRegions tapRegions = TapRegions.toolbar();
+    /**
+     * The left edge belongs to the system's back gesture, and a claimed pointer
+     * does not change that: the decision is made before this view sees the
+     * stream. So the box the toolbar occupies is handed back through the one
+     * mechanism there is for it, and re-handed every time the column moves.
+     */
+    private final Rect exclusion = new Rect();
+    private final List<Rect> exclusions = new ArrayList<>(1);
+
+    private final TapRegions tapRegions = TapRegions.standard();
     private boolean regionsOn = true;
+    private boolean twoLine;                  // which key list the row is drawn from
     private String lastRegion = "-";          // for the HUD; what a region means is the host's
 
     private final Hud hud;
@@ -133,6 +160,7 @@ public final class PlaygroundView extends View
         viewport = new Viewport(cfg.density);
         viewport.setDesktopSize(DESKTOP_W, DESKTOP_H);
         desktop = new FakeDesktop(DESKTOP_W, DESKTOP_H, this, recorders);
+        desktop.setTargets(cfg.hoverAssistEnabled);
         cursor = new CursorController(cfg, viewport, desktop, scheduler);
         cursor.setListener(this);
         gestures = new GestureRecognizer(cfg, cursor, this, scheduler);
@@ -151,6 +179,11 @@ public final class PlaygroundView extends View
                 ExtensionKeyboard.standardKeys());
         keyboard.setListener(this);
         router.addClaim(keyboard);
+        // Ahead of the keyboard in the claim order for no reason of substance —
+        // they never overlap, the column stopping where the row begins.
+        toolbar = new Toolbar(cfg);
+        toolbar.setItems(Toolbar.standard());
+        router.addClaim(toolbar);
         // The physical pair, against the one desktop whose reaction to them can
         // be checked without a server.
         mouse = new PhysicalMouse(cfg, cursor.newButtonSource());
@@ -167,6 +200,10 @@ public final class PlaygroundView extends View
         marker.setColor(0x66ffffff);
         chrome = new Chrome(cfg);
         chrome.attach(keyboard);
+        // Listening only now, and visible only now: a change notification draws
+        // a ripple, and the thing that draws it does not exist above this line.
+        toolbar.setListener(this);
+        toolbar.setVisible(true);   // as the regions are; the two never meet
         subtleHaptics = canTick(ctx);
         setFocusable(true);
         // The IME will not open against a view that cannot take focus by touch.
@@ -200,6 +237,8 @@ public final class PlaygroundView extends View
         recorder.setViewSize(w, h);
         overlay.setViewSize(w, h);
         keyboard.setViewSize(w, h);
+        toolbar.setViewSize(w, h);
+        applyGestureExclusion();
         if (!laidOut) {
             laidOut = true;
             viewport.setFocus(DESKTOP_W / 2f, DESKTOP_H / 2f);
@@ -450,7 +489,45 @@ public final class PlaygroundView extends View
 
     @Override
     public void onCursorChanged() {
+        reportShape();
         invalidate();
+    }
+
+    /**
+     * The far end's half of hover assist, with the far end being this class:
+     * hit-test what the cursor is over and report a change when the answer
+     * changes, after {@code lagMs} of pretended round trip.
+     *
+     * <p>The delay is the point of it. A shape change is a reply to a position
+     * sent a round trip ago, and every argument about how long a detent should
+     * be and where it lands is an argument about that interval — 30 ms is a
+     * server on the same network, 250 ms is one that polls its own screen at
+     * the far end of a relay.
+     */
+    private void reportShape() {
+        if (cursor.isRelative()) {
+            return; // the far end draws its own pointer, and there is no shape to send
+        }
+        final Art.Cursor over = desktop.shapeAt(cursor.x(), cursor.y());
+        final Art.Cursor shape = over != null ? over : baseShape;
+        if (shape == shapeUnderCursor) {
+            return;
+        }
+        shapeUnderCursor = shape;
+        shapeChanges++;
+        // The shape is drawn when the news arrives rather than when the pointer
+        // crossed, which is the whole of what the lag simulates: on a real
+        // session the cursor on screen is as late as the detent is.
+        final Runnable arrive = () -> {
+            cursorShape = shape;
+            gestures.remoteCursorChanged(SystemClock.uptimeMillis());
+            invalidate();
+        };
+        if (lagMs <= 0) {
+            arrive.run();
+        } else {
+            scheduler.postDelayed(arrive, lagMs);
+        }
     }
 
     /** A click consumes the armed modifiers, exactly as a key does. */
@@ -486,7 +563,10 @@ public final class PlaygroundView extends View
             }
             case AXISLOCK -> cfg.axisLockEnabled = !cfg.axisLockEnabled;
             case MOMENTUM -> cfg.inertiaEnabled = !cfg.inertiaEnabled;
-            case CURSOR -> cursorShape = (cursorShape == arrow) ? cross : arrow;
+            case CURSOR -> {
+                baseShape = (baseShape == arrow) ? cross : arrow;
+                reportShape();
+            }
             case NATSCROLL -> cfg.naturalScrolling = !cfg.naturalScrolling;
             case HUD -> hudVisible = !hudVisible;
             case RECORD -> recorder.toggle();
@@ -509,7 +589,67 @@ public final class PlaygroundView extends View
             // both are reachable with the regions off, and from a script.
             case MOUSE -> toggleOverlay();
             case KEYBOARD -> setKeyboardVisible(!keyboard.visible());
+            case TOOLBAR -> toolbar.setVisible(!toolbar.visible());
+            case TWOLINE -> {
+                twoLine = !twoLine;
+                keyboard.setKeys(twoLine
+                        ? ExtensionKeyboard.twoLineKeys()
+                        : ExtensionKeyboard.standardKeys());
+                applyInsets();
+            }
+            case HOVER -> {
+                cfg.hoverAssistEnabled = !cfg.hoverAssistEnabled;
+                desktop.setTargets(cfg.hoverAssistEnabled);
+            }
+            case LAG -> lagMs = switch (lagMs) {
+                case 0 -> 30;
+                case 30 -> 100;
+                case 100 -> 250;
+                default -> 0;
+            };
         }
+        invalidate();
+    }
+
+    // ---- Toolbar.Listener -------------------------------------------------
+
+    /** What the two widgets with a state are doing, for the buttons that show it. */
+    private void syncToolbarState() {
+        toolbar.setActive(TapRegions.MOUSE, overlay.visible());
+        toolbar.setActive(TapRegions.KEYBOARD, keyboard.visible());
+    }
+
+    @Override
+    public void toolbarChanged() {
+        chrome.toolbarChanged(toolbar);
+        applyGestureExclusion();
+        invalidate();
+    }
+
+    private void applyGestureExclusion() {
+        exclusions.clear();
+        if (toolbar.visible()) {
+            exclusion.set((int) toolbar.left(), (int) toolbar.top(),
+                    (int) toolbar.right(), (int) toolbar.bottom());
+            exclusions.add(exclusion);
+        }
+        setSystemGestureExclusionRects(exclusions);
+    }
+
+    /**
+     * The same four names the tap regions carry, answered in the same place, so
+     * the two affordances cannot drift apart in what they do — only in how they
+     * are reached.
+     */
+    @Override
+    public void toolbarAction(String name) {
+        lastRegion = name + " (toolbar)";
+        controlAction(name);
+        invalidate();
+    }
+
+    @Override
+    public void toolbarMoved(float fraction) {
         invalidate();
     }
 
@@ -526,13 +666,31 @@ public final class PlaygroundView extends View
     @Override
     public boolean regionTapped(TapRegions.Region region, float x, float y) {
         lastRegion = region.name() + " @" + (int) x + "," + (int) y;
-        if (TapRegions.MOUSE.equals(region.name())) {
-            toggleOverlay();
-        } else if (TapRegions.KEYBOARD.equals(region.name())) {
-            setKeyboardVisible(!keyboard.visible());
-        }
+        controlAction(region.name());
         invalidate();
         return true;
+    }
+
+    /**
+     * What either affordance does, in one place, so the two cannot drift apart
+     * in what they do — only in how they are reached. {@code information} is the
+     * one with nothing to say here: what a connection is doing is a question
+     * only a host with a session can answer.
+     */
+    private void controlAction(String name) {
+        if (TapRegions.MOUSE.equals(name)) {
+            toggleOverlay();
+        } else if (TapRegions.KEYBOARD.equals(name)) {
+            setKeyboardVisible(!keyboard.visible());
+        } else if (TapRegions.DISCONNECT.equals(name)) {
+            // There is no session to end, so it does what leaving one does.
+            for (Context c = getContext(); c instanceof ContextWrapper w; c = w.getBaseContext()) {
+                if (c instanceof Activity a) {
+                    a.finish();
+                    return;
+                }
+            }
+        }
     }
 
     /**
@@ -570,6 +728,7 @@ public final class PlaygroundView extends View
         // the viewport; being pressed does not. This fires on every press.
         if (overlayShown != overlay.visible()) {
             overlayShown = overlay.visible();
+            syncToolbarState();
             applyInsets();
         }
         invalidate();
@@ -582,6 +741,7 @@ public final class PlaygroundView extends View
         if (keyboardShown != keyboard.visible()) {
             keyboardShown = keyboard.visible();
             syncKeyboardChrome();
+            syncToolbarState();
             applyInsets();
         }
         chrome.keyboardChanged(keyboard);
@@ -694,6 +854,10 @@ public final class PlaygroundView extends View
         final int margin = (int) cfg.panMarginPx;
         viewport.setPanMargins(margin, margin, margin, margin);
         cursor.setInsets(left, top, right, bottom);
+        // Not one of the viewport's insets — the toolbar floats over the picture
+        // — but the band it may be dragged in is bounded by what the keyboard
+        // *occupies*, which is a bigger number than what it insets by.
+        toolbar.setInsets(0, top, Math.max(top, keyboard.heightPx()));
         baseScale = viewport.getScale();
     }
 
@@ -706,21 +870,25 @@ public final class PlaygroundView extends View
                     : cfg.accelDrainHistory ? "SAWTOOTH" : "SMOOTH";
             case AXISLOCK -> cfg.axisLockEnabled ? "ON" : "OFF";
             case MOMENTUM -> cfg.inertiaEnabled ? "ON" : "OFF";
-            case CURSOR -> cursorShape.name();
+            case CURSOR -> baseShape.name();
             case NATSCROLL -> cfg.naturalScrolling ? "ON" : "OFF";
             case HUD -> hudVisible ? "ON" : "OFF";
             case RECORD -> recorder.label();
             case KEYTRACE -> keyTrace.label();
             case ZOOMIN -> viewport.canZoomIn()
-                    ? String.format("%.2f", viewport.nextZoomIn()) : "MAX";
+                    ? String.format(Locale.ROOT, "%.2f", viewport.nextZoomIn()) : "MAX";
             case ZOOMOUT -> viewport.canZoomOut()
-                    ? String.format("%.2f", viewport.nextZoomOut()) : "MIN";
+                    ? String.format(Locale.ROOT, "%.2f", viewport.nextZoomOut()) : "MIN";
             case ZOOMFIT -> viewport.getScale() > viewport.minScale() + 1e-4f ? "FIT" : "FILL";
             case INSETS -> fakeInsets ? "ON" : "OFF";
             case RELATIVE -> cursor.isRelative() ? "THEIRS" : "OURS";
             case REGIONS -> regionsOn ? "ON" : "OFF";
             case MOUSE -> overlay.visible() ? "ON" : "OFF";
             case KEYBOARD -> keyboard.visible() ? "ON" : "OFF";
+            case TOOLBAR -> toolbar.visible() ? "ON" : "OFF";
+            case TWOLINE -> twoLine ? "ON" : "OFF";
+            case HOVER -> cfg.hoverAssistEnabled ? "ON" : "OFF";
+            case LAG -> lagMs + "MS";
         };
     }
 
@@ -765,6 +933,11 @@ public final class PlaygroundView extends View
             postInvalidateOnAnimation();
         }
 
+        if (chrome.drawToolbar(c, toolbar, getWidth(), getHeight(),
+                cursor.screenX(), cursor.screenY())) {
+            postInvalidateOnAnimation();
+        }
+
         if (hudVisible) {
             drawHud(c);
         }
@@ -799,19 +972,25 @@ public final class PlaygroundView extends View
                 "cursor " + (cursor.isRelative() ? "theirs"
                         : (int) cursor.x() + "," + (int) cursor.y())
                         + "  btn " + cursor.buttonsName()
-                        + "  scale " + String.format("%.3f", viewport.getScale())
+                        + "  scale " + String.format(Locale.ROOT, "%.3f", viewport.getScale())
                         + " [" + (viewport.zoomIndex() + 1) + "/" + viewport.zoomLadder().length + "]"
                         + "  origin " + (int) viewport.originX() + "," + (int) viewport.originY()
                         + (fakeInsets || overlayShown ? "  inset " + viewport.contentWidth()
                         + "x" + viewport.contentHeight() : ""),
-                "accel x" + String.format("%.2f", gestures.accelFactor())
+                "accel x" + String.format(Locale.ROOT, "%.2f", gestures.accelFactor())
                         // dp/ms, so it can be read against the Config thresholds
-                        + "  spd " + String.format("%.2f", gestures.accelSpeed() / cfg.density)
+                        + "  spd " + String.format(Locale.ROOT, "%.2f", gestures.accelSpeed() / cfg.density)
                         + "  lock " + gestures.axisLock()
-                        + " " + String.format("%.0f", gestures.turnDegrees()) + "\u00b0"
-                        + "  glide " + String.format("%.1f", gestures.glideSpeed())
+                        + " " + String.format(Locale.ROOT, "%.0f", gestures.turnDegrees()) + "\u00b0"
+                        + "  glide " + String.format(Locale.ROOT, "%.1f", gestures.glideSpeed())
                         + "  events " + cursor.eventCount() + " (" + eventsPerSecond + "/s)"
                         + "  dup " + cursor.suppressedCount(),
+                "hover " + (cfg.hoverAssistEnabled ? "on" : "off")
+                        + " x" + String.format(Locale.ROOT, "%.2f", gestures.hoverGain())
+                        + "  lag " + String.format(Locale.ROOT, "%.0f", gestures.hoverLagMs())
+                        + " of " + cfg.hoverAssistMaxLagMs
+                        + "  chg " + shapeChanges + " at " + lagMs + "ms"
+                        + (gestures.hoverLockedOut(SystemClock.uptimeMillis()) ? "  LOCKED OUT" : ""),
                 "cfg " + (cfg.faithfulPreset ? "FAITHFUL" : "IMPROVED")
                         + "  accel " + label(FakeDesktop.Toggle.ACCEL)
                         + "  axlock " + label(FakeDesktop.Toggle.AXISLOCK)
@@ -820,10 +999,14 @@ public final class PlaygroundView extends View
                         + "  countTest " + (cfg.moveCountTest ? "Y" : "N"),
                 "ovl " + (overlay.visible()
                         ? Button.maskName(overlay.heldMask())
-                        + " rate " + String.format("%.1f", overlay.scrollRate())
+                        + " rate " + String.format(Locale.ROOT, "%.1f", overlay.scrollRate())
                         : "off")
                         + "   kbd " + (keyboard.visible()
                         ? "on ime " + imeHeight + " mod " + keyboard.heldModifierCount()
+                        // How many lines of keys, and how wide they are against
+                        // the window: what a key list costs is a measurement
+                        // rather than a guess about a font.
+                        + " " + keyboard.rows() + "×" + Math.round(keyboard.contentWidth())
                         + (subtleHaptics ? " tick" : " buzz")
                         : "off")
                         + "   key " + desktop.lastKey

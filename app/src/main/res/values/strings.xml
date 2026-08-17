@@ -3,7 +3,7 @@
     SPDX-FileCopyrightText: 2026 Patrick Gaskin
     SPDX-License-Identifier: GPL-3.0-or-later
 -->
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Vento</string>
     <string name="nav_back">Back</string>
 
@@ -43,6 +43,9 @@
     <string name="plugin_restart_action">Restart</string>
     <string name="plugin_set_up">Set up</string>
     <string name="plugin_uninstall">Uninstall</string>
+    <!-- Opens a download of the plugin built for this version of the app, where the plugin says
+         where one is. Only ever beside the line above about an incompatible one. -->
+    <string name="plugin_update">Update</string>
 
     <!-- editor -->
     <string name="editor_new">New connection</string>
@@ -119,14 +122,23 @@
     <string name="settings_private_ime_summary">Disable IME suggestions, auto-correction, and learning.</string>
     <string name="settings_modifier_resets_ime">Reset IME state when pressing modifiers</string>
     <string name="settings_modifier_resets_ime_summary">Return to the main IME view when pressing Ctrl, Alt or Shift on the extension keyboard.</string>
+    <string name="settings_controls">Session controls</string>
+    <string name="settings_controls_summary">Change how the disconnect, connection info, keyboard, and mouse actions are displayed.</string>
+    <string name="controls_toolbar">Toolbar</string>
+    <string name="controls_regions">Touch regions</string>
+    <string name="controls_both">Toolbar and touch regions</string>
+    <string name="settings_two_line_keys">Use two-row extension keyboard</string>
+    <string name="settings_two_line_keys_summary">Reduces the amount of horizontal scrolling for the extension keyboard.</string>
+    <string name="settings_mac_keys">Show additional modifiers</string>
+    <string name="settings_mac_keys_summary">Show the Option and Command keys in the extension keyboard.</string>
     <string name="settings_clipboard_out">Send clipboard</string>
     <string name="settings_clipboard_out_summary">Send locally copied text to the remote machine.</string>
     <string name="settings_clipboard_in">Receive clipboard</string>
     <string name="settings_clipboard_in_summary">Update the local clipboard with copied text.</string>
     <string name="settings_release_keys">Release keys when losing focus</string>
     <string name="settings_release_keys_summary">Release all locally held keys when switching apps.</string>
-    <string name="settings_region_hints">Show touch region hints</string>
-    <string name="settings_region_hints_summary">Show hints for disconnect/info/keyboard/mouse buttons upon connecting.</string>
+    <string name="settings_region_hints">Ask about controls when connecting</string>
+    <string name="settings_region_hints_summary">Explain the session controls and offer the choice between them on the first frame.</string>
     <string name="settings_previews">Store desktop previews</string>
     <string name="settings_previews_summary">Locally save encrypted preview screenshots of the remote desktop. Disabling this deletes all existing screenshots.</string>
     <string name="settings_connection_defaults">Connection defaults</string>
@@ -145,7 +157,10 @@
     <string name="settings_delete_connections">Delete all connections</string>
     <string name="settings_delete_connections_summary">Permanently delete all saved connections, along with their credentials and preview.</string>
     <string name="settings_delete_connections_confirm">Delete all connections?</string>
-    <string name="settings_delete_connections_done">Deleted %1$d connections</string>
+    <plurals name="settings_delete_connections_done">
+        <item quantity="one">Deleted %1$d connection</item>
+        <item quantity="other">Deleted %1$d connections</item>
+    </plurals>
     <string name="settings_forget_hosts">Clear known hosts</string>
     <string name="settings_forget_hosts_summary">Forget all accepted server certificates.</string>
     <string name="settings_forget_hosts_confirm">Clear known hosts?</string>
@@ -157,7 +172,10 @@
     <string name="settings_delete_recordings">Delete playground recordings</string>
     <string name="settings_delete_recordings_summary">Delete touch and keyboard recordings written by the playground.</string>
     <string name="settings_delete_recordings_confirm">Delete playground recordings?</string>
-    <string name="settings_delete_recordings_done">Deleted %1$d recordings</string>
+    <plurals name="settings_delete_recordings_done">
+        <item quantity="one">Deleted %1$d recording</item>
+        <item quantity="other">Deleted %1$d recordings</item>
+    </plurals>
 
     <!-- import and export -->
     <string name="settings_transfer">Import and export</string>
@@ -175,15 +193,35 @@
     <string name="transfer_import_summary">Import a previous export. Connections are added by default.</string>
     <string name="transfer_import_apply">Import</string>
     <string name="transfer_import_connections_title">Import connections</string>
-    <string name="transfer_import_connections_message">This file contains %1$d connections. Connections with unsupported backends are skipped.</string>
+    <plurals name="transfer_import_connections_message">
+        <item quantity="one">This file contains %1$d connection. Connections with unsupported backends are skipped.</item>
+        <item quantity="other">This file contains %1$d connections. Connections with unsupported backends are skipped.</item>
+    </plurals>
     <string name="transfer_import_settings_title">Import settings</string>
-    <string name="transfer_import_settings_message">This file contains %1$d settings. Other settings are left unchanged.</string>
+    <plurals name="transfer_import_settings_message">
+        <item quantity="one">This file contains %1$d setting. Other settings are left unchanged.</item>
+        <item quantity="other">This file contains %1$d settings. Other settings are left unchanged.</item>
+    </plurals>
     <string name="transfer_import_replace">Delete existing connections</string>
     <string name="transfer_import_reset">Reset all settings first</string>
-    <string name="transfer_exported_connections">Exported %1$d connections</string>
-    <string name="transfer_exported_settings">Exported %1$d settings</string>
-    <string name="transfer_imported_connections">Imported %1$d of %2$d connections</string>
-    <string name="transfer_imported_settings">Applied %1$d of %2$d settings</string>
+    <plurals name="transfer_exported_connections">
+        <item quantity="one">Exported %1$d connection</item>
+        <item quantity="other">Exported %1$d connections</item>
+    </plurals>
+    <plurals name="transfer_exported_settings">
+        <item quantity="one">Exported %1$d setting</item>
+        <item quantity="other">Exported %1$d settings</item>
+    </plurals>
+    <!-- Counted on the total rather than on how many of it landed: the noun the
+         wording has to agree with is the second number. -->
+    <plurals name="transfer_imported_connections">
+        <item quantity="one">Imported %1$d of %2$d connection</item>
+        <item quantity="other">Imported %1$d of %2$d connections</item>
+    </plurals>
+    <plurals name="transfer_imported_settings">
+        <item quantity="one">Applied %1$d of %2$d setting</item>
+        <item quantity="other">Applied %1$d of %2$d settings</item>
+    </plurals>
     <string name="transfer_failed_title">Error</string>
     <string name="transfer_bad_file">The selected file is invalid or was written by a newer version of this app.</string>
     <string name="transfer_write_failed">The file could not be written.</string>
@@ -200,8 +238,8 @@
     <string name="session_disconnect_confirm">Disconnect?</string>
     <string name="session_new_window">New window</string>
     <string name="hints_title">Controls</string>
-    <string name="hints_message">Tapping the top and bottom edges of the screen performs actions. The rest of the screen controls the desktop.</string>
-    <string name="hints_dismiss">Do not show again</string>
+    <string name="hints_message">Choose how to reach disconnect, connection info, the keyboard and the mouse. The rest of the screen controls the desktop.</string>
+    <string name="hints_dismiss">Do not ask again</string>
     <string name="hints_region_disconnect">Disconnect</string>
     <string name="hints_region_information">Connection info</string>
     <string name="hints_region_keyboard">Keyboard</string>
@@ -215,7 +253,9 @@
     <string name="option_follow_window">Follow local window size changes</string>
     <string name="option_follow_window_summary">When local resolution is supported and enabled, update it whenever the orientation or size of the window changes.</string>
     <string name="panel_connected_size">Connected · %1$s · %2$d × %3$d</string>
-    <string name="panel_connected_monitors">Connected · %1$s · %2$d × %3$d · %4$d monitors</string>
+    <!-- Not a plural: the line above it is what one monitor says, and this one is
+         reached only from two. -->
+    <string name="panel_connected_monitors" tools:ignore="PluralsCandidate">Connected · %1$s · %2$d × %3$d · %4$d monitors</string>
     <string name="panel_display">Display</string>
     <string name="panel_display_value">%1$d · %2$d × %3$d</string>
     <string name="panel_desktop_size">Desktop size</string>

@@ -25,8 +25,8 @@ android {
         applicationId "net.pgaskin.remotedesktop"
         minSdk 34
         targetSdk 36
-        versionCode 2
-        versionName "2"
+        versionCode 3
+        versionName "3"
 
         // The last word on what ships: packaging drops any ABI a module
         // supplies and this does not name, so it must be a subset of every
@@ -39,7 +39,21 @@ android {
 
     // For VERSION_NAME, which the settings tree shows.
     buildFeatures {
-        buildConfig true
+        buildConfig = true
+    }
+
+    // The one check lint is wrong about here. It wants `--` replaced with an em
+    // dash; the string it fires on contains `--es`, which is an adb flag, and no
+    // user-visible string in this app has an em dash in it by rule — so this is a
+    // tool disagreeing with a decision, and would be re-argued every few months
+    // if the disagreement were not written down somewhere.
+    //
+    // Everything else lint says is either fixed or suppressed at the line it is
+    // about, with the reason there. Which warnings are fatal, and which checks are
+    // upgrade notices rather than findings, is the root build file's answer for
+    // every module; scripts/check-warnings.sh is what asks.
+    lint {
+        disable 'TypographyDashes'
     }
 
     buildTypes {

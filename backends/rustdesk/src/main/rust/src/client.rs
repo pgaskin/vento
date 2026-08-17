@@ -310,6 +310,9 @@ pub struct Client {
     /// it with.
     closer: Mutex<Option<TcpStream>>,
     info: Mutex<Info>,
+    /// What the login names itself as, which for a direct connection is the
+    /// address the socket actually went to and for an id is that id.
+    login_as: Mutex<String>,
     /// The sizes the far end will take, which is a fixed list rather than RFB's
     /// free choice — empty for a peer that offers none.
     resolutions: Mutex<Vec<(i32, i32)>>,
@@ -317,6 +320,12 @@ pub struct Client {
     /// own order — empty where it has only one, since there is then nothing to
     /// choose between.
     displays: Mutex<Vec<(i32, i32, i32, i32)>>,
+    /// Where the captured display's top left corner sits on the peer's whole
+    /// desktop. Input is injected into that desktop rather than into the
+    /// picture, so a pointer event on a second screen is off by this much
+    /// unless it is added — landing on whatever is at those coordinates on the
+    /// primary one. The pair is under one lock because a switch moves both.
+    origin: Mutex<(i32, i32)>,
     /// What each held key was sent as, by the id the app ties an up to a down
     /// with.
     keys: Mutex<HashMap<i64, Key>>,
@@ -355,8 +364,10 @@ impl Client {
             out: Mutex::new(None),
             closer: Mutex::new(None),
             info: Mutex::new(Info::default()),
+            login_as: Mutex::new(String::new()),
             resolutions: Mutex::new(Vec::new()),
             displays: Mutex::new(Vec::new()),
+            origin: Mutex::new((0, 0)),
             keys: Mutex::new(HashMap::new()),
             modifiers: Mutex::new(Vec::new()),
             pointer: Mutex::new((-1, -1, 0)),
@@ -492,6 +503,13 @@ impl Client {
                 log::info!("connecting to {addr}");
                 let sock = TcpStream::connect_timeout(&addr, config.connect_timeout)?;
                 sock.set_nodelay(true)?;
+                // What the login says it dialled is this rather than what was
+                // typed, which their peer checks against three regular
+                // expressions: a v4 literal with an optional port, a v6 one
+                // either bare or bracketed **with** a port, or a dotted name
+                // with one. A bracketed literal and no port matches none of
+                // them, and the refusal is `Offline`.
+                *self.login_as.lock().unwrap() = addr.to_string();
                 (sock, None, format!("Direct access to {addr}"))
             }
             Reach::Id { server, key } => {
@@ -503,6 +521,8 @@ impl Client {
                 let reached =
                     rendezvous::reach(&config.address, server, key.trim(), config.connect_timeout)?;
                 let connection = reached.how.describe();
+                // The id, which is what the peer is expecting to be called here.
+                *self.login_as.lock().unwrap() = config.address.clone();
                 (
                     reached.sock,
                     Some((reached.signed_id_pk, key.clone())),
@@ -866,6 +886,7 @@ impl Client {
             display.height
         );
         self.display.store(current as i32, Ordering::Relaxed);
+        *self.origin.lock().unwrap() = (display.x, display.y);
         {
             let mut info = self.info.lock().unwrap();
             info.desktop_name = peer.hostname.clone();
@@ -932,6 +953,11 @@ impl Client {
         back: &mut Back,
     ) {
         let (width, height) = (switch.width, switch.height);
+        // Ahead of the size checks below, both of which return early: where the
+        // picture is on the peer's desktop is the one thing here that decides
+        // where input lands, and a switch that changed nothing else has still
+        // moved it.
+        *self.origin.lock().unwrap() = (switch.x, switch.y);
         if self.display.swap(switch.display, Ordering::Relaxed) != switch.display {
             // The capture set and the key frame again, for the same reason the
             // login sends them: the peer has said what it is capturing now, and
@@ -1087,8 +1113,10 @@ impl Client {
         // **The address, not a name.** Their peer refuses a login whose
         // username is neither its own id nor something that parses as an
         // address, and the refusal it sends is `Offline` — which reads like the
-        // machine is not there rather than like a field being wrong.
-        login.username = config.address.clone();
+        // machine is not there rather than like a field being wrong. Which is
+        // why this is the socket's own address rather than what somebody typed:
+        // the two differ wherever a default port was filled in.
+        login.username = self.login_as.lock().unwrap().clone();
         login.password = login_hash(password, hash).into();
         // Their peer shows this and logs it, so it is the phone rather than
         // anything about this app: a person looking at the far end wants to
@@ -1225,11 +1253,14 @@ impl Client {
     ///
     /// The seam says where the pointer is and which buttons are held; this
     /// protocol wants a move, a press and a release as separate events, so the
-    /// edges are worked out here against the last mask seen.
+    /// edges are worked out here against the last mask seen. The coordinates
+    /// are the picture's and what goes out is the peer's desktop's, which is
+    /// the same thing only while the display being captured is at the origin.
     pub fn pointer(&self, x: i32, y: i32, mask: i32) {
         if self.view_only.load(Ordering::Relaxed) {
             return;
         }
+        let (ox, oy) = *self.origin.lock().unwrap();
         let (moved, was) = {
             let mut last = self.pointer.lock().unwrap();
             let moved = last.0 != x || last.1 != y;
@@ -1238,17 +1269,19 @@ impl Client {
             (moved, was)
         };
         if moved {
-            self.mouse(mouse::TYPE_MOVE, x, y, false);
+            self.mouse(mouse::TYPE_MOVE, x + ox, y + oy, false);
         }
         for (ours, theirs) in BUTTONS {
             let down = mask & ours != 0;
             if down != (was & ours != 0) {
                 let kind = if down { mouse::TYPE_DOWN } else { mouse::TYPE_UP };
-                self.mouse(kind | (theirs << 3), x, y, down);
+                self.mouse(kind | (theirs << 3), x + ox, y + oy, down);
             }
         }
         // The wheel is four bits of the same mask, and each is a notch rather
         // than something held: the edge is the event and the release is not.
+        // Its two numbers are a distance rather than a place, so the display's
+        // origin is not added to them.
         let pressed = mask & !was;
         let (mut dx, mut dy) = (0, 0);
         if pressed & 0x08 != 0 {
@@ -1585,13 +1618,12 @@ fn login_hash(password: &str, hash: &Hash) -> Vec<u8> {
         .to_vec()
 }
 
+/// `host` or `host:port`, plus the bracketed IPv6 form. The direct mode's
+/// address only; an id is not one of these and never reaches here.
 fn resolve(address: &str) -> Result<SocketAddr> {
-    let with_port = if address.contains(':') {
-        address.to_string()
-    } else {
-        format!("{address}:{DIRECT_PORT}")
-    };
-    with_port
+    let (host, port) = common::address::split(address, DIRECT_PORT, common::address::Ports::Plain)
+        .map_err(Error::Address)?;
+    (host.as_str(), port)
         .to_socket_addrs()
         .map_err(Error::Io)?
         .next()
@@ -1646,9 +1678,88 @@ mod tests {
         assert!(login_hash("", &hash).is_empty());
     }
 
+    /// The rig's second screen: 1024×768 at 1920,665 on a desktop whose first
+    /// display is 1920×1440. A tap in the middle of the picture is a tap on
+    /// that screen, and every coordinate on the wire is the desktop's — so a
+    /// client that sends the picture's own numbers moves the cursor on the
+    /// first display instead, which is what this pins.
+    #[test]
+    fn a_pointer_is_where_the_captured_display_is() {
+        struct Nothing;
+        impl Handler for Nothing {
+            fn connected(&mut self, _width: usize, _height: usize) {}
+            fn desktop_size(&mut self, _width: usize, _height: usize) {}
+            fn damaged(&mut self, _x: usize, _y: usize, _width: usize, _height: usize) {}
+            fn frame_end(&mut self) {}
+            fn cursor(&mut self, _p: &[u32], _w: usize, _h: usize, _hx: i32, _hy: i32) {}
+            fn clipboard(&mut self, _text: &str) {}
+            fn password(&mut self) -> Option<String> {
+                None
+            }
+            fn trust(&mut self, _fingerprint: &str) -> bool {
+                false
+            }
+            fn unverified(&mut self, _why: &str) -> bool {
+                false
+            }
+        }
+
+        let client = Client::new();
+        let (out, sent) = channel();
+        *client.out.lock().unwrap() = Some(out);
+        let events = || -> Vec<MouseEvent> {
+            sent.try_iter()
+                .filter_map(|bytes| match Message::parse_from_bytes(&bytes).unwrap().union {
+                    Some(message::Union::MouseEvent(event)) => Some(event),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        // The origin comes off the switch message rather than the list the
+        // login carried, since that is the one a peer sends when a screen it
+        // was not asked about moves.
+        let mut switch = SwitchDisplay::new();
+        switch.display = 1;
+        switch.x = 1920;
+        switch.y = 665;
+        switch.width = 1024;
+        switch.height = 768;
+        client.switched(&switch, &mut Nothing, &mut Back::new());
+
+        client.pointer(512, 384, 0x01);
+        let moved_and_pressed = events();
+        assert_eq!(moved_and_pressed.len(), 2);
+        assert_eq!(moved_and_pressed[0].mask, mouse::TYPE_MOVE);
+        assert_eq!((moved_and_pressed[0].x, moved_and_pressed[0].y), (2432, 1049));
+        assert_eq!(
+            moved_and_pressed[1].mask,
+            mouse::TYPE_DOWN | (mouse::LEFT << 3)
+        );
+        assert_eq!((moved_and_pressed[1].x, moved_and_pressed[1].y), (2432, 1049));
+
+        // The wheel's two numbers are how far rather than where.
+        client.pointer(512, 384, 0x08);
+        let released_and_scrolled = events();
+        assert_eq!(released_and_scrolled.len(), 2);
+        assert_eq!(
+            (released_and_scrolled[0].x, released_and_scrolled[0].y),
+            (2432, 1049)
+        );
+        assert_eq!(released_and_scrolled[1].mask, mouse::TYPE_WHEEL);
+        assert_eq!(
+            (released_and_scrolled[1].x, released_and_scrolled[1].y),
+            (0, WHEEL_NOTCH)
+        );
+    }
+
     #[test]
     fn a_port_is_theirs_unless_one_is_given() {
         assert_eq!(resolve("127.0.0.1").unwrap().port(), DIRECT_PORT);
         assert_eq!(resolve("127.0.0.1:5900").unwrap().port(), 5900);
+        // The bracketed form with no port is the case a `contains(':')` test
+        // for "has a port already" gets wrong, since every literal has one.
+        assert_eq!(resolve("[::1]").unwrap().port(), DIRECT_PORT);
+        assert!(resolve("::1").is_err());
     }
 }

@@ -29,7 +29,7 @@ public class TapRegionsTest {
     private static final float[] MIDDLE = {1200, 540};
 
     private static Harness withToolbar() {
-        return Harness.improved().withRegions(TapRegions.toolbar());
+        return Harness.improved().withRegions(TapRegions.standard());
     }
 
     private static Harness tapAt(Harness h, float[] p) {
@@ -40,7 +40,7 @@ public class TapRegionsTest {
 
     @Test
     public void toolbarBandsAreWhereTheLayoutSaysTheyAre() {
-        final TapRegions t = TapRegions.toolbar();
+        final TapRegions t = TapRegions.standard();
         assertEquals(TapRegions.DISCONNECT, t.hit(200, 50, 2400, 1080).name());
         assertEquals(TapRegions.INFORMATION, t.hit(1200, 50, 2400, 1080).name());
         assertEquals(TapRegions.KEYBOARD, t.hit(1000, 1000, 2400, 1080).name());
@@ -60,7 +60,7 @@ public class TapRegionsTest {
 
     @Test
     public void theCornersOfTheViewAreInsideARegion() {
-        final TapRegions t = TapRegions.toolbar();
+        final TapRegions t = TapRegions.standard();
         assertEquals(TapRegions.DISCONNECT, t.hit(0, 0, 2400, 1080).name());
         assertEquals(TapRegions.INFORMATION, t.hit(2400, 0, 2400, 1080).name());
         assertEquals(TapRegions.KEYBOARD, t.hit(0, 1080, 2400, 1080).name());
@@ -70,7 +70,7 @@ public class TapRegionsTest {
     /** Fractions, so a rotation moves the bands with the view rather than off it. */
     @Test
     public void regionsScaleWithTheView() {
-        final TapRegions t = TapRegions.toolbar();
+        final TapRegions t = TapRegions.standard();
         assertEquals(TapRegions.MOUSE, t.hit(2200, 1000, 2400, 1080).name());
         // The same physical corner of a portrait view.
         assertEquals(TapRegions.MOUSE, t.hit(990, 2220, 1080, 2400).name());
@@ -80,7 +80,7 @@ public class TapRegionsTest {
 
     @Test
     public void aViewWithNoSizeYetHitsNothing() {
-        assertNull(TapRegions.toolbar().hit(0, 0, 0, 0));
+        assertNull(TapRegions.standard().hit(0, 0, 0, 0));
     }
 
     // ---- what activates one -----------------------------------------------

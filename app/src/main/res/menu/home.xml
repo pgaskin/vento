@@ -8,8 +8,15 @@
     before the one that leaves it, and the one that only sometimes applies is
     outermost — so nothing moves when it appears and disappears.
 -->
+<!--
+    All three are always in the bar rather than in an overflow: there is room for
+    three icons on the narrowest phone this runs on, and a menu that reveals itself
+    is a menu the two list controls are hidden behind.
+-->
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto">
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="AlwaysShowAction">
     <!-- Only while there is an order to change: two pinned connections are the
          fewest that can be in the wrong one, and HomeActivity hides the item
          below that rather than opening a sheet with nothing to drag. -->

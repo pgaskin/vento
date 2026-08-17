@@ -14,6 +14,7 @@ import net.pgaskin.remotedesktop.control.input.Config;
 import net.pgaskin.remotedesktop.control.input.ExtensionKeyboard;
 import net.pgaskin.remotedesktop.control.input.MouseOverlay;
 import net.pgaskin.remotedesktop.control.input.TapRegions;
+import net.pgaskin.remotedesktop.control.input.Toolbar;
 
 import java.util.function.Function;
 
@@ -49,10 +50,10 @@ public final class Chrome {
     private final Rect bounds = new Rect();
     private final Matrix matrix = new Matrix();
 
-    // The key ripple: which key, from where, and when. The keyboard claims its
-    // own pointers, so no view ever sees the touch and has to be told.
-    private ExtensionKeyboard.Key lastPressed;
-    private ExtensionKeyboard.Bounds rippleBounds;
+    // The ripple: what was pressed, from where, and when. Both widgets claim
+    // their own pointers, so no view ever sees the touch and has to be told.
+    private Object lastPressed;
+    private Object rippleOwner;
     private long rippleStartNanos;
     private float rippleX, rippleY;
 
@@ -85,16 +86,35 @@ public final class Chrome {
         if (pressed == null) {
             return;
         }
-        rippleStartNanos = System.nanoTime();
-        rippleX = keyboard.pressedX();
-        rippleY = keyboard.pressedY();
-        rippleBounds = null;
-        for (ExtensionKeyboard.Bounds b : keyboard.keys()) {
-            if (b.key() == pressed) {
-                rippleBounds = b;
-                break;
+        startRipple(pressed, keyboard.pressedX(), keyboard.pressedY());
+    }
+
+    /** The same, from the toolbar's change notification. */
+    public void toolbarChanged(Toolbar toolbar) {
+        final Toolbar.Item pressed = toolbar.pressedItem();
+        if (pressed == lastPressed) {
+            return;
+        }
+        lastPressed = pressed;
+        if (pressed == null) {
+            return;
+        }
+        // The press position is not reported: a 44 dp button pressed from its
+        // middle is what the ripple looks like either way, and the toolbar has
+        // no reason to carry the coordinate the row does.
+        for (Toolbar.Bounds b : toolbar.items()) {
+            if (b.item() == pressed) {
+                startRipple(pressed, b.centreX(), b.centreY());
+                return;
             }
         }
+    }
+
+    private void startRipple(Object owner, float x, float y) {
+        rippleOwner = owner;
+        rippleStartNanos = System.nanoTime();
+        rippleX = x;
+        rippleY = y;
     }
 
     // ---- the mouse overlay -------------------------------------------------
@@ -112,7 +132,7 @@ public final class Chrome {
             panel.setColor(b.part() == MouseOverlay.Part.DISMISS
                     ? (down ? 0x99404a58 : 0x5005090e)
                     : (down ? 0x994a5a70 : 0x60151a20));
-            edged(box, cfg.dp(3), overlay);
+            edged(box, cfg.dp(3), 0, 0, overlay.viewWidth(), overlay.viewHeight());
             c.drawPath(path, panel);
             marker.setColor(0x70ffffff);
             c.drawPath(path, marker);
@@ -151,7 +171,8 @@ public final class Chrome {
 
     /**
      * Round {@link #path} into a rounded rectangle whose corners against the
-     * edge of the window are square.
+     * edge of {@code (wl, wt, wr, wb)} — the window, or whatever the thing is
+     * flush against — are square.
      *
      * <p>The button row is flush with the bottom of the screen and the wheel
      * strip with the right of it, and a 3 dp arc against a screen edge reads as
@@ -160,10 +181,10 @@ public final class Chrome {
      * targets. The ✕ and the wheel's handle are inset from everything and so
      * come out fully round, which is the same rule and not an exception to it.
      */
-    private void edged(RectF r, float radius, MouseOverlay overlay) {
-        final boolean l = r.left <= 0, t = r.top <= 0;
-        final boolean b = r.bottom >= overlay.viewHeight();
-        final boolean g = r.right >= overlay.viewWidth();
+    private void edged(RectF r, float radius, float wl, float wt, float wr, float wb) {
+        final boolean l = r.left <= wl, t = r.top <= wt;
+        final boolean b = r.bottom >= wb;
+        final boolean g = r.right >= wr;
         final float tl = (l || t) ? 0 : radius;
         final float tr = (g || t) ? 0 : radius;
         final float br = (g || b) ? 0 : radius;
@@ -193,7 +214,8 @@ public final class Chrome {
         final float barMid = (barTop + rowTop) / 2;
         // Solid means the desktop is inset by the bar, so there is no cursor
         // under it to get out of the way of and nothing to see through it.
-        final float fade = cfg.keyboardInfoSolid ? 1f : barFade(barTop, cursorY);
+        final float fade = cfg.keyboardInfoSolid ? 1f
+                : barFade(0, barTop, viewWidth, rowTop, 0, cursorY);
 
         // ---- the info bar --------------------------------------------------
         // A step lighter than the key row below it, which is black: the two are
@@ -272,7 +294,10 @@ public final class Chrome {
             }
             final boolean down = keyboard.pressedKey() == b.key();
             final ExtensionKeyboard.Sticky s = keyboard.sticky(b.key());
-            box.set(b.left(), rowTop, b.right(), rowBottom);
+            // The key's own bounds, not the row's: a list of more than one line
+            // puts them on different lines, and the two are the same rectangle
+            // only while there is one.
+            box.set(b.left(), b.top(), b.right(), b.bottom());
 
             // Flush rectangles with no chrome of their own, as the original draws
             // them: borders and margins turn forty keys into forty slabs, and
@@ -286,7 +311,7 @@ public final class Chrome {
                 c.drawRect(box, panel);
             }
 
-            animating |= drawKeyRipple(c, b);
+            animating |= drawRipple(c, b.key(), b.left(), b.top(), b.right(), b.bottom());
 
             final int colour = s == ExtensionKeyboard.Sticky.OFF ? 0xa3ffffff : 0xf2ffffff;
             final KeyIcons.Icon icon = KeyIcons.of(b.key().icon());
@@ -310,9 +335,10 @@ public final class Chrome {
     }
 
     /**
-     * How opaque the info bar should be, given where the cursor is.
+     * How opaque a thing floating over the desktop should be, given how far the
+     * cursor is from it.
      *
-     * <p>The desktop insets above the whole keyboard, so the bar covers no
+     * <p>The desktop insets above the whole keyboard, so the info bar covers no
      * remote pixels — but it does cover the <em>cursor</em>: the viewport clamps
      * the desktop into the content rect, so a cursor at the bottom edge sits on
      * the bar's top edge and an arrow drawn from its hotspot extends into it.
@@ -320,9 +346,16 @@ public final class Chrome {
      * while the pointer was being pushed downwards. Fading rather than
      * reordering, because only one of them can be on top; ramped rather than
      * switched, so it does not blink as the cursor grazes the boundary.
+     *
+     * <p>The toolbar wants the same thing for a stronger version of the same
+     * reason — the desktop runs under it, not merely the cursor — so the ramp is
+     * one piece of code and the distance is to a rectangle. The info bar is the
+     * degenerate case of a rect that spans the window, where the horizontal
+     * distance is never positive and this is {@code barTop - cursorY} exactly.
      */
-    private float barFade(float barTop, float cursorY) {
-        final float d = barTop - cursorY;
+    private float barFade(float l, float t, float r, float b, float cursorX, float cursorY) {
+        final float d = Math.max(Math.max(l - cursorX, cursorX - r),
+                Math.max(t - cursorY, cursorY - b));
         if (d <= 0) {
             return BAR_FADE_MIN;
         }
@@ -333,6 +366,87 @@ public final class Chrome {
         return BAR_FADE_MIN + (1f - BAR_FADE_MIN) * (d / ramp);
     }
 
+    // ---- the toolbar --------------------------------------------------------
+
+    /**
+     * The column of buttons on the left edge, and the grip under it.
+     *
+     * <p>Two rules the info bar does not have. <b>The hit test does not fade</b>
+     * — a toolbar at a tenth is still a target at full size, which is the answer
+     * to "can I press what I can barely see" — and <b>a finger on it cancels the
+     * fade</b>, since the widget under the finger must not be the faintest thing
+     * on the screen.
+     *
+     * @return whether another frame is wanted — a ripple is mid-flight
+     */
+    public boolean drawToolbar(Canvas c, Toolbar toolbar, int viewWidth, int viewHeight,
+                               float cursorX, float cursorY) {
+        if (!toolbar.visible() || toolbar.items().isEmpty()) {
+            return false;
+        }
+        final float fade = toolbar.touched() ? 1f
+                : barFade(toolbar.left(), toolbar.top(), toolbar.right(), toolbar.bottom(),
+                        cursorX, cursorY);
+
+        // Fainter than the info bar, which is a readout with nothing behind it:
+        // this covers 200 dp of somebody's picture, and what it has to do is be
+        // findable rather than be looked at.
+        final float l = toolbar.left(), top = toolbar.top();
+        final float r = toolbar.right(), bottom = toolbar.bottom();
+        final float radius = cfg.dp(8);
+        box.set(l, top, r, bottom);
+        panel.setColor(alpha(0x8c0b0f14, fade));
+        edged(box, radius, l, 0, viewWidth, viewHeight);
+        c.drawPath(path, panel);
+
+        // An outline on three sides: at this opacity the panel's own edge is
+        // lost against a dark picture, and the left one is against the side of
+        // the screen, where a line reads as a sliver of something rather than as
+        // the edge of this.
+        path.rewind();
+        path.moveTo(l, top);
+        path.lineTo(r - radius, top);
+        box.set(r - 2 * radius, top, r, top + 2 * radius);
+        path.arcTo(box, 270, 90);
+        path.lineTo(r, bottom - radius);
+        box.set(r - 2 * radius, bottom - 2 * radius, r, bottom);
+        path.arcTo(box, 0, 90);
+        path.lineTo(l, bottom);
+        marker.setColor(alpha(0x33ffffff, fade));
+        c.drawPath(path, marker);
+        marker.setColor(0x66ffffff);
+
+        boolean animating = false;
+        final float icon = cfg.dp(22);
+        for (Toolbar.Bounds b : toolbar.items()) {
+            if (toolbar.pressedItem() == b.item()) {
+                panel.setColor(alpha(0x1affffff, fade));
+                c.drawRect(b.left(), b.top(), b.right(), b.bottom(), panel);
+            }
+            animating |= drawRipple(c, b.item(), b.left(), b.top(), b.right(), b.bottom());
+            final KeyIcons.Icon glyph = KeyIcons.of(b.item().icon());
+            if (glyph != null) {
+                // A button whose thing is on reads like an armed modifier in the
+                // info bar, and for the same reason: it is the one piece of
+                // state this widget has to show.
+                drawIcon(c, glyph, b.centreX() - icon / 2, b.centreY() - icon / 2, icon,
+                        alpha(toolbar.active(b.item()) ? 0xffe8f0ff : 0x66ffffff, fade));
+            }
+        }
+
+        final Toolbar.Bounds g = toolbar.grip();
+        if (g != null) {
+            final KeyIcons.Icon glyph = KeyIcons.of(KeyIcons.GRIP);
+            if (glyph != null) {
+                drawIcon(c, glyph, g.centreX() - icon / 2, g.centreY() - icon / 2, icon,
+                        // Dimmer than the buttons: it is a handle rather than
+                        // one of the four things this widget is for.
+                        alpha(toolbar.dragging() ? 0xb3ffffff : 0x40ffffff, fade));
+            }
+        }
+        return animating;
+    }
+
     /** {@code argb} with its alpha scaled by {@code f}. */
     private static int alpha(int argb, float f) {
         final int a = Math.round(((argb >>> 24) & 0xff) * f);
@@ -340,13 +454,17 @@ public final class Chrome {
     }
 
     /**
-     * A material-style ripple from where the finger landed, on the one key it
-     * belongs to. Hand-drawn because the keyboard is not a view per key — which
+     * A material-style ripple from where the finger landed, on the one thing it
+     * belongs to. Hand-drawn because neither widget is a view per target — which
      * is the whole point of the claim-based routing — so there is no
      * {@code Drawable} to hang a {@code RippleDrawable} on.
+     *
+     * <p>Keyed on the object rather than on a key, so a toolbar button and an
+     * extension key are the same case: whoever last reported a press owns it.
      */
-    private boolean drawKeyRipple(Canvas c, ExtensionKeyboard.Bounds b) {
-        if (rippleStartNanos == 0 || rippleBounds == null || rippleBounds.key() != b.key()) {
+    private boolean drawRipple(Canvas c, Object owner,
+                               float left, float top, float right, float bottom) {
+        if (rippleStartNanos == 0 || rippleOwner == null || rippleOwner != owner) {
             return false;
         }
         final float t = (System.nanoTime() - rippleStartNanos) / RIPPLE_NANOS;
@@ -357,9 +475,9 @@ public final class Chrome {
         // Fast out, slow in on the radius; linear fade, so a quick tap still
         // leaves a visible mark and a long hold does not glow for ever.
         final float grow = 1f - (1f - t) * (1f - t);
-        final float max = Math.max(b.width(), b.bottom() - b.top());
+        final float max = Math.max(right - left, bottom - top);
         final int save = c.save();
-        box.set(b.left(), b.top(), b.right(), b.bottom());
+        box.set(left, top, right, bottom);
         c.clipRect(box);
         panel.setColor((int) (0x2e * (1f - t)) << 24 | 0xffffff);
         c.drawCircle(rippleX, rippleY, max * (0.35f + 0.65f * grow), panel);

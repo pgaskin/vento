@@ -80,10 +80,12 @@ private:
     // describes its planes in some way this does not cover, and a wrong picture
     // is a worse failure than a slow one. A decoder reports its layout per
     // buffer, so the answer is keyed on the three fields the conversion reads.
+#if defined(__aarch64__)
     bool vectorise_ = false;
     int32_t checkedYColInc_ = -1;
     int32_t checkedUvColInc_ = -1;
     uint32_t checkedSubsampling_ = 0;
+#endif
 };
 
 } // namespace rfb

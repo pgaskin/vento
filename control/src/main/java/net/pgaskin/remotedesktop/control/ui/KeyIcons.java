@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * The keycap glyphs, as vectors.
+ * The keycap glyphs, and the toolbar's, as vectors.
  *
  * <p>RealVNC ships these as PNGs — `key_up`, `key_shift`, `key_backspace`,
  * `key_return`, `key_option`, `key_super`, `key_windows` and the arrows — and
@@ -28,6 +28,13 @@ import java.util.Map;
  * <p>Unicode was the first attempt and was wrong: {@code ↑ ↓ ← →} render at the
  * surrounding text's weight and metrics, which next to the word-labelled keys
  * looks like a font substitution rather than a keycap.
+ *
+ * <p>The toolbar's five are here rather than in the app's icon set, which is
+ * Material Symbols, and it is not a licence question — that set is already in
+ * the tree and accounted for. It is that these are drawn <em>on the canvas</em>,
+ * and the nearest other glyphs to them are the ⇧ and ⌫ three rows below: a
+ * filled outline at Material's weight beside a 0.09-stroked ⇧ is two icon sets
+ * on one screen, which is the mistake this file was written to avoid.
  */
 final class KeyIcons {
 
@@ -47,6 +54,15 @@ final class KeyIcons {
     static final String COMMAND = "command";
     static final String WINDOWS = "windows";
     static final String PASTE = "paste";
+    static final String HOME = "home";
+    static final String END = "end";
+
+    // The toolbar's, which are not keycaps — see the note at the top.
+    static final String DISCONNECT = "disconnect";
+    static final String INFO = "info";
+    static final String KEYBOARD = "keyboard";
+    static final String MOUSE = "mouse";
+    static final String GRIP = "grip";
 
     private static final Map<String, Icon> CACHE = new HashMap<>();
 
@@ -79,6 +95,13 @@ final class KeyIcons {
             case COMMAND -> new Icon(command(), 0.08f);
             case WINDOWS -> new Icon(windows(), 0);
             case PASTE -> new Icon(paste(), 0.09f);
+            case HOME -> new Icon(toBar(false), 0.10f);
+            case END -> new Icon(toBar(true), 0.10f);
+            case DISCONNECT -> new Icon(disconnect(), 0.09f);
+            case INFO -> new Icon(info(), 0.09f);
+            case KEYBOARD -> new Icon(keyboard(), 0.09f);
+            case MOUSE -> new Icon(mouse(), 0.09f);
+            case GRIP -> new Icon(grip(), 0.09f);
             default -> null;
         };
     }
@@ -99,6 +122,30 @@ final class KeyIcons {
         if (deg != 0) {
             final Matrix m = new Matrix();
             m.setRotate(deg, 0.5f, 0.5f);
+            p.transform(m);
+        }
+        return p;
+    }
+
+    /**
+     * ⇤ / ⇥ — the arrow of {@link #arrow}, sideways, stopped by a bar at the end
+     * it points at: the two keys that mean "as far that way as this line goes".
+     * Home and End are words on the one-line row, where there is room for them
+     * and no arrow beside them; on the two-line row they sit directly above Left
+     * and Right, where the same shape at the same weight is what says so.
+     */
+    private static Path toBar(boolean right) {
+        final Path p = new Path();
+        p.moveTo(0.12f, 0.16f);
+        p.lineTo(0.12f, 0.84f);
+        p.moveTo(0.24f, 0.50f);
+        p.lineTo(0.94f, 0.50f);
+        p.moveTo(0.50f, 0.24f);
+        p.lineTo(0.24f, 0.50f);
+        p.lineTo(0.50f, 0.76f);
+        if (right) {
+            final Matrix m = new Matrix();
+            m.setScale(-1, 1, 0.5f, 0.5f);
             p.transform(m);
         }
         return p;
@@ -199,6 +246,77 @@ final class KeyIcons {
         p.lineTo(0.66f, 0.04f);
         p.lineTo(0.66f, 0.24f);
         p.close();
+        return p;
+    }
+
+    /**
+     * Leaving: a frame open on one side with the arrow of {@link #arrow} coming
+     * out of it. It has to read as <em>this connection ends</em> rather than as
+     * <em>that machine turns off</em>, which is what anything resembling a power
+     * symbol would have said.
+     *
+     * <p>A snapped chain was the first attempt and is the better metaphor at any
+     * size but this one: two half-links with a gap between them is a 4 px gap in
+     * a 2 px stroke at 22 dp, which closes up into a ring.
+     */
+    private static Path disconnect() {
+        final Path p = new Path();
+        p.moveTo(0.46f, 0.08f);
+        p.lineTo(0.08f, 0.08f);
+        p.lineTo(0.08f, 0.92f);
+        p.lineTo(0.46f, 0.92f);
+        p.moveTo(0.36f, 0.50f);
+        p.lineTo(0.94f, 0.50f);
+        p.moveTo(0.70f, 0.28f);
+        p.lineTo(0.94f, 0.50f);
+        p.lineTo(0.70f, 0.72f);
+        return p;
+    }
+
+    /** The letter i in a ring, drawn rather than set: a glyph would not match. */
+    private static Path info() {
+        final Path p = new Path();
+        p.addCircle(0.50f, 0.50f, 0.44f, Path.Direction.CW);
+        // A round cap makes a zero-length segment a dot, so the tittle is the
+        // same weight as the stem by construction.
+        p.moveTo(0.50f, 0.27f);
+        p.lineTo(0.50f, 0.28f);
+        p.moveTo(0.50f, 0.42f);
+        p.lineTo(0.50f, 0.73f);
+        return p;
+    }
+
+    /** A keyboard: an outline, a row of keys and a space bar. */
+    private static Path keyboard() {
+        final Path p = new Path();
+        final RectF r = new RectF(0.04f, 0.22f, 0.96f, 0.78f);
+        p.addRoundRect(r, 0.08f, 0.08f, Path.Direction.CW);
+        for (float x = 0.18f; x < 0.80f; x += 0.24f) {
+            p.moveTo(x, 0.40f);
+            p.lineTo(x + 0.12f, 0.40f);
+        }
+        p.moveTo(0.30f, 0.62f);
+        p.lineTo(0.70f, 0.62f);
+        return p;
+    }
+
+    /** A mouse: an outline with a wheel in the top of it. */
+    private static Path mouse() {
+        final Path p = new Path();
+        final RectF r = new RectF(0.28f, 0.06f, 0.72f, 0.94f);
+        p.addRoundRect(r, 0.22f, 0.22f, Path.Direction.CW);
+        p.moveTo(0.50f, 0.22f);
+        p.lineTo(0.50f, 0.38f);
+        return p;
+    }
+
+    /** Two bars: the handle the column is dragged by. */
+    private static Path grip() {
+        final Path p = new Path();
+        p.moveTo(0.26f, 0.40f);
+        p.lineTo(0.74f, 0.40f);
+        p.moveTo(0.26f, 0.60f);
+        p.lineTo(0.74f, 0.60f);
         return p;
     }
 

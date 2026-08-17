@@ -690,7 +690,9 @@ over it. Both are off — false and zero — by default.
 
 ### 3.5 Toolbar tap regions
 
-The original puts a floating toolbar on top of the desktop. Instead, rectangles
+**One of two answers to the same question, and the invisible one** — §3.22 is
+the other, and the two are compatible by construction rather than by
+arrangement. The original puts a floating toolbar on top of the desktop. Instead, rectangles
 of the touch surface — given in fractions of the view, so rotation moves them
 with it — can claim a **tap** and suppress the click it would otherwise have
 made. The default layout is a top band of 2/22 of the height split 1:4 and a
@@ -734,7 +736,8 @@ the row's height at the bottom (§2.10, §3.4).
 ### 3.7 The keyboard's key list belongs to the caller
 
 The original hard-codes an X11 key set. Ours takes the list — `standardKeys()`
-is that same set, as a default — because protocols differ in which modifiers they
+is that same set, as a default, and `twoLineKeys()` those keys in the two-line
+grouping of §3.21 — because protocols differ in which modifiers they
 even have: there is no Option on an RDP session, and Super and Meta are not
 everywhere the same key. A backend that cannot express a key should not draw it.
 Nothing in `ExtensionKeyboard` is keyed on a particular keysym; the info bar's
@@ -1096,6 +1099,183 @@ been let go" is a question about the union — a tap during a mouse-held drag en
 no click. It reports `Listener.onButtonsReleased`, the host calls
 `ExtensionKeyboard.externalClick`, and a host with no such row implements
 neither.
+
+### 3.20 Hover assist
+
+The far end says one thing about what is under the pointer, and it says it by
+changing the cursor's shape. Where that arrives while the finger is moving
+slowly, the pointer **loses a little distance**: the factor steps down to
+**0.25** and comes back to 1 over **12 dp** of finger travel, on a smoothstep, so
+the whole cost of a detent is **4.5 dp** of movement and the thing the far end
+just reported has a widened dwell region around it. A small target is easier to
+stop on and harder to slide off.
+
+It is not a snap — nothing is pulled anywhere and nothing teleports — and it is
+not target detection: where the boundary was, how big the thing is and what it
+is are all unknown, and the design follows from that.
+
+**The news is a reply, and it is late.** It was caused by a position sent a
+round trip ago, so the pointer is already past the boundary when it arrives.
+Measured across eight clients and two kinds of far end, that interval is 10 to
+30 ms where the server is told its cursor changed and about 140 ms where it
+polls its own screen — 2.5 to 7.5 dp of travel against 35 dp at the speeds this
+engages at. Three things follow: the detent is applied *ahead* rather than
+centred on anything, the span has to be longer than the lag's travel, and a far
+end late enough to be reporting somewhere else must not arm it at all.
+
+Five tests before it arms, and four of them are the defence against a cursor
+that changes shape for reasons that are not a boundary:
+
+- **Slow.** Above **0.35 dp/ms** — a little above the axis lock's band — a
+  purposeful drag is not aiming at anything.
+- **Moving.** No move event in the last **120 ms** means the change was not
+  caused by us. This one alone disposes of every animation on an idle desktop.
+- **Somewhere new.** Less than **6 dp** of travel since the last change that
+  armed is a far end cycling frames, not two boundaries.
+- **Not a burst.** More than **4** changes in **600 ms** locks the whole
+  mechanism out for **2 s**. This is the animated wait cursor running *while*
+  the finger moves slowly, which is the one case the first three all pass. It
+  counts the changes that pass those three rather than everything that arrives:
+  a hand crossing a desktop full of small objects makes a dozen on the way, and
+  locking out because of them locks out the aim that follows them. Four rather
+  than three because a slow sweep across small things really does cross three
+  of them; an animated cursor runs at ten frames a second or more and still
+  trips it inside one window.
+- **Not too late.** A running estimate of the far end's own lateness, above
+  **60 ms** of which nothing arms. It is measured rather than configured, out
+  of the changes that arrive after a gesture has ended — the only ones whose
+  cause is known, because nothing has moved since. It cannot tell a late reply
+  from a change the far end made for itself, and does not have to: both are
+  arguments against arming.
+
+Two more rules keep it assistance rather than rails. **A reversal cancels it**:
+the direction turning back on itself is somebody coming back to what they
+overshot, and slowing that down is the opposite of help. And **the withheld
+distance is discarded, not banked** — conserving it would turn the assist into
+a delayed jump, which is §3.2's argument for the zeroed minor axis.
+
+**In finger travel rather than desktop pixels**, which is a decision: it costs a
+constant amount of movement and buys `4.5 dp / scale` of desktop stickiness —
+full strength zoomed out, where a link is four screen pixels tall and the help
+is wanted, and negligible zoomed in, where the same rule would cost real travel
+for nothing. It multiplies the accelerator's factor rather than replacing it,
+so inside a detent in the slow band the effective factor is about 0.28. It is
+off where the far end owns the cursor, for §3.16's reason, and a physical mouse
+never sees it: a mouse has the precision this is for.
+
+On in `improved()`, on his verdict from the phone, as §3.1 and §3.2 are; the
+input settings have a row for turning it off.
+
+*Source.* **Patrick's, idea and design, as §3.1 and §3.2 are** — the original
+has nothing that reacts to what the far end says. The measurement is what
+shaped it: the fifth test exists because the same server software on one machine
+was ten times later than another on the same machine over the same network, so
+lateness is neither the network's nor a thing a build can be configured for.
+
+### 3.21 The key row can be two lines
+
+The same keys, grouped the way a keyboard groups them: modifiers over the
+editing keys, the arrows as an inverted T, the F-keys six over six.
+
+```
+  modifiers                ⇤   ↑   ⇥      PgUp    paste    f1-f6
+  bksp del esc tab ins     ←   ↓   →      PgDn    return   f7-f12
+```
+
+Home and End are drawn as arrows-into-a-bar here and are words on the one-line
+row, and the page keys are abbreviated: the group is three glyphs wide and a word
+in the middle of it is what stops the cluster reading as one thing.
+
+A group is a **grid whose columns are shared between its lines** — the *n*th key
+of one line sits in the same column as the *n*th key of the next, and the column
+is as wide as the wider. That is the whole of the layout rule, and the arrows are
+what it is for: sharing the columns is what puts Home above Left and End above
+Right, the two keys that mean "the far end of this line, that way" sitting on the
+axis they mean. Per-line layout is one line of code shorter and gives a ragged
+cluster. The modifiers are the one group whose columns do not correspond, six
+over five, and that costs nothing. A useful consequence: both lines are the sum
+of the same columns, so both come out the same width and the scroll, the clamp
+and the fling stay one number.
+
+A line among others is **40 dp** rather than the 46 dp of a row on its own, which
+is where it stops: 40 dp is the overlay's dismiss button, the smallest target
+this screen already asks a finger for. So the chrome over the IME is 110 dp
+instead of 76. Measured against the phone these notes are driven on, the keys
+come to **1465 dp on one line and 765 dp on two** — three screenfuls of scrolling
+in a 360 dp portrait window against not quite two, and in landscape the whole
+set fits with nothing to scroll at all, which needs no code because a row that
+fits is already centred.
+
+`Key.row` is a layout attribute exactly as `group` and `wide` are, and the key
+list stays **flat**: a key's position in it is its state slot and its id at the
+far end (§3.7), so a list of lists would make all three two-dimensional for the
+sake of one of them. A list that never sets `row` is laid out exactly as it was
+before there were lines.
+
+**The list can be swapped while a session is running** (`setKeys`), which is what
+lets a host offer a choice without a reconnect. Its ordering is the whole of the
+work: every held modifier is let go of **first, through the old list**, since an
+id is a position in that list and a release sent after the swap names an id the
+far end never saw pressed — a modifier left down on somebody's machine for the
+rest of the session. The active touch, the timers and the fling go with it, each
+of them holding a key that may not be in the new list.
+
+### 3.22 A toolbar that can be seen
+
+Four buttons and a grip on the left edge, over the desktop, dragged up and down
+by either. It is not a reversal of §3.5 but the second answer to the question
+§3.5 left open: the bands work and there is nothing to look at. The two are
+compatible by construction — the regions classify a *tap* inside the gesture
+layer, this claims pointers before the gesture layer sees them — so nothing
+arbitrates between them, and both hand the host the same four names, which is
+what stops them drifting apart in what they do.
+
+**Flush to the left edge**, whatever that edge costs — a column indented by a
+corner radius reads as a panel that has come loose — and held off the top and
+the bottom, which is where a bar, a cutout or the key row is.
+
+**44 dp buttons and a 24 dp grip, which is 200 dp, and that is the whole of the
+geometry argument.** The left edge is where the system's back gesture is, a
+claimed pointer does not change that (the platform decides before the app sees
+the stream), and `setSystemGestureExclusionRects` — which nothing here used
+before — is honoured up to **200 dp per edge**. Four buttons and a grip are
+exactly that, so the button size comes from the limit rather than from Material's
+48 dp. The rects are the host's to set, from the box the model exposes, and have
+to be re-set as the column moves. A shorter item list is shorter and claims less:
+a view-only session offers three buttons rather than four greyed ones.
+
+**The grip is at the bottom**, away from the button with no undo: a mis-aimed
+drag next to *disconnect* is a mis-aimed tap next to it. It is a hint rather
+than a requirement — a pointer that lands on a button and travels more than
+8 dp drags too, and abandons the press — and buttons fire on release, on the
+item they started on, which is the extension row's rule.
+
+**It does not inset the desktop.** The picture runs underneath and the pointer
+can reach the pixels behind it, which is the floating info bar's bargain. What
+that costs is the left edge's bump scroll (§1.6) wherever the column has been
+dragged to, which is the second reason it moves; insetting would take the same
+pixels away permanently and from the picture as well.
+
+The panel is fainter than the info bar's — that is a readout with nothing behind
+it, and this covers a picture — with a faint outline on the three sides that are
+not against the screen's own edge, since at that opacity the panel's edge is lost
+against a dark desktop. The fade is the info bar's, generalised to a distance
+from a rectangle, of which the bar is the degenerate case. Two rules it adds: **the hit test does not fade**,
+so a column at a tenth is still a target at full size, and **a finger on it
+cancels the fade**, since the widget under the finger must not be the faintest
+thing on the screen. A button whose thing is on — the keyboard up, the overlay
+out — is drawn the way the bar draws an armed modifier, which is the one piece
+of state the widget has.
+
+Its five glyphs are `KeyIcons`', drawn in the keycaps' style at the same stroke
+weight, rather than Material Symbols like the app's other eighteen: these are
+drawn on the canvas and the nearest glyphs to them are the ⇧ and ⌫ of the key
+row, and a filled outline at Material's weight beside a 0.09-stroked ⇧ is two
+icon sets on one screen.
+
+It has **no dismiss**: something would have to bring it back, and that something
+is a tap region — the thing it exists to be an alternative to. It is on or off,
+and that is the host's preference.
 
 ---
 

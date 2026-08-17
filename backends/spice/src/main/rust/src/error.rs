@@ -14,6 +14,8 @@ pub enum Error {
     Cancelled,
     /// The bytes did not mean what they have to mean.
     Protocol(String),
+    /// What somebody typed is not an address, said in the words they need.
+    Address(String),
     /// The server said so: `MAIN_DISCONNECTING`, or a `NOTIFY` at error
     /// severity, in its own words.
     Server(String),
@@ -37,6 +39,7 @@ impl fmt::Display for Error {
             Error::Refused(_) => write!(f, "The password was refused."),
             Error::Cancelled => write!(f, "Cancelled."),
             Error::Protocol(what) => write!(f, "The server is not making sense: {what}"),
+            Error::Address(why) => write!(f, "{why}"),
             Error::Server(why) if why.is_empty() => write!(f, "The server ended the session."),
             Error::Server(why) => write!(f, "{why}"),
             Error::Closed => write!(f, "Disconnected"),

@@ -43,6 +43,7 @@ public final class PointerAccel {
 
     private final Config cfg;
     private final MouseSink sink;
+    private final HoverAssist hover;
 
     private final float[] dx = new float[3];
     private final float[] dy = new float[3];
@@ -81,6 +82,7 @@ public final class PointerAccel {
     public PointerAccel(Config cfg, MouseSink sink) {
         this.cfg = cfg;
         this.sink = sink;
+        this.hover = new HoverAssist(cfg);
     }
 
     /** Drop the sample history (the original never does this between gestures). */
@@ -94,6 +96,37 @@ public final class PointerAccel {
         magX = magY = 0;
         lock = Axis.NONE;
         fastX = fastY = slowX = slowY = 0;
+        hover.reset();
+    }
+
+    /**
+     * The far end has changed the cursor's shape, which is the only thing it
+     * ever says about what is under the pointer. What is made of that is
+     * {@link HoverAssist}; the time is the arrival, not the crossing, and
+     * {@code gliding} says whether momentum is moving the pointer rather than
+     * a finger.
+     */
+    public void remoteCursorChanged(long t, boolean gliding) {
+        hover.changed(speed, t, gliding);
+    }
+
+    /** No finger left on the screen: what arrives now can be timed. */
+    public void gestureEnded() {
+        hover.gestureEnded();
+    }
+
+    /** The hover detent's current factor, and the far end's measured lateness. */
+    public float hoverGain() {
+        return hover.gain();
+    }
+
+    public float hoverLagMs() {
+        return hover.lagMs();
+    }
+
+    /** Whether an animated cursor has shut the detent off for the moment. */
+    public boolean hoverLockedOut(long now) {
+        return hover.lockedOut(now);
     }
 
     public float lastFactor() {
@@ -125,6 +158,9 @@ public final class PointerAccel {
 
     public void move(float ax, float ay, long t) {
         track(ax, ay, t);
+        // Before the lock has been at the delta, since what a detent spends is
+        // finger travel rather than what comes out of this.
+        final float hoverGain = hover.gain(ax, ay, t);
 
         if (cfg.axisLockEnabled) {
             lock = nextLock();
@@ -171,6 +207,10 @@ public final class PointerAccel {
                 }
             }
         }
+        // Multiplied in rather than replacing the factor: in the slow band the
+        // adaptive gate has already pulled that to the floor, and a detent is
+        // meant to take a quarter off whatever the accelerator decided.
+        factor *= hoverGain;
         lastFactor = factor;
         sink.mouseMove(ax * factor, ay * factor);
     }

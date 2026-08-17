@@ -11,7 +11,7 @@ import java.util.List;
  * say nothing about pixels.
  *
  * <p>This replaces the original's floating toolbar, which is large, in the way,
- * and has to be dismissed. The layout in {@link #toolbar()} is vncpatch's, but
+ * and has to be dismissed. The layout in {@link #standard()} is vncpatch's, but
  * the mechanism is not: vncpatch puts real {@code View}s over the desktop, so
  * <em>any</em> touch in a band is swallowed — including a drag that merely
  * starts near an edge, and including the bump scroll that deliberately lives in
@@ -40,7 +40,7 @@ public final class TapRegions {
         }
     }
 
-    /** Names of the {@link #toolbar()} regions. */
+    /** Names of the {@link #standard()} regions, which {@link Toolbar} shares. */
     public static final String DISCONNECT = "disconnect";
     public static final String INFORMATION = "information";
     public static final String KEYBOARD = "keyboard";
@@ -91,7 +91,7 @@ public final class TapRegions {
      *          4/5                         1/5
      * </pre>
      */
-    public static TapRegions toolbar() {
+    public static TapRegions standard() {
         final float top = 2f / 22f;
         final float bottom = 19f / 22f;
         return new TapRegions(

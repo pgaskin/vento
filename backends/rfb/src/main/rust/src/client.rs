@@ -976,40 +976,7 @@ impl Rate {
 /// form. The display convention is older than the port one and every VNC client
 /// still takes it, so `10.0.0.5:1` has to mean 5901 rather than port 1.
 fn resolve(address: &str) -> Result<(String, u16)> {
-    let address = address.trim();
-    if let Some(rest) = address.strip_prefix('[') {
-        let (host, rest) = rest
-            .split_once(']')
-            .ok_or_else(|| Error::Protocol(format!("unbalanced brackets in {address:?}")))?;
-        let port = match rest.strip_prefix(':') {
-            Some(p) if !p.is_empty() => p
-                .parse()
-                .map_err(|_| Error::Protocol(format!("bad port in {address:?}")))?,
-            _ => 5900,
-        };
-        return Ok((host.to_string(), port));
-    }
-    if let Some((host, port)) = address.split_once("::") {
-        let port = port
-            .parse()
-            .map_err(|_| Error::Protocol(format!("bad port in {address:?}")))?;
-        return Ok((host.to_string(), port));
-    }
-    match address.rsplit_once(':') {
-        Some((host, tail)) => {
-            let n: u32 = tail
-                .parse()
-                .map_err(|_| Error::Protocol(format!("bad port in {address:?}")))?;
-            // Under 100 is a display number; there are no ports down there
-            // anyone would be running a desktop on.
-            let port = if n < 100 { 5900 + n } else { n };
-            if port > u16::MAX as u32 {
-                return Err(Error::Protocol(format!("bad port in {address:?}")));
-            }
-            Ok((host.to_string(), port as u16))
-        }
-        None => Ok((address.to_string(), 5900)),
-    }
+    common::address::split(address, 5900, common::address::Ports::Display).map_err(Error::Address)
 }
 
 fn connect(host: &str, port: u16, timeout: Duration) -> Result<TcpStream> {
@@ -1038,15 +1005,15 @@ impl Default for Client {
 mod tests {
     use super::*;
 
+    /// The forms are `common::address`'s; what is this client's own is the
+    /// default port and the display rule being on.
     #[test]
     fn addresses() {
         assert_eq!(resolve("10.0.0.5").unwrap(), ("10.0.0.5".into(), 5900));
         assert_eq!(resolve("10.0.0.5:1").unwrap(), ("10.0.0.5".into(), 5901));
-        assert_eq!(resolve("10.0.0.5:5901").unwrap(), ("10.0.0.5".into(), 5901));
         assert_eq!(resolve("10.0.0.5::5901").unwrap(), ("10.0.0.5".into(), 5901));
-        assert_eq!(resolve("[::1]:5902").unwrap(), ("::1".into(), 5902));
         assert_eq!(resolve("[::1]").unwrap(), ("::1".into(), 5900));
-        assert!(resolve("host:nonsense").is_err());
+        assert!(resolve("2001:db8::1").is_err());
     }
 
     /// A release names the key its press named, and an unmatched one sends

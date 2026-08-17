@@ -11,6 +11,7 @@ foreach(sub tigervnc pixman libjpeg-turbo)
 endforeach()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/reproducible.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/warnings.cmake")
 
 # One shared library per protocol, as every other backend module does, so a
 # build that drops this protocol drops the whole of it. Everything below is
@@ -106,12 +107,13 @@ set(H264_LIBRARIES mediandk)
 # not exist — a stale -I and nothing worse, as long as the real one is here.
 # libtool control files are for the autotools half of their build, of which
 # there is none here.
-include_directories("${CMAKE_CURRENT_BINARY_DIR}" "${THIRD_PARTY}/tigervnc/common"
-        "${CMAKE_CURRENT_SOURCE_DIR}")
+include_directories("${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+include_directories(SYSTEM "${THIRD_PARTY}/tigervnc/common")
 macro(libtool_create_control_file)
 endmacro()
 add_subdirectory("${THIRD_PARTY}/tigervnc/common" tigervnc-common EXCLUDE_FROM_ALL)
 
 add_library(remotedesktop_tigervnc SHARED tigervnc_jni.cxx H264AndroidDecoderContext.cxx)
+remotedesktop_warnings(remotedesktop_tigervnc)
 target_link_libraries(remotedesktop_tigervnc PRIVATE rfb rdr network core jnigraphics log
         mediandk)

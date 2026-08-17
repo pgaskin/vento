@@ -6,8 +6,30 @@ plugins {
     id 'com.android.library' version '9.3.1' apply false
 }
 
+// Every lint javac has, in every module, and none of them fatal: a warning is a
+// message from a toolchain, and a build that fails for one is a build somebody
+// on a different JDK cannot make at all — including the reproducible-build
+// check, whose whole point is that a third party can. What is fatal is fatal
+// under `scripts/check-warnings.sh`, which is where the whole policy is written down;
+// the one check Android Lint is *wrong* about is named in app/build.gradle.
 allprojects {
+    final strict = project.hasProperty('strictWarnings')
     tasks.withType(JavaCompile).configureEach {
-        options.compilerArgs << '-Xlint:deprecation' << '-Xlint:unchecked'
+        options.compilerArgs << '-Xlint:all'
+        if (strict) {
+            options.compilerArgs << '-Werror'
+        }
+    }
+    // Three of Android Lint's checks are upgrade notices wearing a warning's
+    // clothes: a newer Gradle, a newer compileSdk, a newer targetSdk. Each is
+    // worth reading and none is a defect, and a build that treated them as one
+    // would go red on somebody else's release schedule rather than on a change of
+    // ours. Printed as hints, in every module, so the report holds findings only.
+    ['com.android.application', 'com.android.library'].each { id ->
+        plugins.withId(id) {
+            android.lint.informational 'AndroidGradlePluginVersion', 'GradleDependency',
+                    'OldTargetApi'
+            android.lint.warningsAsErrors = strict
+        }
     }
 }

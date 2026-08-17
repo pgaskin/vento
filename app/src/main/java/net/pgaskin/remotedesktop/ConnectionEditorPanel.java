@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.os.Bundle;
@@ -215,7 +216,11 @@ final class ConnectionEditorPanel {
     // fit system windows and applies the IME inset itself. That is what this
     // sheet must not do: it would apply the keyboard twice — see the inset
     // listener below.
+    //
+    // The form's root has no parent to be measured against either: the dialog's
+    // window supplies the layout parameters and the ones in the file are not read.
     @SuppressWarnings("deprecation")
+    @SuppressLint("InflateParams")
     private ConnectionEditorPanel(Activity activity, String id, Runnable onChanged) {
         this.activity = activity;
         this.onChanged = onChanged;

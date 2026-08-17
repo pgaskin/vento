@@ -128,6 +128,10 @@ typedef struct {
 
     char *host;
     int port;
+    /* Why the address was not one, empty if it was: a session is created and
+       started in one call, so the protocol thread is the first place there is
+       to say it. */
+    char addressError[160];
     int shared;
     int anonymousTls;
     char *encodings;
@@ -1034,6 +1038,11 @@ static void *protocolThread(void *arg) {
     JNIEnv *unused = NULL;
     const int ours = (*s->vm)->AttachCurrentThread(s->vm, &unused, NULL) == JNI_OK;
 
+    if (s->addressError[0]) {
+        fireClosed(s, s->addressError);
+        goto done;
+    }
+
     rfbClient *cl = rfbGetClient(8, 3, 4);
     if (!cl) {
         fireClosed(s, "Out of memory");
@@ -1113,7 +1122,13 @@ static void *protocolThread(void *arg) {
         goto done;
     }
 
-    LOGI("connected to %s:%d, %dx%d", cl->serverHost, cl->serverPort, cl->width, cl->height);
+    /* Bracketed the way it would have to be typed, since a literal with a port
+       after it is otherwise two colons in a row nobody can read. */
+    if (strchr(cl->serverHost, ':')) {
+        LOGI("connected to [%s]:%d, %dx%d", cl->serverHost, cl->serverPort, cl->width, cl->height);
+    } else {
+        LOGI("connected to %s:%d, %dx%d", cl->serverHost, cl->serverPort, cl->width, cl->height);
+    }
 
     for (;;) {
         if (drain(s)) {
@@ -1201,6 +1216,85 @@ static char *dup_jstring(JNIEnv *env, jstring js) {
     return out;
 }
 
+/* `host::port` is the one unbracketed address with two colons in it that is not
+   an IPv6 literal somebody left the brackets off: if the last colon is the one
+   after the first, there is no third. */
+static int bareLiteral(const char *address) {
+    const char *first = strchr(address, ':');
+    return first && strrchr(address, ':') > first + 1;
+}
+
+/* An address is `host`, `host:port`, `[literal]` or `[literal]:port`, and a bare
+   IPv6 literal is refused in words rather than guessed at: a number under 100 is
+   a display here, so `::1:1` cannot be an address and a display at once, and
+   what the guess this replaced produced was `::` — the wildcard address, which
+   connects to something. The host is left at the front of `address`, which stays
+   the caller's buffer to free; `why` is empty unless there is nothing to dial. */
+static void splitAddress(char *address, int *port, char *why, size_t whyLen) {
+    size_t len = strlen(address);
+    while (len > 0 && (address[len - 1] == ' ' || address[len - 1] == '\t')) {
+        address[--len] = 0;
+    }
+    const size_t lead = strspn(address, " \t");
+    if (lead > 0) {
+        memmove(address, address + lead, len - lead + 1);
+        len -= lead;
+    }
+    if (len == 0 || address[0] == ':') {
+        snprintf(why, whyLen, "No host in address");
+        return;
+    }
+
+    const char *host = address;
+    size_t hostLen = len;
+    const char *number = NULL;
+    int display = 1;  /* whether a number under 100 is a display rather than a port */
+
+    if (address[0] == '[') {
+        const char *close = strchr(address, ']');
+        if (!close) {
+            snprintf(why, whyLen, "%s missing closing bracket", address);
+            return;
+        }
+        host = address + 1;
+        hostLen = (size_t) (close - host);
+        if (close[1] == ':') {
+            number = close + 2;
+        } else if (close[1]) {
+            snprintf(why, whyLen, "%s has junk after closing bracket", address);
+            return;
+        }
+    } else if (bareLiteral(address)) {
+        snprintf(why, whyLen, "IPv6 addresses must be bracketed, like [::1]:5900, not %s", address);
+        return;
+    } else {
+        const char *colon = strrchr(address, ':');
+        if (colon) {
+            /* `host::port` is how somebody says they meant the port. */
+            display = colon[-1] != ':';
+            hostLen = (size_t) (colon - address) - !display;
+            number = colon + 1;
+        }
+    }
+
+    if (hostLen == 0) {
+        snprintf(why, whyLen, "No host in address");
+        return;
+    }
+    if (number) {
+        char *end = NULL;
+        const long n = strtol(number, &end, 10);
+        const long p = display && n >= 0 && n < 100 ? 5900 + n : n;
+        if (end == number || *end || p <= 0 || p > 65535) {
+            snprintf(why, whyLen, "%s does not end in a port number", address);
+            return;
+        }
+        *port = (int) p;
+    }
+    memmove(address, host, hostLen);
+    address[hostLen] = 0;
+}
+
 JNIEXPORT jstring JNICALL
 Java_net_pgaskin_remotedesktop_backend_libvnc_LibVncNative_nativeVersion(JNIEnv *env, jclass cls) {
     (void) cls;
@@ -1255,17 +1349,8 @@ Java_net_pgaskin_remotedesktop_backend_libvnc_LibVncNative_nativeCreate(
     char *addr = dup_jstring(env, address);
     s->port = 5900;
     if (addr) {
-        char *colon = strrchr(addr, ':');
-        if (colon && colon != addr) {
-            *colon = 0;
-            const int p = atoi(colon + 1);
-            if (p > 0) {
-                /* Below the display-number cutoff an address means :N, the way
-                   every VNC client has always read it. */
-                s->port = p < 5900 && p < 100 ? 5900 + p : p;
-            }
-        }
         s->host = addr;
+        splitAddress(addr, &s->port, s->addressError, sizeof s->addressError);
     }
     s->storedUser = dup_jstring(env, userName);
     s->storedPass = dup_jstring(env, password);

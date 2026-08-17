@@ -4,10 +4,14 @@
 package net.pgaskin.remotedesktop;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.content.pm.SigningInfo;
 import android.net.Uri;
+import android.os.Bundle;
 import android.util.Log;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -15,7 +19,10 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import net.pgaskin.remotedesktop.backend.Backends;
 
 import java.io.File;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -52,11 +59,12 @@ final class Plugins {
     /**
      * One card. The package is null for {@link Kind#RESTART}, which is about the
      * set rather than about any one of them; the backend is the one waiting to
-     * be set up, for the button that asks; and the detail is whatever the
-     * plugin's own failure said.
+     * be set up, for the button that asks; the detail is whatever the plugin's
+     * own failure said; and the update is where a build of it for this build of
+     * the app can be got, where there is one to be had ({@link #updateUrl}).
      */
     record Card(Kind kind, String packageName, String backendId, String title, String message,
-                String detail) {
+                String detail, String updateUrl) {
     }
 
     private Plugins() {
@@ -123,13 +131,18 @@ final class Plugins {
                         final List<String> names = ids.stream().map(Backends::name).toList();
                         cards.add(new Card(Kind.SETUP, p.packageName(), ids.get(0), label,
                                 context.getString(R.string.plugin_needs_setup,
-                                        String.join(", ", names)), null));
+                                        String.join(", ", names)), null, null));
                     }
                 }
+                // The one card an update is offered on: what is wrong with this
+                // package is its version and nothing else, so a build of it for
+                // this one is the whole of the fix. A plugin that threw is not
+                // fixed by reinstalling the same version of it.
                 case INCOMPATIBLE -> cards.add(new Card(Kind.INCOMPATIBLE, p.packageName(), null,
-                        label, context.getString(R.string.plugin_incompatible), p.detail()));
+                        label, context.getString(R.string.plugin_incompatible), p.detail(),
+                        updateUrl(context, p.packageName())));
                 case FAILED -> cards.add(new Card(Kind.FAILED, p.packageName(), null,
-                        label, context.getString(R.string.plugin_failed), p.detail()));
+                        label, context.getString(R.string.plugin_failed), p.detail(), null));
             }
         }
         // One installed while the app was running, which is the ordinary first
@@ -141,9 +154,111 @@ final class Plugins {
         if (stale) {
             cards.add(new Card(Kind.RESTART, null, null,
                     context.getString(R.string.plugin_restart_title),
-                    context.getString(R.string.plugin_restart), null));
+                    context.getString(R.string.plugin_restart), null, null));
         }
         return cards;
+    }
+
+    // ---- the build of an add-on this build of the app can use ---------------
+
+    /**
+     * Where a build of an add-on for this build of the app can be got, or null
+     * where the question has no answer that can be trusted.
+     *
+     * <p>An add-on names a URL with a version code missing from it and says what
+     * the APK there is signed with ({@link Backends#PLUGIN_UPDATE_URL}); the
+     * version code filled in is this app's, since what is wanted is the build
+     * that goes with what is installed rather than the newest of anything.
+     *
+     * <p>The add-on being <em>able</em> to say this is not the app believing it.
+     * What it says the download is signed with has to be the key <em>this
+     * app</em> is signed with, which is the only version of that question worth
+     * asking: a file signed with anything else cannot install over the add-on it
+     * is meant to replace, so sending somebody to it spends a download to arrive
+     * at the installer's flattest refusal. The add-on's own key is not asked
+     * about, being already answered — a package signed differently from the app
+     * is not in the list at all ({@link Backends#installedPlugins}).
+     *
+     * <p>Nothing here makes the download safe. That is the installer's job and
+     * it does it with the same key, on the file itself rather than on a claim
+     * about it. What this does is keep the app from offering a link it has no
+     * reason to expect a usable file at the end of — which, for a build signed
+     * by somebody who did not sign what the add-on points at, is every link an
+     * add-on could name.
+     *
+     * <p>The other file the installer would refuse is an older one, so an add-on
+     * ahead of the app is offered nothing: what is behind there is the app, and
+     * it is not this card's to fix. That is the uncommon direction — an add-on
+     * is a file somebody fetched once and the app updates itself — and it is the
+     * one where the phone has a working pair as soon as the app catches up.
+     */
+    private static String updateUrl(Context context, String packageName) {
+        final PackageManager pm = context.getPackageManager();
+        final String template;
+        final long version;
+        try {
+            final Bundle meta = pm.getApplicationInfo(packageName,
+                    PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA)).metaData;
+            if (meta == null) {
+                return null;
+            }
+            if (!signedWith(context, meta.getString(Backends.PLUGIN_UPDATE_SIGNATURE))) {
+                return null;
+            }
+            template = meta.getString(Backends.PLUGIN_UPDATE_URL);
+            version = pm.getPackageInfo(context.getPackageName(),
+                    PackageManager.PackageInfoFlags.of(0)).getLongVersionCode();
+            if (pm.getPackageInfo(packageName,
+                    PackageManager.PackageInfoFlags.of(0)).getLongVersionCode() > version) {
+                return null;
+            }
+        } catch (PackageManager.NameNotFoundException e) {
+            return null; // uninstalled while the home screen was working it out
+        }
+        if (template == null || !template.startsWith("https://")
+                || !template.contains(Backends.PLUGIN_UPDATE_VERSION)) {
+            return null;
+        }
+        return template.replace(Backends.PLUGIN_UPDATE_VERSION, Long.toString(version));
+    }
+
+    /**
+     * Whether this app is signed with the certificate whose SHA-256 is written
+     * out, as {@code apksigner verify --print-certs} prints it. False for a
+     * fingerprint that is missing or is not one.
+     */
+    private static boolean signedWith(Context context, String sha256) {
+        if (sha256 == null || sha256.isEmpty()) {
+            return false;
+        }
+        final SigningInfo signing;
+        try {
+            signing = context.getPackageManager().getPackageInfo(context.getPackageName(),
+                    PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES))
+                    .signingInfo;
+        } catch (PackageManager.NameNotFoundException e) {
+            throw new IllegalStateException(e); // we are installed
+        }
+        // What the APK's contents are signed with rather than anything a lineage
+        // remembers, since it is a file signed the same way that has to come out
+        // of the download; and one signer, because a fingerprint is an answer to
+        // "who signed this" and a set of them is not.
+        if (signing == null || signing.hasMultipleSigners()) {
+            return false;
+        }
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e); // every Android has it
+        }
+        for (Signature s : signing.getApkContentsSigners()) {
+            if (sha256.equalsIgnoreCase(
+                    HexFormat.of().formatHex(digest.digest(s.toByteArray())))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -267,6 +382,24 @@ final class Plugins {
         // screen instead of leaving a session to fail.
         Backends.setupChanged();
         return gone;
+    }
+
+    /**
+     * Hand the download to whatever opens links, and have nothing more to do
+     * with it: the browser fetches the APK, the system's own installer asks
+     * about it, and the app neither holds the file nor asks to install anything.
+     *
+     * <p>Caught rather than guarded, as the source link in the settings is: a
+     * phone with nothing to open an https link with cannot be asked about one
+     * either, since resolving it needs a package-visibility declaration to get
+     * an answer at all.
+     */
+    static void update(Activity host, String url) {
+        try {
+            host.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (ActivityNotFoundException e) {
+            Log.w(TAG, "no browser for " + url, e);
+        }
     }
 
     /** The system's own confirmation, which is why this needs no permission. */

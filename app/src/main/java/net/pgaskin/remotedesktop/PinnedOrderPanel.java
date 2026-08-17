@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -63,6 +64,9 @@ final class PinnedOrderPanel {
         return panel;
     }
 
+    // A sheet's root has no parent to be measured against: the dialog's window
+    // supplies the layout parameters and the ones in the file are not read.
+    @SuppressLint("InflateParams")
     private PinnedOrderPanel(Activity activity, Runnable onChanged) {
         this.activity = activity;
         this.onChanged = onChanged;
@@ -150,6 +154,10 @@ final class PinnedOrderPanel {
 
     private final class Adapter extends RecyclerView.Adapter<Holder> {
 
+        // The handle below is not a click and must not become one: what it does
+        // is hand the gesture to the touch helper. A finger that cannot drag gets
+        // the two accessibility actions instead.
+        @SuppressLint("ClickableViewAccessibility")
         @NonNull
         @Override
         public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {

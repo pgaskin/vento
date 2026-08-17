@@ -90,6 +90,37 @@ public final class Config {
     public float axisLockEnterRatio = 0.30f; // smoothed minor/major below this locks
     public float axisLockExitRatio = 0.55f;  // ... and above this releases: exit > enter
 
+    // ---- hover assist (ours; §3.20) ---------------------------------------
+
+    /**
+     * Lose a little distance just after the far end changes the cursor's shape,
+     * so that whatever it changed shape over is easier to stop on. The third
+     * precision mechanism beside the adaptive gate and the axis lock, and the
+     * only one that reacts to what the far end says rather than to what the
+     * finger does.
+     */
+    public boolean hoverAssistEnabled;
+    public float hoverAssistSpanPx;         // finger travel a detent lasts
+    public float hoverAssistGain = 0.25f;   // the factor at the catch; 1 is no assist
+    /**
+     * The four tests that keep an animated cursor from making the whole desktop
+     * feel like treacle, and a fifth that keeps a far end whose news arrives too
+     * late from decorating open desktop with detents.
+     */
+    public float hoverAssistMaxSpeedPx;     // above this the finger is not aiming at anything
+    public long hoverAssistIdleMs = 120;    // a change with nothing moving was not caused by us
+    public float hoverAssistMinTravelPx;    // two shapes this close together are frames
+    public int hoverAssistBurstCount = 4;
+    public long hoverAssistBurstMs = 600;
+    public long hoverAssistLockoutMs = 2000;
+    /**
+     * Measured lateness above which nothing arms, ms. Every far end measured
+     * sits either side of this by a factor of two: ten to thirty milliseconds
+     * where the server is told its cursor changed, a hundred and forty where it
+     * polls its own screen.
+     */
+    public long hoverAssistMaxLagMs = 60;
+
     /**
      * Send a finger's motion unshaped where the far end owns the cursor: no
      * acceleration, no adaptive gate, no axis lock, and no glide after a flick.
@@ -139,6 +170,17 @@ public final class Config {
     // ---- extension keyboard (ui.ExtensionKeyboard / ui.InfoBar) -----------
 
     public float keyboardKeyHeightPx;   // extension_keyboard_height, 46 dp
+    /**
+     * One line of a key list that has more than one, which is shorter than a
+     * row on its own: 46 dp twice over is most of what is left of a phone, and
+     * a line with another above or below it is aimed at against its neighbour
+     * rather than against the picture, so it can lose a little padding and still
+     * be hit. 40 dp is where it stops — the size of the overlay's dismiss
+     * button, which is the smallest target this screen already asks a finger
+     * for, and a key that is hard to hit sends the wrong keysym to somebody
+     * else's machine with no undo at that end.
+     */
+    public float keyboardKeyHeightMultiPx;
     public float keyboardInfoHeightPx;  // the info bar above the keys, 30 dp
     public float keyboardKeyPadPx;      // key_horizontal_margin
     public float keyboardKeyPadWidePx;  // key_horizontal_margin_wide
@@ -174,6 +216,19 @@ public final class Config {
      * never has desktop showing through it.
      */
     public boolean keyboardInfoSolid = false;
+
+    // ---- the toolbar (ours; the original's is a floating panel) -------------
+
+    /**
+     * A square button, and the grip under the column of them. Four buttons and a
+     * grip come to exactly 200 dp, which is what the platform will let an app
+     * take back from the system's own edge gesture
+     * ({@code setSystemGestureExclusionRects}) — so the size is that limit
+     * divided up rather than Material's 48 dp.
+     */
+    public float toolbarButtonPx;
+    public float toolbarGripPx;
+    public float toolbarDragSlopPx;   // movement that turns a button press into a drag
 
     // ---- momentum ----------------------------------------------------------
 
@@ -253,12 +308,16 @@ public final class Config {
         this.accelFullSpeedPx = dp(0.60f);
         this.axisLockMaxSpeedPx = dp(0.25f);
         this.axisLockTurnSpanPx = dp(36);
+        this.hoverAssistMaxSpeedPx = dp(0.35f); // above the axis lock's band, and a little over
+        this.hoverAssistSpanPx = dp(12);        // 4.5 dp of it is withheld
+        this.hoverAssistMinTravelPx = dp(6);
         this.overlayStripWidthPx = dp(60);
         this.overlayRowHeightPx = dp(72);
         this.overlayDismissPx = dp(40);
         this.overlayDismissMarginPx = dp(17.5f);
         this.overlayMiddleMinPx = dp(100);
         this.keyboardKeyHeightPx = dp(46);
+        this.keyboardKeyHeightMultiPx = dp(40);
         this.keyboardInfoHeightPx = dp(30);
         this.keyboardKeyPadPx = dp(8);
         this.keyboardKeyPadWidePx = dp(12);
@@ -266,6 +325,9 @@ public final class Config {
         this.keyboardIconWidthPx = dp(18);
         this.keyboardMinKeyWidthPx = dp(32);
         this.keyboardScrollSlopPx = dp(8);
+        this.toolbarButtonPx = dp(44);
+        this.toolbarGripPx = dp(24);
+        this.toolbarDragSlopPx = dp(8);
         this.keyboardFlingMinPx = dp(0.3f);
         this.keyboardFlingStopPx = dp(0.02f);
     }
@@ -321,6 +383,7 @@ public final class Config {
         overlayWheelTicksPerClick = o.overlayWheelTicksPerClick;
         overlayWheelStartDelayTicks = o.overlayWheelStartDelayTicks;
         keyboardKeyHeightPx = o.keyboardKeyHeightPx;
+        keyboardKeyHeightMultiPx = o.keyboardKeyHeightMultiPx;
         keyboardInfoHeightPx = o.keyboardInfoHeightPx;
         keyboardKeyPadPx = o.keyboardKeyPadPx;
         keyboardKeyPadWidePx = o.keyboardKeyPadWidePx;
@@ -328,6 +391,9 @@ public final class Config {
         keyboardIconWidthPx = o.keyboardIconWidthPx;
         keyboardMinKeyWidthPx = o.keyboardMinKeyWidthPx;
         keyboardScrollSlopPx = o.keyboardScrollSlopPx;
+        toolbarButtonPx = o.toolbarButtonPx;
+        toolbarGripPx = o.toolbarGripPx;
+        toolbarDragSlopPx = o.toolbarDragSlopPx;
         keyboardFlingTickMs = o.keyboardFlingTickMs;
         keyboardFlingDecay = o.keyboardFlingDecay;
         keyboardFlingMinPx = o.keyboardFlingMinPx;
@@ -347,6 +413,16 @@ public final class Config {
         inertiaStopSpeed = o.inertiaStopSpeed;
         inertiaCancelOnDown = o.inertiaCancelOnDown;
         inertiaResetOnDown = o.inertiaResetOnDown;
+        hoverAssistEnabled = o.hoverAssistEnabled;
+        hoverAssistSpanPx = o.hoverAssistSpanPx;
+        hoverAssistGain = o.hoverAssistGain;
+        hoverAssistMaxSpeedPx = o.hoverAssistMaxSpeedPx;
+        hoverAssistIdleMs = o.hoverAssistIdleMs;
+        hoverAssistMinTravelPx = o.hoverAssistMinTravelPx;
+        hoverAssistBurstCount = o.hoverAssistBurstCount;
+        hoverAssistBurstMs = o.hoverAssistBurstMs;
+        hoverAssistLockoutMs = o.hoverAssistLockoutMs;
+        hoverAssistMaxLagMs = o.hoverAssistMaxLagMs;
         recentreCursorOnZoom = o.recentreCursorOnZoom;
         coalescePointerEvents = o.coalescePointerEvents;
         dedupePointerEvents = o.dedupePointerEvents;
@@ -385,6 +461,7 @@ public final class Config {
         c.accelDrainHistory = true; // still the original curve; toggle separately
         c.accelAdaptive = true;
         c.axisLockEnabled = true;
+        c.hoverAssistEnabled = true;
         c.accelResetOnDown = true;
         c.inertiaCancelOnDown = true;
         c.inertiaResetOnDown = true;

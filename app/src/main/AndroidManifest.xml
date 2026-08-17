@@ -55,6 +55,11 @@
         </intent>
     </queries>
 
+    <!--
+        Mirroring is switched on because every layout here is written in start
+        and end and none in left and right, so it is what they already describe.
+        The session screen is unaffected: a desktop is drawn, not laid out.
+    -->
     <application
         android:name=".RemoteDesktopApp"
         android:dataExtractionRules="@xml/backup_rules"
@@ -64,6 +69,7 @@
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"
+        android:supportsRtl="true"
         android:theme="@style/Theme.RemoteDesktop">
 
         <!-- The saved connections, and the way in to everything else. -->

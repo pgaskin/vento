@@ -24,9 +24,16 @@ android {
         externalNativeBuild {
             cmake {
                 targets 'remotedesktop_realvnc'
+                // scripts/check-warnings.sh, and nothing in the path of building
+                // the app: see backends/cmake/warnings.cmake.
+                if (project.hasProperty('strictWarnings')) {
+                    arguments '-DSTRICT_WARNINGS=ON'
+                }
             }
         }
         ndk {
+            // x86_64 is in that list; lint reads the literal and not the value.
+            //noinspection ChromeOsAbiSupport
             abiFilters project(':backends').nativeAbis as String[]
         }
     }

@@ -76,8 +76,16 @@
                 android:text="@string/plugin_uninstall"
                 android:textColor="?attr/colorOnSecondaryContainer" />
 
-            <!-- The last two are the ones that are not getting rid of it, and
-                 no card has both. -->
+            <!-- The last three are the ones that are not getting rid of it, and
+                 no card has two of them. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/update"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/plugin_update"
+                android:textColor="?attr/colorOnSecondaryContainer" />
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/restart"
                 style="@style/Widget.Material3.Button.TextButton"

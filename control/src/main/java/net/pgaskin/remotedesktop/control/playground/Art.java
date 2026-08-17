@@ -10,6 +10,7 @@ import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RadialGradient;
+import android.graphics.RectF;
 import android.graphics.Shader;
 
 /**
@@ -102,6 +103,50 @@ public final class Art {
         p.setColor(Color.WHITE);
         c.drawPath(path, p);
         return new Cursor(bmp, 0, 0, "ARROW");
+    }
+
+    /** The link hand, hotspot at the fingertip — what a page changes to. */
+    public static Cursor handCursor() {
+        final int w = 22, h = 28;
+        final Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        final Canvas c = new Canvas(bmp);
+        // Six rounded boxes unioned: the index finger, three curled ones, the
+        // fist and a thumb bulging out to the left of it. Drawn to the same
+        // proportions as the desktop pointer it stands in for, since a hand
+        // that is not that shape reads as a blob at this size.
+        final float[][] parts = {
+                {6.5f, 2.5f, 10.5f, 16f, 2.0f},    // index
+                {10.2f, 9f, 13.6f, 16f, 1.7f},
+                {13.3f, 10.2f, 16.6f, 16f, 1.7f},
+                {16.3f, 11.5f, 19.3f, 17f, 1.5f},  // little
+                {4.8f, 14f, 19.3f, 25.5f, 4.6f},   // fist
+                {1.8f, 16.5f, 7.0f, 23.0f, 2.6f},  // thumb
+        };
+        final Path path = new Path();
+        for (float[] r : parts) {
+            path.addRoundRect(new RectF(r[0], r[1], r[2], r[3]), r[4], r[4], Path.Direction.CW);
+        }
+
+        final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        // Outline first and fill over it, so the white is a halo outside the
+        // hand rather than a line through every box that made it.
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(1.6f);
+        p.setStrokeJoin(Paint.Join.ROUND);
+        p.setColor(Color.WHITE);
+        c.drawPath(path, p);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(Color.BLACK);
+        c.drawPath(path, p);
+
+        // ... and then the gaps between the fingers, which the fill covered.
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(0.9f);
+        p.setColor(Color.WHITE);
+        c.drawLine(10.35f, 10.2f, 10.35f, 15f, p);
+        c.drawLine(13.45f, 11.4f, 13.45f, 15f, p);
+        c.drawLine(16.45f, 12.7f, 16.45f, 15f, p);
+        return new Cursor(bmp, 8, 1, "HAND");
     }
 
     /** Crosshair, hotspot in the middle — the interesting case for hotspots. */

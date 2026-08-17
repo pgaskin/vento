@@ -3,7 +3,8 @@
     SPDX-FileCopyrightText: 2026 Patrick Gaskin
     SPDX-License-Identifier: GPL-3.0-or-later
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
         Every add-on acquires something over the network, since the whole reason
@@ -35,7 +36,8 @@
         -->
         <service
             android:name=".PluginService"
-            android:exported="true">
+            android:exported="true"
+            tools:ignore="ExportedService">
             <intent-filter>
                 <action android:name="net.pgaskin.remotedesktop.action.BACKEND_PLUGIN" />
             </intent-filter>

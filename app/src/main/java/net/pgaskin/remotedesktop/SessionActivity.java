@@ -10,6 +10,7 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.checkbox.MaterialCheckBox;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.radiobutton.MaterialRadioButton;
 import com.google.android.material.loadingindicator.LoadingIndicator;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
@@ -30,6 +31,7 @@ import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.RadioGroup;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -308,6 +310,9 @@ public final class SessionActivity extends Activity
             return;
         }
         view.setHudVisible(hudWanted());
+        // App preferences rather than the input stack's, so above the comparison
+        // that follows: that one is about one file, and this is in another.
+        view.applyKeyList();
         final Map<String, ?> stored = InputSettings.prefs(this).getAll();
         if (stored.equals(inputPrefs)) {
             return;
@@ -1032,16 +1037,36 @@ public final class SessionActivity extends Activity
         if (view == null || !AppSettings.regionHints(this)) {
             return;
         }
-        view.setRegionHints(Map.of(
-                TapRegions.DISCONNECT, getString(R.string.hints_region_disconnect),
-                TapRegions.INFORMATION, getString(R.string.hints_region_information),
-                TapRegions.KEYBOARD, getString(R.string.hints_region_keyboard),
-                TapRegions.MOUSE, getString(R.string.hints_region_mouse)));
-
         final MaterialCheckBox never = checkBox(R.string.hints_dismiss);
         final LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dialogPadding(), dp(8), dialogPadding(), 0);
+
+        // The choice, previewed live behind the dialog as it is made: this is
+        // the one dialog in the app with no scrim, precisely so that the thing
+        // it is about stays visible, and a choice between two affordances is
+        // not answerable from two lines of prose.
+        final RadioGroup choices = new RadioGroup(this);
+        final String[] values = {AppSettings.CONTROLS_TOOLBAR, AppSettings.CONTROLS_REGIONS,
+                AppSettings.CONTROLS_BOTH};
+        final int[] labels = {R.string.controls_toolbar, R.string.controls_regions,
+                R.string.controls_both};
+        final String chosen = AppSettings.controls(this);
+        for (int i = 0; i < values.length; i++) {
+            final MaterialRadioButton b = new MaterialRadioButton(
+                    new ContextThemeWrapper(this, R.style.ThemeOverlay_RemoteDesktop_Dialog));
+            b.setId(i + 1);
+            b.setText(labels[i]);
+            b.setChecked(values[i].equals(chosen));
+            choices.addView(b);
+        }
+        choices.setOnCheckedChangeListener((g, id) -> {
+            AppSettings.setControls(this, values[id - 1]);
+            previewControls();
+        });
+        box.addView(choices);
         box.addView(never);
+        previewControls();
 
         final AlertDialog dialog = new MaterialAlertDialogBuilder(this,
                 R.style.ThemeOverlay_RemoteDesktop_Dialog)
@@ -1059,6 +1084,9 @@ public final class SessionActivity extends Activity
         // installed here would be thrown away, which is what left the four bands
         // lit for the rest of the session and "Do not show this again" doing
         // nothing at all.
+        // The choice is saved as it is made, whether or not the box is ticked:
+        // they are different questions, and the dialog has always had a checkbox
+        // for one of them only.
         track(dialog, d -> {
             if (never.isChecked()) {
                 AppSettings.setRegionHints(this, false);
@@ -1068,6 +1096,22 @@ public final class SessionActivity extends Activity
             }
         });
         dialog.show();
+    }
+
+    /**
+     * Show what the current choice means, with the dialog still up: the toolbar
+     * appears at its remembered position, and the bands light or go out.
+     */
+    private void previewControls() {
+        if (view == null) {
+            return;
+        }
+        view.applyControls();
+        view.setRegionHints(AppSettings.regionsShown(this) ? Map.of(
+                TapRegions.DISCONNECT, getString(R.string.hints_region_disconnect),
+                TapRegions.INFORMATION, getString(R.string.hints_region_information),
+                TapRegions.KEYBOARD, getString(R.string.hints_region_keyboard),
+                TapRegions.MOUSE, getString(R.string.hints_region_mouse)) : null);
     }
 
     @Override
