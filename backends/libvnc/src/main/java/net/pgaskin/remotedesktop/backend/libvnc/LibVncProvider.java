@@ -100,7 +100,7 @@ public final class LibVncProvider implements BackendProvider {
                     "Do not ask the server to disconnect other clients.",
                     true, Scope.CONNECTION, false),
             BackendOption.bool(ANONYMOUS_TLS, "Unverified encryption",
-                    "Ask before using encryption with no certificate to check the server against.",
+                    "Ask before using encryption without a peer certificate.",
                     true, Scope.CONNECTION, false),
 
             // ---- per backend -------------------------------------------------

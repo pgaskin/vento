@@ -736,12 +736,11 @@ static rfbBool onConfirmAnonymousTLS(rfbClient *cl) {
     Session *s = sessionOf(cl);
     LOGI("anonymous VeNCrypt sub-type %u", (unsigned) cl->subAuthScheme);
     if (!s->anonymousTls) {
-        rfbClientErr("This server offers encryption with nothing to identify it by, "
-                     "and this connection does not allow that.\n");
+        rfbClientErr("This server only offers encryption without a peer certificate, which is not enabled for this connection.\n");
         return FALSE;
     }
     return askIdentity(s, mUnverified,
-                       "This server offers encryption with nothing to identify it by.")
+                       "This server offers encryption without a peer certificate.")
                    ? TRUE
                    : FALSE;
 }

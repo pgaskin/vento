@@ -69,27 +69,27 @@ public final class RustDeskProvider implements BackendProvider {
             BackendOption.choice(CONNECT_BY, "Connect by",
                     null, BY_ID, Scope.CONNECTION, false,
                     new Choice(BY_ID, "ID",
-                            "Ask a rendezvous server for the machine with that ID. Encrypted.",
+                            "Connect by ID via a rendezvous server. Encrypted.",
                             null),
                     new Choice(BY_ADDRESS, "Address",
-                            "Dial the machine directly, which it has to have turned on. Not encrypted.",
+                            "Connect to a machine by IP. Not encrypted.",
                             null)),
             BackendOption.text(RENDEZVOUS, "Rendezvous server",
-                    "Where to ask for the machine. Leave empty for the public network.",
+                    "Leave empty for the default public rendezvous server.",
                     "", Scope.LAYERED, false).when(CONNECT_BY, BY_ID),
             BackendOption.text(RENDEZVOUS_KEY, "Rendezvous server key",
-                    "The server's public key, which is what the machine's own key is checked against.",
+                    "Public key for the rendezvous server.",
                     "", Scope.LAYERED, false).when(CONNECT_BY, BY_ID),
             // Both of these are live in the way RFB's encoding is: their option
             // message is read on the next frame the peer encodes.
             BackendOption.choice(QUALITY, "Quality",
-                    "Image quality, which the remote end turns into a bitrate.",
+                    "Control the video bitrate.",
                     "balanced", Scope.LAYERED, true,
                     new Choice("low", "Low"),
                     new Choice("balanced", "Balanced"),
                     new Choice("best", "Best")),
             BackendOption.choice(FPS, "Frame rate",
-                    "Frames per second, up to what the remote end can capture.",
+                    "Limits the maximum FPS.",
                     "auto", Scope.LAYERED, true,
                     new Choice("auto", "Automatic"),
                     new Choice("10", "10"),
@@ -100,7 +100,7 @@ public final class RustDeskProvider implements BackendProvider {
             // end answers a codec it is not already using by building an
             // encoder and starting again with a key frame.
             BackendOption.choice(CODEC, "Codec",
-                    "Which codec to ask the remote end for. It sends what it can encode.",
+                    "Preferred codec, if supported by the server.",
                     "auto", Scope.LAYERED, true,
                     new Choice("auto", "Automatic"),
                     new Choice("vp9", "VP9"),
@@ -132,7 +132,7 @@ public final class RustDeskProvider implements BackendProvider {
 
     @Override
     public String description() {
-        return "RustDesk implementation, reaching a machine by ID through a rendezvous server, or by address where the remote end has direct access turned on. The picture is video rather than screen updates.";
+        return "RustDesk backend supporting direct or rendezvous connections. Uses hardware-accelerated video codecs.";
     }
 
     /**

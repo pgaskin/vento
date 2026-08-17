@@ -101,7 +101,7 @@ public final class RfbProvider implements BackendProvider {
 
     @Override
     public String description() {
-        return "Rust RFB implementation. Does not support Tight encoding, and typically uses more bandwith and performs worse on slow networks. Requires a certificate to use encryption. Allows remote pointer position updates, where supported by the server.";
+        return "Rust RFB implementation. Does not support Tight encoding, and typically uses more bandwith and performs worse on slow networks. Allows remote pointer position updates, where supported by the server.";
     }
 
     /** First in a picker: it is ours, and it is the one that will still be here. */

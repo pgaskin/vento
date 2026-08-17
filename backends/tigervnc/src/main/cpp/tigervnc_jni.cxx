@@ -1177,10 +1177,9 @@ bool Conn::showMsgBox(rfb::MsgBoxFlags /*flags*/, const char *title, const char 
 void Conn::confirmAnonymousTLS() {
     if (!s->anonymousTls()) {
         throw std::runtime_error(
-                "This server offers encryption with nothing to identify it by, "
-                "and this connection does not allow that.");
+                "This server only offers encryption without a peer certificate, which is not enabled for this connection.");
     }
-    if (!s->askUnverified("This server offers encryption with nothing to identify it by.")) {
+    if (!s->askUnverified("This server offers encryption without a peer certificate.")) {
         throw rfb::auth_cancelled();
     }
 }

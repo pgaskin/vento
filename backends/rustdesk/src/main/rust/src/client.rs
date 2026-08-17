@@ -624,7 +624,7 @@ impl Client {
         // One: the server's introduction, which says this id belongs to this
         // long-term key.
         let vouched = if signed_id_pk.is_empty() {
-            Err("The rendezvous server vouched for no key.".to_string())
+            Err("The rendezvous server did not vouch for a key.".to_string())
         } else {
             crypto::open_id_pk(signed_id_pk, &server_key, peer_id)
                 .map_err(|e| format!("The rendezvous server's introduction did not check out: {e}."))

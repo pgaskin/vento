@@ -45,20 +45,20 @@ public final class SpiceProvider implements BackendProvider {
             BackendOption.choice(SECURITY, "Encryption",
                     null, PLAIN, Scope.CONNECTION, false,
                     new Choice(PLAIN, "None",
-                            "The port QEMU serves without TLS. The password is protected against nothing that is listening.",
+                            "Plaintext.",
                             null),
                     new Choice(TLS, "TLS",
-                            "The separate port the hypervisor serves TLS on, with the certificate remembered on first sight.",
+                            "Encrypted.",
                             null)),
             // Live in the way RFB's encoding is: the message is read on the next
             // image the server encodes. Automatic is what a hypervisor does
             // without being asked, which for QEMU is GLZ where it helps.
             BackendOption.choice(COMPRESSION, "Image compression",
-                    "What to ask the remote end to compress the picture with.",
+                    "Preferred image compression method.",
                     "", Scope.LAYERED, true,
                     new Choice("", "Automatic"),
-                    new Choice("auto-glz", "GLZ where it helps"),
-                    new Choice("auto-lz", "LZ where it helps"),
+                    new Choice("auto-glz", "GLZ, if better"),
+                    new Choice("auto-lz", "LZ, if better"),
                     new Choice("quic", "QUIC"),
                     new Choice("glz", "GLZ"),
                     new Choice("lz", "LZ"),
@@ -89,7 +89,7 @@ public final class SpiceProvider implements BackendProvider {
      */
     @Override
     public String description() {
-        return "The console of a virtual machine, as QEMU, libvirt and Proxmox serve it. It draws what a monitor plugged into that machine would show, so it works before anything has booted.";
+        return "Usually used for QEMU/libvirt/Proxmox virtual machines. Supports clipboard and screen resizing if the guest agent is running.";
     }
 
     /** After the RDP clients and before the one that arrives in an add-on. */
