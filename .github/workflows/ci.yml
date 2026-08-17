@@ -70,4 +70,9 @@ jobs:
         with:
           name: realvnc-debug
           path: plugins/realvnc/build/outputs/apk/debug/realvnc-debug.apk
+      - run: ./gradlew :plugins:rustdesk:assembleDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rustdesk-debug
+          path: plugins/rustdesk/build/outputs/apk/debug/rustdesk-debug.apk
       #- run: ./scripts/check-jni-symbols.sh

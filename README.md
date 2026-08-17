@@ -12,9 +12,10 @@ It has the best touchpad-style controls of any remote desktop app I am currently
 - Multi-window support.
 - Physical keyboard/mouse support.
 - Workarounds for various Android IME bugs.
-- Hardware-accelerated H.264 where supported (FreeRDP, TigerVNC).
-- Multiple client backends for VNC (TigerVNC, LibVNC, Rust) and RDP (IronRDP, FreeRDP).
+- Hardware-accelerated video where supported (H.264 with FreeRDP and TigerVNC, H.264/H.265/VP8/VP9/AV1 with RustDesk).
+- Multiple client backends for VNC (TigerVNC, LibVNC, Rust) and RDP (IronRDP, FreeRDP), plus SPICE.
 - Optional RealVNC backend (separate APK, fetches the library at runtime).
+- Optional RustDesk backend (separate APK), reaching a machine by ID through a rendezvous server or by address.
 
 [**`Download`**](https://github.com/pgaskin/vento/releases/latest) [**`Website`**](https://pgaskin.net/vento/)
 
@@ -62,11 +63,14 @@ git submodule update --init
 # build apk
 ./gradlew :app:assembleDebug
 
-# build the non-free realvnc backend add-on
-# note: it must be signed with the same key
-# note: it must be the same version as the app (the backend API isn't stable)
+# build the non-free realvnc backend plugin
 ./gradlew :plugins:realvnc:assembleDebug
+
+# build the rustdesk backend plugin
+./gradlew :plugins:rustdesk:assembleDebug
 ```
+
+Backend plugins must be signed with the same key (enforced since the main app loads code from it) and built from the same version (the API isn't stable).
 
 When updating the third_party dependencies, you'll need to update the unpatched gitlink, regenerate the patches and generated code, and commit the result.
 
@@ -100,6 +104,7 @@ third_party/openssl/apps/
 third_party/openssl/doc/
 third_party/openssl/test/
 third_party/pixman/demos/
+third_party/ryll/shakenfist-spice-compression/tests/
 third_party/tigervnc/java/
 third_party/tigervnc/media/
 third_party/tigervnc/tests/

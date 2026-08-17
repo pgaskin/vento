@@ -415,15 +415,16 @@
           <div class="feature">
             <h3>Multiple backends</h3>
             <p>
-              Multiple open-source libraries for VNC and RDP are included. Each
-              connection can use a different one.
+              Multiple open-source libraries for VNC, RDP and SPICE are
+              included. Each connection can use a different one.
             </p>
           </div>
           <div class="feature">
             <h3>Hardware acceleration</h3>
             <p>
               H.264 is decoded by the device where the server supports it, with
-              the FreeRDP and TigerVNC client backends.
+              the FreeRDP and TigerVNC client backends. RustDesk also supports
+              H.265, VP8, VP9 and AV1.
             </p>
           </div>
           <div class="feature">
@@ -535,12 +536,26 @@
             </p>
           </div>
           <div class="backend">
+            <h3>SPICE<span class="tag">SPICE</span></h3>
+            <p>
+              Usually used for QEMU/libvirt/Proxmox virtual machines. Supports
+              clipboard and screen resizing if the guest agent is running.
+            </p>
+          </div>
+          <div class="backend">
             <h3>RealVNC<span class="tag">VNC</span></h3>
             <p>
               RealVNC's proprietary client implementation. This is the only one
               which supports UDP, ZRLE2, and RealVNC's proprietary
               authentication/encryption. It performs significantly better than
               the others when connecting to a RealVNC server.
+            </p>
+          </div>
+          <div class="backend">
+            <h3>RustDesk<span class="tag">RUSTDESK</span></h3>
+            <p>
+              RustDesk backend supporting direct or rendezvous connections. Uses
+              hardware-accelerated video codecs
             </p>
           </div>
         </div>
@@ -553,6 +568,13 @@
             provide a RealVNC APK (e.g., from APKMirror) to use it.
           </p>
           <a class="btn btn-ghost" href="https://github.com/pgaskin/vento/releases/latest/download/vento-rvnc.apk">Download</a>
+        </div>
+        <div class="addon">
+          <h3>RustDesk plugin</h3>
+          <p>
+            The RustDesk backend is also available as separate APK.
+          </p>
+          <a class="btn btn-ghost" href="https://github.com/pgaskin/vento/releases/latest/download/vento-rustdesk.apk">Download</a>
         </div>
       </div>
     </section>

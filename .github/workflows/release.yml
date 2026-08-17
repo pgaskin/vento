@@ -37,9 +37,11 @@ jobs:
             if (versionName !== versionCode) fail(`versionName (${versionName}) does not match versionCode (${versionCode})`)
             if (tag !== `v${versionName}`) fail(`tag (${tag}) does not match versionName (${versionName})`)
             if (!fs.existsSync(`metadata/en-US/changelogs/${versionCode}.txt`)) fail(`missing changelog for versionCode ${versionCode}`)
-            const plugin = fs.readFileSync('plugins/realvnc/build.gradle', 'utf8')
-            const pluginCode = plugin.match(/^\s*versionCode\s+([0-9]+)/m)?.[1]
-            if (pluginCode !== versionCode) fail(`the add-on's versionCode (${pluginCode}) does not match the app's (${versionCode})`)
+            for (const plugin of ['realvnc', 'rustdesk']) {
+              const pluginGradle = fs.readFileSync(`plugins/${plugin}/build.gradle`, 'utf8')
+              const pluginCode = pluginGradle.match(/^\s*versionCode\s+([0-9]+)/m)?.[1]
+              if (pluginCode !== versionCode) fail(`the ${plugin} add-on's versionCode (${pluginCode}) does not match the app's (${versionCode})`)
+            }
             core.setOutput('name', versionName)
             core.setOutput('code', versionCode)
             core.setOutput('tag', tag)
@@ -57,7 +59,7 @@ jobs:
       - run: ./gradlew :backends:fetchCryptoSources
       - run: rustup toolchain install # install the toolchain pinned by rust-toolchain.toml
       - run: cargo install cargo-ndk@4.1.2
-      - run: ./gradlew :app:assembleRelease :plugins:realvnc:assembleRelease
+      - run: ./gradlew :app:assembleRelease :plugins:realvnc:assembleRelease :plugins:rustdesk:assembleRelease
 
       - name: Write keystore
         run: echo "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
@@ -68,7 +70,8 @@ jobs:
         run: |
           set -euo pipefail
           for spec in "app/build/outputs/apk/release/app-release-unsigned.apk Vento.apk" \
-                      "plugins/realvnc/build/outputs/apk/release/realvnc-release-unsigned.apk vento-rvnc.apk"; do
+                      "plugins/realvnc/build/outputs/apk/release/realvnc-release-unsigned.apk vento-rvnc.apk" \
+                      "plugins/rustdesk/build/outputs/apk/release/rustdesk-release-unsigned.apk vento-rustdesk.apk"; do
             set -- $spec
             $ANDROID_HOME/build-tools/36.0.0/apksigner sign --v1-signing-enabled false --alignment-preserved --ks "$KEYSTORE_PATH" --ks-pass env:KEYSTORE_PASSWORD --in "$1" --out "$2"
           done
@@ -80,6 +83,7 @@ jobs:
           set -euo pipefail
           $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs Vento.apk
           $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs vento-rvnc.apk
+          $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs vento-rustdesk.apk
 
       - name: Verify reproducible build
         # Rebuild from a copy at a different absolute path (a reproducible build
@@ -95,7 +99,7 @@ jobs:
             --exclude='.cxx/' \
             --exclude='.gradle/' \
             ./ "$rebuild/"
-          ( cd "$rebuild" && ./gradlew --no-daemon :app:assembleRelease :plugins:realvnc:assembleRelease )
+          ( cd "$rebuild" && ./gradlew --no-daemon :app:assembleRelease :plugins:realvnc:assembleRelease :plugins:rustdesk:assembleRelease )
           check() {
             # the two independent builds must be bit-for-bit identical
             go run scripts/check-reproducible.go "$1" "$rebuild/$1"
@@ -104,6 +108,7 @@ jobs:
           }
           check app/build/outputs/apk/release/app-release-unsigned.apk Vento.apk
           check plugins/realvnc/build/outputs/apk/release/realvnc-release-unsigned.apk vento-rvnc.apk
+          check plugins/rustdesk/build/outputs/apk/release/rustdesk-release-unsigned.apk vento-rustdesk.apk
 
       - name: Create release
         id: create-release
@@ -130,7 +135,7 @@ jobs:
         with:
           retries: 3
           script: |
-            for (const name of ['Vento.apk', 'vento-rvnc.apk']) {
+            for (const name of ['Vento.apk', 'vento-rvnc.apk', 'vento-rustdesk.apk']) {
               await github.rest.repos.uploadReleaseAsset({
                 owner: context.repo.owner,
                 repo: context.repo.repo,

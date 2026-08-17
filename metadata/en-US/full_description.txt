@@ -7,4 +7,4 @@ Fast, fluid VNC/RDP remote desktop client for Android with intuitive controls an
 * Physical keyboard/mouse support.
 * Workarounds for various Android IME bugs.
 * Hardware-accelerated H.264 where supported (FreeRDP, TigerVNC).
-* Multiple client backends for VNC (TigerVNC, LibVNC, Rust) and RDP (IronRDP, FreeRDP).
+* Multiple client backends for VNC (TigerVNC, LibVNC, Rust) and RDP (IronRDP, FreeRDP), plus SPICE.
