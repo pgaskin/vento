@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop.plugin;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -70,6 +71,7 @@ public abstract class SetupActivity extends Activity {
      * outlives a rotation, and a string looked up on a dead screen's context is
      * one of the ways that shows up much later.
      */
+    @SuppressLint("StaticFieldLeak") // the application's, as the name above says
     private static Context strings;
 
     /**
@@ -270,6 +272,7 @@ public abstract class SetupActivity extends Activity {
     private boolean nothingForThisDevice;
 
     /** The screen a finished route reports to, which is whichever is up. */
+    @SuppressLint("StaticFieldLeak") // cleared in onPause, which is what "is up" means
     private static SetupActivity onScreen;
 
     @Override

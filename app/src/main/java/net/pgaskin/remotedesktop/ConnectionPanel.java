@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.os.Handler;
 import android.os.Looper;
@@ -145,6 +146,9 @@ final class ConnectionPanel {
         return panel;
     }
 
+    // A sheet's root has no parent to be measured against: the dialog's window
+    // supplies the layout parameters and the ones in the file are not read.
+    @SuppressLint("InflateParams")
     private ConnectionPanel(Activity activity, Session session, String backendId, Host host) {
         this.activity = activity;
         this.session = session;

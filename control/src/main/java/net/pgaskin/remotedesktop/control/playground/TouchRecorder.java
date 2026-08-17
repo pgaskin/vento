@@ -18,6 +18,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 /**
  * Records raw touch streams to files, one per gesture, for replay in the JVM
@@ -146,7 +147,7 @@ public final class TouchRecorder implements TouchRouter.Tap {
         File out;
         int n = written;
         do {
-            out = new File(dir, String.format("%03d.touch", ++n));
+            out = new File(dir, String.format(Locale.ROOT, "%03d.touch", ++n));
         } while (out.exists());
 
         try (OutputStreamWriter os = new OutputStreamWriter(

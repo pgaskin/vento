@@ -8,6 +8,7 @@ if(NOT EXISTS "${THIRD_PARTY}/freerdp/CMakeLists.txt")
 endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/reproducible.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/warnings.cmake")
 
 # One shared library per protocol, as every other backend module does, so a
 # build that drops this protocol drops the whole of it. Everything below is
@@ -72,14 +73,23 @@ else()
     set(WITH_VERBOSE_WINPR_ASSERT OFF CACHE BOOL "" FORCE)
 endif()
 
-set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
+# Six libraries their configure looks for and warns about not finding, each one
+# behind an option this build has already answered or a feature a viewer has no
+# use for. The search is what is switched off rather than the warning: the answer
+# is then the same on a machine that happens to have them installed, which is
+# what the NDK toolchain's find-root rules only mostly guarantee.
+foreach(pkg PulseAudio Opus uriparser cJSON jansson json-c)
+    set(CMAKE_DISABLE_FIND_PACKAGE_${pkg} ON)
+endforeach()
+
 add_subdirectory("${THIRD_PARTY}/freerdp" freerdp EXCLUDE_FROM_ALL)
 
 add_library(remotedesktop_freerdp SHARED freerdp_jni.c)
+remotedesktop_warnings(remotedesktop_freerdp)
 # Their targets carry no usable include directories under add_subdirectory —
 # their own build puts them on the path globally — so the four are named here:
 # the tree's and, beside each, the one their configure wrote.
-target_include_directories(remotedesktop_freerdp PRIVATE
+target_include_directories(remotedesktop_freerdp SYSTEM PRIVATE
         "${THIRD_PARTY}/freerdp/include" "${CMAKE_CURRENT_BINARY_DIR}/freerdp/include"
         "${THIRD_PARTY}/freerdp/winpr/include" "${CMAKE_CURRENT_BINARY_DIR}/freerdp/winpr/include")
 target_link_libraries(remotedesktop_freerdp PRIVATE

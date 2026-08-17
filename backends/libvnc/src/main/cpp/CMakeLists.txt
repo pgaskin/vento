@@ -8,6 +8,7 @@ if(NOT EXISTS "${THIRD_PARTY}/libvncserver/CMakeLists.txt")
 endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/reproducible.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/warnings.cmake")
 
 # One shared library per protocol, as every other backend module does, so a
 # build that drops this protocol drops the whole of it. Everything below is
@@ -79,11 +80,11 @@ set(WITH_SYSTEMD OFF CACHE BOOL "" FORCE)
 set(WITH_LIBSSHTUNNEL OFF CACHE BOOL "" FORCE)
 set(WITH_WEBSOCKETS OFF CACHE BOOL "" FORCE)
 set(WITH_TIGHTVNC_FILETRANSFER OFF CACHE BOOL "" FORCE)
-set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
 add_subdirectory("${THIRD_PARTY}/libvncserver" libvncserver EXCLUDE_FROM_ALL)
 
 add_library(remotedesktop_libvnc SHARED libvnc_jni.c)
-target_include_directories(remotedesktop_libvnc PRIVATE
+remotedesktop_warnings(remotedesktop_libvnc)
+target_include_directories(remotedesktop_libvnc SYSTEM PRIVATE
         "${THIRD_PARTY}/libvncserver/include"
         "${CMAKE_CURRENT_BINARY_DIR}/libvncserver/include")
 target_link_libraries(remotedesktop_libvnc PRIVATE vncclient jnigraphics log)

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The same pair as the other add-on's: `allowBackup="false"` stops a cloud
+    backup and stops nothing else, and a device-to-device transfer is a separate
+    mechanism which without a list of its own carries the whole data directory.
+
+    This add-on acquires nothing, so what is excluded here is an empty directory
+    today. It is written down anyway, because the thing that would change that is
+    an add-on gaining something to keep, and the default it would gain it under
+    is "send it to the next phone".
+-->
+<data-extraction-rules>
+    <device-transfer>
+        <exclude domain="file" path="." />
+    </device-transfer>
+</data-extraction-rules>

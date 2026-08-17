@@ -378,7 +378,7 @@ enum CmdType {
 struct Cmd {
     CmdType type;
     int a = 0, b = 0, c = 0;
-    std::string text;
+    std::string text{}; // every post but the clipboard's leaves this out
 };
 
 class Session;

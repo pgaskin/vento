@@ -2,6 +2,7 @@
 
 package com.realvnc.vncviewer.jni;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.security.KeyChain;
 
@@ -34,6 +35,9 @@ import java.util.Set;
  */
 public final class AuthkeyStoreAndroid {
 
+    // An application context, which configure() takes care to be given: the core
+    // is a process-wide singleton and this is what it asks the key chain through.
+    @SuppressLint("StaticFieldLeak")
     private static Context context;
     private static Set<String> aliases = Set.of();
 

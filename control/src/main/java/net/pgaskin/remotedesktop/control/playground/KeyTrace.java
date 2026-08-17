@@ -21,6 +21,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
@@ -154,7 +155,7 @@ public final class KeyTrace implements KeySink {
         final int keyCode = ev.getKeyCode();
         final int meta = ev.getMetaState();
         final boolean down = ev.getAction() == KeyEvent.ACTION_DOWN;
-        return String.format("%-4s %-22s %4d %4d %08x %-8s %5s %3d %-7s %-7s %8s %-12s %s",
+        return String.format(Locale.ROOT, "%-4s %-22s %4d %4d %08x %-8s %5s %3d %-7s %-7s %8s %-12s %s",
                 down ? "down" : "up",
                 keyName(keyCode),
                 keyCode,
@@ -240,7 +241,7 @@ public final class KeyTrace implements KeySink {
             write("# device " + deviceId + " (gone or virtual)");
             return;
         }
-        write(String.format("# device %d \"%s\" vid=%04x pid=%04x keyboardType=%d sources=%08x",
+        write(String.format(Locale.ROOT, "# device %d \"%s\" vid=%04x pid=%04x keyboardType=%d sources=%08x",
                 deviceId, dev.getName(), dev.getVendorId(), dev.getProductId(),
                 dev.getKeyboardType(), dev.getSources()));
     }
@@ -254,7 +255,7 @@ public final class KeyTrace implements KeySink {
         File file;
         int n = 0;
         do {
-            file = new File(dir, String.format("%03d.keys", ++n));
+            file = new File(dir, String.format(Locale.ROOT, "%03d.keys", ++n));
         } while (file.exists());
         try {
             out = new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8);

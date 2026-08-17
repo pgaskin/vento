@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -157,6 +158,12 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
          * since that is what a run is — and {@link RowGroups} turns the answer
          * into a background and the gaps around it.
          */
+        // PreferenceGroupAdapter is androidx-internal, and subclassing it is the
+        // only way to see a row's neighbours: the adapter is what knows the
+        // flattened order, and onCreateAdapter is where a screen is allowed to
+        // supply its own. Their alternative is one background per row, which is
+        // the thing this exists to replace.
+        @SuppressLint("RestrictedApi")
         @Override
         protected RecyclerView.Adapter<PreferenceViewHolder> onCreateAdapter(
                 PreferenceScreen screen) {
@@ -726,9 +733,10 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                         }
                         out.write(doc.text().getBytes(StandardCharsets.UTF_8));
                     }
-                    return () -> said(Transfer.KIND_CONNECTIONS.equals(kind)
-                            ? R.string.transfer_exported_connections
-                            : R.string.transfer_exported_settings, doc.count());
+                    return () -> saidCount(Transfer.KIND_CONNECTIONS.equals(kind)
+                                    ? R.plurals.transfer_exported_connections
+                                    : R.plurals.transfer_exported_settings,
+                            doc.count(), doc.count());
                 } catch (Exception e) {
                     Log.w(TAG, "writing " + uri, e);
                     return () -> problem(R.string.transfer_write_failed);
@@ -772,10 +780,11 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             final View view = LayoutInflater.from(requireContext())
                     .inflate(R.layout.dialog_confirm, null);
             final CheckBox tick = view.findViewById(R.id.tick);
-            ((TextView) view.findViewById(R.id.message)).setText(getString(connections
-                            ? R.string.transfer_import_connections_message
-                            : R.string.transfer_import_settings_message,
-                    doc.count()));
+            ((TextView) view.findViewById(R.id.message)).setText(
+                    getResources().getQuantityString(connections
+                                    ? R.plurals.transfer_import_connections_message
+                                    : R.plurals.transfer_import_settings_message,
+                            doc.count(), doc.count()));
             tick.setText(connections
                     ? R.string.transfer_import_replace
                     : R.string.transfer_import_reset);
@@ -797,10 +806,10 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             io(() -> {
                 final Transfer.Result r = Transfer.apply(ctx, doc, replaceExisting);
                 return () -> {
-                    said(connections
-                                    ? R.string.transfer_imported_connections
-                                    : R.string.transfer_imported_settings,
-                            r.applied(), r.total());
+                    saidCount(connections
+                                    ? R.plurals.transfer_imported_connections
+                                    : R.plurals.transfer_imported_settings,
+                            r.total(), r.applied(), r.total());
                     if (!connections) {
                         // The screens behind this one are built from the values
                         // that have just moved, and so is every running
@@ -852,9 +861,10 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
         private void confirmDeleteConnections() {
             confirm(R.string.settings_delete_connections_confirm,
                     R.string.settings_delete_connections_summary,
-                    R.string.settings_delete, () -> said(
-                            R.string.settings_delete_connections_done,
-                            Connections.deleteAll(requireContext())));
+                    R.string.settings_delete, () -> {
+                        final int deleted = Connections.deleteAll(requireContext());
+                        saidCount(R.plurals.settings_delete_connections_done, deleted, deleted);
+                    });
         }
 
         private void confirmForgetHosts() {
@@ -888,8 +898,8 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             confirm(R.string.settings_delete_recordings_confirm,
                     R.string.settings_delete_recordings_summary,
                     R.string.settings_delete, () -> {
-                        said(R.string.settings_delete_recordings_done,
-                                Recordings.clear(requireContext()));
+                        final int deleted = Recordings.clear(requireContext());
+                        saidCount(R.plurals.settings_delete_recordings_done, deleted, deleted);
                         // As with the libraries: on a phone that is no longer a
                         // developer, this row was the last of them and has just
                         // finished being needed.
@@ -928,6 +938,12 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
         /** What an import or an export did, on the screen it was asked from. */
         private void said(int text, Object... args) {
             Snackbar.make(requireView(), getString(text, args), Snackbar.LENGTH_LONG).show();
+        }
+
+        /** The same, where the number in the sentence decides its wording. */
+        private void saidCount(int text, int count, Object... args) {
+            Snackbar.make(requireView(), getResources().getQuantityString(text, count, args),
+                    Snackbar.LENGTH_LONG).show();
         }
 
         /** Long enough to read and not going anywhere, which a toast is not. */

@@ -3,7 +3,8 @@
     SPDX-FileCopyrightText: 2026 Patrick Gaskin
     SPDX-License-Identifier: GPL-3.0-or-later
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
         Everything this add-on holds is somebody else's binary, acquired on the
@@ -12,8 +13,10 @@
         — which the hash refuses, so the only thing a backup could achieve here
         is the part that is not wanted.
     -->
+    <!-- No icon, because there is no launcher entry to put one on. -->
     <application
         android:label="@string/app_name"
+        tools:ignore="MissingApplicationIcon"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/backup_rules"
         android:theme="@style/Theme.Plugin">
@@ -41,7 +44,8 @@
             android:name="net.pgaskin.remotedesktop.realvnc.RealVncLibraryProvider"
             android:authorities="${applicationId}.libraries"
             android:exported="true"
-            android:grantUriPermissions="false" />
+            android:grantUriPermissions="false"
+            tools:ignore="ExportedContentProvider" />
 
     </application>
 

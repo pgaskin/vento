@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop;
 
+import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
@@ -329,6 +330,9 @@ public final class HomeActivity extends AppCompatActivity {
      * that jumps to the top has lost the connection somebody was looking at —
      * the one thing they were doing when they asked for the other shape.
      */
+    // Nothing more specific will do: every item's view type changes, so no bound
+    // view survives the switch.
+    @SuppressLint("NotifyDataSetChanged")
     private void toggleViewMode() {
         final GridLayoutManager grid = (GridLayoutManager) list.getLayoutManager();
         final int firstVisible = grid.findFirstVisibleItemPosition();
@@ -421,6 +425,10 @@ public final class HomeActivity extends AppCompatActivity {
          */
         private final Map<String, Bitmap> previews = new HashMap<>();
 
+        // Deliberately the blunt notification, twice: the previews are dropped
+        // above, so a diff that decided an item was unchanged would leave a card
+        // with no picture on it and never ask for one again.
+        @SuppressLint("NotifyDataSetChanged")
         void reload() {
             items.clear();
             previews.clear();

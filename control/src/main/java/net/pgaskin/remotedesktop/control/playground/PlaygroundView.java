@@ -42,6 +42,7 @@ import net.pgaskin.remotedesktop.control.ui.Chrome;
 import net.pgaskin.remotedesktop.control.ui.Hud;
 import net.pgaskin.remotedesktop.control.ui.TextInput;
 
+import java.util.Locale;
 import java.util.function.Consumer;
 
 /**
@@ -712,9 +713,9 @@ public final class PlaygroundView extends View
             case RECORD -> recorder.label();
             case KEYTRACE -> keyTrace.label();
             case ZOOMIN -> viewport.canZoomIn()
-                    ? String.format("%.2f", viewport.nextZoomIn()) : "MAX";
+                    ? String.format(Locale.ROOT, "%.2f", viewport.nextZoomIn()) : "MAX";
             case ZOOMOUT -> viewport.canZoomOut()
-                    ? String.format("%.2f", viewport.nextZoomOut()) : "MIN";
+                    ? String.format(Locale.ROOT, "%.2f", viewport.nextZoomOut()) : "MIN";
             case ZOOMFIT -> viewport.getScale() > viewport.minScale() + 1e-4f ? "FIT" : "FILL";
             case INSETS -> fakeInsets ? "ON" : "OFF";
             case RELATIVE -> cursor.isRelative() ? "THEIRS" : "OURS";
@@ -799,17 +800,17 @@ public final class PlaygroundView extends View
                 "cursor " + (cursor.isRelative() ? "theirs"
                         : (int) cursor.x() + "," + (int) cursor.y())
                         + "  btn " + cursor.buttonsName()
-                        + "  scale " + String.format("%.3f", viewport.getScale())
+                        + "  scale " + String.format(Locale.ROOT, "%.3f", viewport.getScale())
                         + " [" + (viewport.zoomIndex() + 1) + "/" + viewport.zoomLadder().length + "]"
                         + "  origin " + (int) viewport.originX() + "," + (int) viewport.originY()
                         + (fakeInsets || overlayShown ? "  inset " + viewport.contentWidth()
                         + "x" + viewport.contentHeight() : ""),
-                "accel x" + String.format("%.2f", gestures.accelFactor())
+                "accel x" + String.format(Locale.ROOT, "%.2f", gestures.accelFactor())
                         // dp/ms, so it can be read against the Config thresholds
-                        + "  spd " + String.format("%.2f", gestures.accelSpeed() / cfg.density)
+                        + "  spd " + String.format(Locale.ROOT, "%.2f", gestures.accelSpeed() / cfg.density)
                         + "  lock " + gestures.axisLock()
-                        + " " + String.format("%.0f", gestures.turnDegrees()) + "\u00b0"
-                        + "  glide " + String.format("%.1f", gestures.glideSpeed())
+                        + " " + String.format(Locale.ROOT, "%.0f", gestures.turnDegrees()) + "\u00b0"
+                        + "  glide " + String.format(Locale.ROOT, "%.1f", gestures.glideSpeed())
                         + "  events " + cursor.eventCount() + " (" + eventsPerSecond + "/s)"
                         + "  dup " + cursor.suppressedCount(),
                 "cfg " + (cfg.faithfulPreset ? "FAITHFUL" : "IMPROVED")
@@ -820,7 +821,7 @@ public final class PlaygroundView extends View
                         + "  countTest " + (cfg.moveCountTest ? "Y" : "N"),
                 "ovl " + (overlay.visible()
                         ? Button.maskName(overlay.heldMask())
-                        + " rate " + String.format("%.1f", overlay.scrollRate())
+                        + " rate " + String.format(Locale.ROOT, "%.1f", overlay.scrollRate())
                         : "off")
                         + "   kbd " + (keyboard.visible()
                         ? "on ime " + imeHeight + " mod " + keyboard.heldModifierCount()

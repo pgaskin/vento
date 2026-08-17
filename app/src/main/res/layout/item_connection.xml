@@ -107,7 +107,7 @@
                 android:contentDescription="@string/home_pinned"
                 android:padding="3dp"
                 android:src="@drawable/ic_pin"
-                android:tint="#e8ffffff"
+                app:tint="#e8ffffff"
                 android:visibility="gone" />
 
         </FrameLayout>

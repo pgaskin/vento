@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop.backend;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -273,6 +274,11 @@ public final class Backends {
      * {@code checkSignatures} compares certificate sets, which is what "the same
      * key" means across an app and an add-on released together.
      */
+    // The <queries> declaration this needs is the app's, since a library has no
+    // say in what the app it is linked into can see — and the app has exactly
+    // one: this action, and no package name, which is what keeps an add-on's
+    // identity out of the app.
+    @SuppressLint("QueryPermissionsNeeded")
     private static Set<String> signedLikeUs(PackageManager pm, String self) {
         final Set<String> candidates = new LinkedHashSet<>();
         for (ResolveInfo r : pm.queryIntentServices(new Intent(PLUGIN_ACTION), 0)) {

@@ -71,6 +71,9 @@ import java.util.Set;
  * preference: hwui re-uploads a whole bitmap whenever any of it changes, which
  * put the size of the desktop into the cost of every frame.
  */
+// No (Context, AttributeSet) constructor: a session view is given its host and
+// its backend, and there is no state of either an XML attribute could carry.
+@SuppressLint("ViewConstructor")
 public final class SessionView extends View implements ZoomSink, CursorController.Listener,
         CursorController.PointerSink, RegionSink, Backend.Listener, KeySink,
         MouseOverlay.Listener, ExtensionKeyboard.Listener, PhysicalMouse.Listener,
