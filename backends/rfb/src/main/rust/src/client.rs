@@ -976,7 +976,7 @@ impl Rate {
 /// form. The display convention is older than the port one and every VNC client
 /// still takes it, so `10.0.0.5:1` has to mean 5901 rather than port 1.
 fn resolve(address: &str) -> Result<(String, u16)> {
-    common::address::split(address, 5900, common::address::Ports::Display).map_err(Error::Protocol)
+    common::address::split(address, 5900, common::address::Ports::Display).map_err(Error::Address)
 }
 
 fn connect(host: &str, port: u16, timeout: Duration) -> Result<TcpStream> {

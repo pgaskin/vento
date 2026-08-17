@@ -12,6 +12,8 @@ pub enum Error {
     Cancelled,
     /// The bytes did not mean what they have to mean.
     Protocol(String),
+    /// What somebody typed is not an address, said in the words they need.
+    Address(String),
     /// The peer stopped saying anything at all. Their server sends a
     /// `TestDelay` about once a second whatever else is happening, so silence
     /// for as long as this takes is a connection that has gone rather than a
@@ -41,6 +43,7 @@ impl fmt::Display for Error {
             Error::Refused(why) => write!(f, "{why}"),
             Error::Cancelled => write!(f, "Cancelled."),
             Error::Protocol(what) => write!(f, "The peer is not making sense: {what}"),
+            Error::Address(why) => write!(f, "{why}"),
             Error::Silent => write!(f, "The connection stopped responding."),
             Error::Closed => write!(f, "Disconnected"),
         }

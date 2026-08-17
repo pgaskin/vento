@@ -15,11 +15,16 @@
 #   scripts/session.sh -b rustdesk           # the RustDesk desktop (scripts/testrustdesk/)
 #   scripts/session.sh -b spice              # the QEMU rig's SPICE port (scripts/testqemu/)
 #   scripts/session.sh -b rustdesk -o ConnectBy=id <peer-id>   # the same by ID
+#   scripts/session.sh -6                    # the same containers over IPv6
 #
 # The default address is the test desktop's (5901), 3389 with -b rdp, 21118
 # with -b rustdesk or 5930 with -b spice; the QEMU rig's VNC port and the H.264
 # rig are 5902 and 5903 and have to be given. RustDesk is an add-on rather than part of the app, so -b rustdesk
 # installs that APK as well.
+#
+# -6 takes this host's global v6 address instead of its v4 one and brackets it,
+# which is the form the app requires of a literal. Docker publishes every
+# container on [::] as well, so the far ends are the same ones.
 set -euo pipefail
 cd "$(dirname "$0")/.."   # the build is at the repository root
 
@@ -30,6 +35,7 @@ HUD=false
 BACKEND=
 TILE=
 OPTIONS=
+FAMILY=-4
 
 log() {
     # The core's own tags as well as ours: what it says about the connection is
@@ -48,6 +54,7 @@ while [ $# -gt 0 ]; do
         -t) TILE="$2"; shift 2 ;;
         -o) OPTIONS="${OPTIONS:+$OPTIONS,}$2"; shift 2 ;;
         -b) BACKEND="$2"; shift 2 ;;
+        -6) FAMILY=-6; shift ;;
         -l) log ;;
         -h) sed -n '2,/^set /p' "$0" | sed 's/^# \{0,1\}//;$d'; exit 2 ;;
         -*) echo "unknown option: $1 (-h for usage)" >&2; exit 2 ;;
@@ -57,7 +64,10 @@ done
 
 ADDRESS="${1:-}"
 if [ -z "$ADDRESS" ]; then
-    ip="$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -1)"
+    ip="$(ip "$FAMILY" -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -1)"
+    # A literal is bracketed, which is the app's rule and not this script's
+    # preference: unbracketed there is no telling one from a host with a port.
+    [ "$FAMILY" = -6 ] && ip="[$ip]"
     # Each test container's own port, since which one is meant follows from
     # which protocol was asked for.
     if [ "$BACKEND" = rdp ] || [ "$BACKEND" = freerdp ]; then
@@ -80,7 +90,8 @@ INSTALL=(':app:installDebug')
 adb shell am force-stop "$PKG"
 adb logcat -c
 adb shell am start -n "$ACT" \
-    --es address "$ADDRESS" \
+    `# quoted for the shell on the phone, which globs [::1] against its own /` \
+    --es address "'$ADDRESS'" \
     --ez hud "$HUD" \
     ${BACKEND:+--es backend "$BACKEND"} \
     ${TILE:+--ei tile "$TILE"} \

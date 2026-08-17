@@ -310,6 +310,9 @@ pub struct Client {
     /// it with.
     closer: Mutex<Option<TcpStream>>,
     info: Mutex<Info>,
+    /// What the login names itself as, which for a direct connection is the
+    /// address the socket actually went to and for an id is that id.
+    login_as: Mutex<String>,
     /// The sizes the far end will take, which is a fixed list rather than RFB's
     /// free choice — empty for a peer that offers none.
     resolutions: Mutex<Vec<(i32, i32)>>,
@@ -361,6 +364,7 @@ impl Client {
             out: Mutex::new(None),
             closer: Mutex::new(None),
             info: Mutex::new(Info::default()),
+            login_as: Mutex::new(String::new()),
             resolutions: Mutex::new(Vec::new()),
             displays: Mutex::new(Vec::new()),
             origin: Mutex::new((0, 0)),
@@ -499,6 +503,13 @@ impl Client {
                 log::info!("connecting to {addr}");
                 let sock = TcpStream::connect_timeout(&addr, config.connect_timeout)?;
                 sock.set_nodelay(true)?;
+                // What the login says it dialled is this rather than what was
+                // typed, which their peer checks against three regular
+                // expressions: a v4 literal with an optional port, a v6 one
+                // either bare or bracketed **with** a port, or a dotted name
+                // with one. A bracketed literal and no port matches none of
+                // them, and the refusal is `Offline`.
+                *self.login_as.lock().unwrap() = addr.to_string();
                 (sock, None, format!("Direct access to {addr}"))
             }
             Reach::Id { server, key } => {
@@ -510,6 +521,8 @@ impl Client {
                 let reached =
                     rendezvous::reach(&config.address, server, key.trim(), config.connect_timeout)?;
                 let connection = reached.how.describe();
+                // The id, which is what the peer is expecting to be called here.
+                *self.login_as.lock().unwrap() = config.address.clone();
                 (
                     reached.sock,
                     Some((reached.signed_id_pk, key.clone())),
@@ -1100,8 +1113,10 @@ impl Client {
         // **The address, not a name.** Their peer refuses a login whose
         // username is neither its own id nor something that parses as an
         // address, and the refusal it sends is `Offline` — which reads like the
-        // machine is not there rather than like a field being wrong.
-        login.username = config.address.clone();
+        // machine is not there rather than like a field being wrong. Which is
+        // why this is the socket's own address rather than what somebody typed:
+        // the two differ wherever a default port was filled in.
+        login.username = self.login_as.lock().unwrap().clone();
         login.password = login_hash(password, hash).into();
         // Their peer shows this and logs it, so it is the phone rather than
         // anything about this app: a person looking at the far end wants to
@@ -1607,7 +1622,7 @@ fn login_hash(password: &str, hash: &Hash) -> Vec<u8> {
 /// address only; an id is not one of these and never reaches here.
 fn resolve(address: &str) -> Result<SocketAddr> {
     let (host, port) = common::address::split(address, DIRECT_PORT, common::address::Ports::Plain)
-        .map_err(Error::Protocol)?;
+        .map_err(Error::Address)?;
     (host.as_str(), port)
         .to_socket_addrs()
         .map_err(Error::Io)?

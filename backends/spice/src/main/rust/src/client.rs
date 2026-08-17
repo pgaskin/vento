@@ -276,7 +276,7 @@ impl Client {
         // the name the certificate is checked against, so this is read once
         // rather than per channel.
         let (host, port) = common::address::split(&config.address, DEFAULT_PORT, Ports::Plain)
-            .map_err(Error::Protocol)?;
+            .map_err(Error::Address)?;
         let connector = match config.tls {
             true => Some(tls::Connector::new(&host)?),
             false => None,

@@ -1122,7 +1122,13 @@ static void *protocolThread(void *arg) {
         goto done;
     }
 
-    LOGI("connected to %s:%d, %dx%d", cl->serverHost, cl->serverPort, cl->width, cl->height);
+    /* Bracketed the way it would have to be typed, since a literal with a port
+       after it is otherwise two colons in a row nobody can read. */
+    if (strchr(cl->serverHost, ':')) {
+        LOGI("connected to [%s]:%d, %dx%d", cl->serverHost, cl->serverPort, cl->width, cl->height);
+    } else {
+        LOGI("connected to %s:%d, %dx%d", cl->serverHost, cl->serverPort, cl->width, cl->height);
+    }
 
     for (;;) {
         if (drain(s)) {
