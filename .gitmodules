@@ -20,7 +20,7 @@
 	ignore = all
 [submodule "third_party/pixman"]
 	path = third_party/pixman
-	url = https://gitlab.freedesktop.org/pixman/pixman.git
+	url = https://github.com/X11Libre/mirror.fdo.pixman.git
 	shallow = true
 	ignore = all
 [submodule "third_party/openssl"]
