@@ -1292,18 +1292,51 @@ void Session::runCmd(Conn *conn, Cmd &cmd) {
     }
 }
 
+// `host::port` is the one unbracketed address with two colons in it that is not
+// an IPv6 literal somebody left the brackets off.
+static bool bareLiteral(const std::string &address) {
+    const size_t first = address.find(':');
+    const size_t last = address.rfind(':');
+    if (first == std::string::npos || first == last) {
+        return false;
+    }
+    return !(last == first + 1 && address.find(':', last + 1) == std::string::npos);
+}
+
+// An address is `host`, `host:port`, `[literal]` or `[literal]:port`. A bare
+// IPv6 literal is refused in words rather than guessed at, because `:1` is a
+// display number here and `::1:1` cannot be an address and a display at once —
+// what the guess used to produce was `::`, which is the wildcard address. The
+// split itself is upstream's: it has the display rule, the `host::port` escape
+// from it, and unit tests, none of which is worth writing again beside it.
+static bool splitAddress(const std::string &address, std::string *host, int *port,
+                         std::string *why) {
+    const size_t from = address.find_first_not_of(" \t");
+    const size_t to = address.find_last_not_of(" \t");
+    const std::string trimmed =
+            from == std::string::npos ? "" : address.substr(from, to - from + 1);
+    if (trimmed.empty() || trimmed[0] == ':') {
+        *why = "No host in address";
+        return false;
+    }
+    if (trimmed[0] != '[' && bareLiteral(trimmed)) {
+        *why = "IPv6 addresses must be bracketed, like [::1]:5900, not " + trimmed;
+        return false;
+    }
+    try {
+        network::getHostAndPort(trimmed.c_str(), host, port, 5900);
+    } catch (const std::exception &e) {
+        *why = std::string("Not an address: ") + e.what();
+        return false;
+    }
+    return true;
+}
+
 int Session::openSocket(std::string *why) {
-    std::string host = address_;
+    std::string host;
     int port = 5900;
-    const size_t colon = host.rfind(':');
-    if (colon != std::string::npos && colon > 0) {
-        const int p = atoi(host.c_str() + colon + 1);
-        host = host.substr(0, colon);
-        if (p > 0) {
-            // Below the display-number cutoff an address means :N, the way
-            // every VNC client has always read it.
-            port = p < 5900 && p < 100 ? 5900 + p : p;
-        }
+    if (!splitAddress(address_, &host, &port, why)) {
+        return -1;
     }
 
     char service[16];

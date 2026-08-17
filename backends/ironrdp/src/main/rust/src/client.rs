@@ -1467,9 +1467,6 @@ impl Rate {
     }
 }
 
-/// `host` or `host:port`, plus the bracketed IPv6 form. No display-number
-/// convention here — that is a VNC habit, and 3389 is the only port RDP has
-/// ever used.
 /// `count` monitors of `width` by `height`, side by side, the leftmost primary.
 ///
 /// The protocol's own constraints, which the library enforces and which are the
@@ -1493,32 +1490,11 @@ fn monitor_layout(width: u16, height: u16, count: u8) -> Result<Vec<MonitorLayou
     Ok(entries)
 }
 
+/// `host` or `host:port`, plus the bracketed IPv6 form. No display-number
+/// convention here — that is a VNC habit, and 3389 is the only port RDP has
+/// ever used.
 fn resolve(address: &str) -> Result<(String, u16)> {
-    let address = address.trim();
-    if let Some(rest) = address.strip_prefix('[') {
-        let (host, rest) = rest
-            .split_once(']')
-            .ok_or_else(|| Error::Protocol(format!("unbalanced brackets in {address:?}")))?;
-        let port = match rest.strip_prefix(':') {
-            Some(p) if !p.is_empty() => p
-                .parse()
-                .map_err(|_| Error::Protocol(format!("bad port in {address:?}")))?,
-            _ => 3389,
-        };
-        return Ok((host.to_string(), port));
-    }
-    match address.rsplit_once(':') {
-        Some((host, tail)) => {
-            let port: u32 = tail
-                .parse()
-                .map_err(|_| Error::Protocol(format!("bad port in {address:?}")))?;
-            if port == 0 || port > u16::MAX as u32 {
-                return Err(Error::Protocol(format!("bad port in {address:?}")));
-            }
-            Ok((host.to_string(), port as u16))
-        }
-        None => Ok((address.to_string(), 3389)),
-    }
+    common::address::split(address, 3389, common::address::Ports::Plain).map_err(Error::Protocol)
 }
 
 fn connect(host: &str, port: u16, timeout: Duration) -> Result<TcpStream> {
@@ -1550,13 +1526,13 @@ impl Default for Client {
 mod tests {
     use super::*;
 
+    /// The forms are `common::address`'s; what is this client's own is the
+    /// default port and the display rule being off.
     #[test]
     fn addresses() {
         assert_eq!(resolve("10.0.0.5").unwrap(), ("10.0.0.5".into(), 3389));
-        assert_eq!(resolve("10.0.0.5:3390").unwrap(), ("10.0.0.5".into(), 3390));
-        assert_eq!(resolve("[::1]:3389").unwrap(), ("::1".into(), 3389));
         assert_eq!(resolve("[::1]").unwrap(), ("::1".into(), 3389));
-        assert!(resolve("host:nonsense").is_err());
+        assert!(resolve("2001:db8::1").is_err());
         // No display-number rule: `:1` is a port here, and taking it for 3390
         // would be borrowing a VNC habit RDP has never had.
         assert_eq!(resolve("host:1").unwrap(), ("host".into(), 1));

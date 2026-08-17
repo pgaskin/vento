@@ -21,6 +21,7 @@ use crate::error::{Error, Result};
 use crate::framebuffer::Framebuffer;
 use crate::keymap::{self, Key};
 use crate::tls;
+use common::address::Ports;
 use shakenfist_spice_protocol::constants::{
     MOUSE_MODE_CLIENT, MOUSE_MODE_SERVER, cursor_client, display_client, image_compression,
     inputs_client, main_client, main_server,
@@ -38,6 +39,10 @@ use tokio::sync::mpsc;
 /// What this client says it is on the wire, and the version of the protocol
 /// those numbers name.
 pub const VERSION: &str = "SPICE 2.2";
+
+/// Where a server is when nobody said. QEMU makes somebody choose, so this is
+/// what `spice://host` means elsewhere rather than a default anything here has.
+pub const DEFAULT_PORT: u16 = 5900;
 
 /// How a session was told to reach a server, and what it may say about it.
 pub struct Config {
@@ -267,9 +272,13 @@ impl Client {
         handler: &mut dyn Handler,
         mut inbox: mpsc::UnboundedReceiver<Command>,
     ) -> Result<()> {
-        let host = config.address.split(':').next().unwrap_or_default();
+        // Every channel of a session dials the same place, and the host is also
+        // the name the certificate is checked against, so this is read once
+        // rather than per channel.
+        let (host, port) = common::address::split(&config.address, DEFAULT_PORT, Ports::Plain)
+            .map_err(Error::Protocol)?;
         let connector = match config.tls {
-            true => Some(tls::Connector::new(host)?),
+            true => Some(tls::Connector::new(&host)?),
             false => None,
         };
 
@@ -281,6 +290,7 @@ impl Client {
 
         let mut session = Session {
             client: self,
+            server: (host, port),
             channels: HashMap::new(),
             display: Display::new(Arc::clone(&self.framebuffer), IMAGE_CACHE),
             cursors: Cursors::new(),
@@ -397,6 +407,8 @@ const GLZ_WINDOW: usize = 3 * 1024 * 1024;
 /// The session's own state, which nothing outside this file touches.
 struct Session<'a> {
     client: &'a Client,
+    /// Where every channel of this session dials, read out of the address once.
+    server: (String, u16),
     channels: HashMap<Kind, Channel>,
     display: Display,
     cursors: Cursors,
@@ -453,7 +465,7 @@ impl Session<'_> {
                 // may stop to ask.
                 Channel::open(
                     kind,
-                    &config.address,
+                    (&self.server.0, self.server.1),
                     session_id,
                     password.as_deref(),
                     connector,

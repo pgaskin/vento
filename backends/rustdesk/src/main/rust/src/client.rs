@@ -1603,13 +1603,12 @@ fn login_hash(password: &str, hash: &Hash) -> Vec<u8> {
         .to_vec()
 }
 
+/// `host` or `host:port`, plus the bracketed IPv6 form. The direct mode's
+/// address only; an id is not one of these and never reaches here.
 fn resolve(address: &str) -> Result<SocketAddr> {
-    let with_port = if address.contains(':') {
-        address.to_string()
-    } else {
-        format!("{address}:{DIRECT_PORT}")
-    };
-    with_port
+    let (host, port) = common::address::split(address, DIRECT_PORT, common::address::Ports::Plain)
+        .map_err(Error::Protocol)?;
+    (host.as_str(), port)
         .to_socket_addrs()
         .map_err(Error::Io)?
         .next()
@@ -1743,5 +1742,9 @@ mod tests {
     fn a_port_is_theirs_unless_one_is_given() {
         assert_eq!(resolve("127.0.0.1").unwrap().port(), DIRECT_PORT);
         assert_eq!(resolve("127.0.0.1:5900").unwrap().port(), 5900);
+        // The bracketed form with no port is the case a `contains(':')` test
+        // for "has a port already" gets wrong, since every literal has one.
+        assert_eq!(resolve("[::1]").unwrap().port(), DIRECT_PORT);
+        assert!(resolve("::1").is_err());
     }
 }

@@ -105,7 +105,7 @@ impl Channel {
     #[allow(clippy::too_many_arguments)]
     pub async fn open(
         kind: Kind,
-        address: &str,
+        address: (&str, u16),
         session_id: u32,
         password: Option<&str>,
         tls: Option<&tls::Connector>,

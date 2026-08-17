@@ -168,6 +168,10 @@ struct Session {
 
     char *host;
     int port;
+    /* Why the address was not one, empty if it was: a session is created and
+       started in one call, so the protocol thread is the first place there is
+       to say it. */
+    char addressError[160];
     char *user, *domain, *password;
     char *nla;
     char *experience;
@@ -288,6 +292,74 @@ static char *dup_jstring(JNIEnv *env, jstring js) {
         (*env)->ReleaseStringUTFChars(env, js, c);
     }
     return out;
+}
+
+/* An address is `host`, `host:port`, `[literal]` or `[literal]:port`, and a bare
+   IPv6 literal is refused in words rather than guessed at: unbracketed there is
+   no telling it from a host with a port after it, and what the guess this
+   replaced produced was the address truncated at its last colon. No display
+   number here, which is a VNC habit RDP has never had, so a second colon has
+   nothing to mean. The host is left at the front of `address`, which stays the
+   caller's buffer to free; `why` is empty unless there is nothing to dial. */
+static void splitAddress(char *address, int *port, char *why, size_t whyLen) {
+    size_t len = strlen(address);
+    while (len > 0 && (address[len - 1] == ' ' || address[len - 1] == '\t')) {
+        address[--len] = 0;
+    }
+    const size_t lead = strspn(address, " \t");
+    if (lead > 0) {
+        memmove(address, address + lead, len - lead + 1);
+        len -= lead;
+    }
+    if (len == 0 || address[0] == ':') {
+        snprintf(why, whyLen, "No host in address");
+        return;
+    }
+
+    const char *host = address;
+    size_t hostLen = len;
+    const char *number = NULL;
+
+    if (address[0] == '[') {
+        const char *close = strchr(address, ']');
+        if (!close) {
+            snprintf(why, whyLen, "%s missing closing bracket", address);
+            return;
+        }
+        host = address + 1;
+        hostLen = (size_t) (close - host);
+        if (close[1] == ':') {
+            number = close + 2;
+        } else if (close[1]) {
+            snprintf(why, whyLen, "%s has junk after closing bracket", address);
+            return;
+        }
+    } else if (strchr(address, ':') != strrchr(address, ':')) {
+        snprintf(why, whyLen, "IPv6 addresses must be bracketed, like [::1]:3389, not %s", address);
+        return;
+    } else {
+        const char *colon = strchr(address, ':');
+        if (colon) {
+            hostLen = (size_t) (colon - address);
+            number = colon + 1;
+        }
+    }
+
+    if (hostLen == 0) {
+        snprintf(why, whyLen, "No host in address");
+        return;
+    }
+    if (number) {
+        char *end = NULL;
+        const long p = strtol(number, &end, 10);
+        if (end == number || *end || p <= 0 || p > 65535) {
+            snprintf(why, whyLen, "%s does not end in a port number", address);
+            return;
+        }
+        *port = (int) p;
+    }
+    memmove(address, host, hostLen);
+    address[hostLen] = 0;
 }
 
 /* ---- the command queue -------------------------------------------------- */
@@ -1556,6 +1628,11 @@ static void *protocolThread(void *arg) {
     ShimContext *shim = s->ctx;
     rdpContext *ctx = &shim->client.context;
 
+    if (s->addressError[0]) {
+        fireClosed(s, s->addressError);
+        return NULL;
+    }
+
     ctx->instance->PreConnect = onPreConnect;
     ctx->instance->PostConnect = onPostConnect;
     ctx->instance->PostDisconnect = onPostDisconnect;
@@ -1688,15 +1765,8 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
     char *addr = dup_jstring(env, address);
     s->port = 3389;
     if (addr) {
-        char *colon = strrchr(addr, ':');
-        if (colon && colon != addr) {
-            *colon = 0;
-            const int p = atoi(colon + 1);
-            if (p > 0) {
-                s->port = p;
-            }
-        }
         s->host = addr;
+        splitAddress(addr, &s->port, s->addressError, sizeof s->addressError);
     }
     s->user = dup_jstring(env, userName);
     s->domain = dup_jstring(env, domain);
@@ -2065,7 +2135,13 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeInfo(
     char protocol[64], connection[128], security[64], lineSpeed[64], server[64], viewer[64];
 
     snprintf(protocol, sizeof(protocol), "RDP (FreeRDP %s)", freerdp_get_version_string());
-    snprintf(connection, sizeof(connection), "%s:%d", s->host ? s->host : "", s->port);
+    /* Written back the way it would have to be typed, brackets and all. */
+    const char *host = s->host ? s->host : "";
+    if (strchr(host, ':')) {
+        snprintf(connection, sizeof(connection), "[%s]:%d", host, s->port);
+    } else {
+        snprintf(connection, sizeof(connection), "%s:%d", host, s->port);
+    }
     const UINT32 selected = freerdp_settings_get_uint32(settings, FreeRDP_SelectedProtocol);
     const char *layer = selected == 0 ? "RDP" : selected == 1 ? "TLS" : "NLA (CredSSP)";
     snprintf(security, sizeof(security), "%s", layer);
