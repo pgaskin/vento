@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! 4:2:0 planes to `R, G, B, A` words, which is what a decoded frame costs
 //! after the decoder has finished with it.
 //!

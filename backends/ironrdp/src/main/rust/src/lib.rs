@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! An RDP client, bound rather than written.
 //!
 //! The opposite choice from `rfb`: RFB is small enough that writing it was the

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! One RustDesk session: the handshake, the message loop, and everything the
 //! app can ask of a connection that is up.
 //!

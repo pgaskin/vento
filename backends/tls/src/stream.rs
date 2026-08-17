@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! One TLS session, read and written by two threads at once.
 //!
 //! A plain socket splits with `try_clone` and the reader and writer threads

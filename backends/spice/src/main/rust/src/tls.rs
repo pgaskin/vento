@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The TLS port, pinned rather than verified.
 //!
 //! `remotedesktop-tls`'s verifier, which is the same one the RFB and RDP

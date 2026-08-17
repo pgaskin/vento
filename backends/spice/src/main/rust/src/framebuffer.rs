@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The desktop as pixels, and the one thing two threads share.
 
 /// A framebuffer of `R, G, B, A` words, so a read is a row copy into an Android

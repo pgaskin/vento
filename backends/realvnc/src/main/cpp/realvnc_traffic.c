@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // What this session has received, which the viewer core's JNI surface does not
 // offer: 320 exported functions and not one byte count among them. The number
 // is in the core's own bandwidth estimator — the class its logger calls

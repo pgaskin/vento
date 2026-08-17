@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Connect to a server, print what it says, and write the first frame out.
 //!
 //! The protocol crate's own test rig: it runs on the host against

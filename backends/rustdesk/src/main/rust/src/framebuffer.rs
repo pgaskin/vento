@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The desktop as pixels: the picture two threads share, and the buffer the
 //! next one is decoded into.
 

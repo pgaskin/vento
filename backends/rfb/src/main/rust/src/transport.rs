@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The socket, and the TLS that VeNCrypt may end up wrapping around it.
 //!
 //! Everything above this reads and writes through [`Wire`], which is a pair of

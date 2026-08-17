@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! A RustDesk client small enough to read: connect, log in, and write out what
 //! the far end sends. It answered whether a backend could be written at all —
 //! the framing, the password, the login exchange and the codec negotiation —

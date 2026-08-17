@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // LibVNCServer's libvncclient behind the same JNI surface the RFB client we
 // wrote has, so the two are interchangeable above this file and the comparison
 // is between the clients rather than between two ways of binding one.

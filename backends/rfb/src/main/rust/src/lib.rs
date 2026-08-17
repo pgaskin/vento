@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! An RFB (VNC) client, written rather than bound to.
 //!
 //! A crate was weighed against writing one and writing won: RFB is small, and

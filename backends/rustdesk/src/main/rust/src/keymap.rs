@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! X11 keysyms in, their `KeyEvent` out.
 //!
 //! Everything above `CursorController` speaks keysyms, because that is RFB's

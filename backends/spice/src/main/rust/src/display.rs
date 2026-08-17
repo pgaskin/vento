@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The display channel: what the guest's screen is made of.
 //!
 //! SPICE draws in two ways at once and both are here. **Draw commands** carry

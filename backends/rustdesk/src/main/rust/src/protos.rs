@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Their message definitions, generated at build time from the submodule.
 //!
 //! Sibling modules rather than nested, because one generated file names the

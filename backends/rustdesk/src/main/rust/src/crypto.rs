@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Their session encryption: two signatures, one sealed key, and a stream
 //! cipher counting its own frames.
 //!

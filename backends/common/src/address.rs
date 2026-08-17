@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! What somebody typed into the address field, split into a host and a port.
 //!
 //! One implementation for the four clients written here, because the four had

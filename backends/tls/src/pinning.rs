@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Trust on first sight: the certificate check both protocol clients share.
 //!
 //! A VNC server presents a certificate it generated for itself on first start,

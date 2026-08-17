@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /*
  * This client, driven off a phone: the same `Client` the JNI half creates,
  * against a real server, with the events printed and the picture written out.

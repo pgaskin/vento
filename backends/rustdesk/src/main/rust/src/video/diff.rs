@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! What one frame differs from the last one in, found in the decoder's planes.
 //!
 //! This protocol has no damage rectangles, so what moved can only be found by

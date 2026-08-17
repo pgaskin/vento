@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // TigerVNC's own client behind the same JNI surface the other two RFB backends
 // have, so that everything above this file is the same code whichever of the
 // three is running and a comparison is between the clients.

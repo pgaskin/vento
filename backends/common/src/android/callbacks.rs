@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The Java side of a session, called from the protocol thread.
 //!
 //! Every method id is looked up once, at create time, on the thread that has an

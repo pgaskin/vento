@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! A RustDesk client, written rather than bound to.
 //!
 //! There was nothing to bind to: their client is `src/client.rs` at 4443 lines

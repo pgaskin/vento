@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Wire primitives. RFB is big-endian everywhere except inside a pixel.
 
 use std::io::{self, BufReader, BufWriter, Read, Write};

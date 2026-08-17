@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // FreeRDP behind the same JNI surface the IronRDP backend has, so the two are
 // interchangeable above this file and a disagreement between them is a
 // disagreement between the clients rather than between two ways of binding one.

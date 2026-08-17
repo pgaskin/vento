@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! One channel of a session: its own TCP connection, its own link handshake,
 //! its own ticket and its own ack accounting.
 //!

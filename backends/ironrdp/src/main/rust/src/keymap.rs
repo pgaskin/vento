@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! X11 keysyms in, PC/AT scancodes out.
 //!
 //! The one place the protocol does not match the stack. Everything above

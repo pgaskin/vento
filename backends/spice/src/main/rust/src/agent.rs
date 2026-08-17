@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! `spice-vdagent`: the half of a SPICE session that runs inside the machine.
 //!
 //! Nothing in here is SPICE's own. The main channel carries opaque bytes

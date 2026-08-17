@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! What a backend's JNI half needs of Android rather than of a protocol: a
 //! locked bitmap, the calls back into Java, a slot to park a protocol thread in
 //! until somebody answers a dialog — and, off Android as well, the one thing

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Their two `.proto` files, compiled into this crate.
 //!
 //! The protocol *is* those files: there is no specification and no second

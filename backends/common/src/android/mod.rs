@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The parts of a backend's JNI half that are about Android rather than about a
 //! protocol: [`bitmap`], which writes pixels straight into a Java `Bitmap`,
 //! [`callbacks`], which is a session's Java side resolved once, and [`slot`],

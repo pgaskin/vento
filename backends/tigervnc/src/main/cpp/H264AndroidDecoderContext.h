@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // TigerVNC's H.264 decoder context, backed by the phone's own decoder.
 //
 // Their two are FFmpeg's libavcodec and Windows' Media Foundation. This is the

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The clipboard channel, text only.
 //!
 //! RFB says "here is some Latin-1" in one message and is done. CLIPRDR is a

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The whole of their transport: one length-prefixed frame format, and a hook
 //! for the cipher a session may agree on.
 //!

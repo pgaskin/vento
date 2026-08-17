@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! TLS as this app means it: **pinned rather than verified**, and shared
 //! between the thread that reads and the thread that writes.
 //!

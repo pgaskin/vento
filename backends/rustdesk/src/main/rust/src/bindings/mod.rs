@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The RustDesk backend's JNI surface: the entry points `RustDeskNative`
 //! declares, and the session behind them.
 //!

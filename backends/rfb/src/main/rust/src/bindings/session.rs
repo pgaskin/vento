@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! One RFB session: the client, the thread it runs on, and the state Java holds
 //! a handle to.
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The three NDK calls that let pixels be written straight into a Java
 //! `Bitmap`.
 //!

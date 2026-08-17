@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! A SPICE client: their protocol and their decoders, our session.
 //!
 //! The split is note 76 §2's, and it is neither of the two this repository had

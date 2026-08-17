@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The encodings, each decoding one rectangle into scratch space.
 //!
 //! Everything here works in [`crate::PixelFormat::NATIVE`] and writes into a

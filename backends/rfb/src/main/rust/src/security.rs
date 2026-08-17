@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The version and security handshakes, including VeNCrypt's.
 
 use crate::error::{Error, Result};

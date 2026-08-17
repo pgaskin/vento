@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The phone's own decoder, through the NDK's C API.
 //!
 //! Declared here rather than taken from a crate: it is a dozen functions with a

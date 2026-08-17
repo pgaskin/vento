@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The picture: what the far end encoded, decoded by the phone.
 //!
 //! Every frame in this protocol is a whole frame — there are no damage

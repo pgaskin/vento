@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Patrick Gaskin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! One SPICE session: four channels, the state above them, and the handle the
 //! other threads hold.
 //!
