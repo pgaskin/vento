@@ -28,6 +28,7 @@ public final class AppSettings {
     public static final String KEY_LIST_VIEW = "listView";      // the home screen as rows
     public static final String KEY_MODIFIER_RESETS_IME = "modifierResetsIme";
     public static final String KEY_TWO_LINE_KEYS = "twoLineKeys";  // the extension row's shape
+    public static final String KEY_MAC_KEYS = "macKeys";           // Option and CMD on it
     public static final String KEY_CLIPBOARD_OUT = "clipboardOut";
     public static final String KEY_CLIPBOARD_IN = "clipboardIn";
     public static final String KEY_REGION_HINTS = "regionHints";  // where the controls are
@@ -61,6 +62,7 @@ public final class AppSettings {
         m.put(KEY_LIST_VIEW, true);
         m.put(KEY_MODIFIER_RESETS_IME, true);
         m.put(KEY_TWO_LINE_KEYS, false);
+        m.put(KEY_MAC_KEYS, true);
         m.put(KEY_CLIPBOARD_OUT, true);
         m.put(KEY_CLIPBOARD_IN, true);
         m.put(KEY_REGION_HINTS, true);
@@ -160,6 +162,26 @@ public final class AppSettings {
      */
     public static boolean twoLineKeys(Context ctx) {
         return get(ctx, KEY_TWO_LINE_KEYS);
+    }
+
+    /**
+     * Whether the extension keyboard keeps the two modifiers that are there for
+     * a Mac at the far end: Option and Command.
+     *
+     * <p>They are not the same loss. Command is {@code XK_Super_L} and so is
+     * Windows, so taking it away takes a label rather than a capability. Option
+     * is {@code XK_ISO_Level3_Shift}, which is AltGr and not a Mac key at all
+     * outside the original's labelling — it is the one key here that genuinely
+     * goes, and somebody driving a German or French desktop has no other route
+     * to it, since neither the soft keyboard nor a phone's physical one will
+     * produce that keysym. Which is why the row names the two keys instead of
+     * saying "Mac".
+     *
+     * <p>On by default, so no phone that has the app today changes behaviour
+     * without being asked.
+     */
+    public static boolean macKeys(Context ctx) {
+        return get(ctx, KEY_MAC_KEYS);
     }
 
     /**

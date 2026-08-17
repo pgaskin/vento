@@ -413,6 +413,9 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             screen.addPreference(switchPref(AppSettings.KEY_TWO_LINE_KEYS,
                     R.string.settings_two_line_keys,
                     R.string.settings_two_line_keys_summary, false));
+            screen.addPreference(switchPref(AppSettings.KEY_MAC_KEYS,
+                    R.string.settings_mac_keys,
+                    R.string.settings_mac_keys_summary, true));
             screen.addPreference(switchPref(AppSettings.KEY_CLIPBOARD_OUT,
                     R.string.settings_clipboard_out,
                     R.string.settings_clipboard_out_summary, true));

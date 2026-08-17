@@ -41,6 +41,7 @@ public class ExtensionKeyboardTest {
     private static final float CTRL_X = 150;
     private static final float ALT_X = 230;
     private static final float WIN_X = 300;
+    private static final float OPTION_X = 400;
     private static final float CMD_X = 480;
     private static final float GAP_X = 560;
     private static final float BKSP_X = 640;
@@ -829,6 +830,29 @@ public class ExtensionKeyboardTest {
         assertEquals("nothing left held at the far end", Map.of(), h.held);
         assertTrue(h.keyboard.heldModifiers().isEmpty());
         assertEquals(2, h.keyboard.rows());
+    }
+
+    /**
+     * The case a host that drops keys makes: a modifier locked down at the far
+     * end whose key is not in the new list at all. It is still let go of, since
+     * the release goes out before anything is re-indexed — and a locked one is
+     * the case that matters, being the state that survives the next key.
+     */
+    @Test
+    public void aHeldKeyTheNewListDoesNotHaveIsStillReleased() {
+        final Harness h = kbd();
+        final List<ExtensionKeyboard.Key> without = new ArrayList<>(h.keyboard.allKeys());
+        without.removeIf(k -> k.keysym() == Keysym.ISO_LEVEL3_SHIFT);
+        tapKey(h, OPTION_X);
+        tapKey(h, OPTION_X);   // a second tap inside the window locks it
+        assertEquals(ExtensionKeyboard.Sticky.LOCKED, sticky(h, "Option"));
+        assertEquals(List.of("key down AltGr"), h.keys);
+        h.reset();
+
+        h.keyboard.setKeys(without);
+        assertEquals(List.of("key up AltGr"), h.keys);
+        assertEquals(Map.of(), h.held);
+        assertEquals(5, h.keyboard.modifiers().size());
     }
 
     /** A finger down on a key that the new list may not even have lets go of it. */

@@ -336,12 +336,21 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
 
     /**
      * Which keys the extension row offers, from this phone's preferences: the
-     * one scrolling line this app has always had, or the two-line grouping.
+     * one scrolling line this app has always had, or the two-line grouping, and
+     * either of them without the two modifiers that are only for a Mac.
+     *
+     * <p>The filter is here rather than in {@code control}, which has no idea
+     * what a Mac is: the labels are that package's own, and what they mean to
+     * somebody's far end is the app's question.
      */
     private static List<ExtensionKeyboard.Key> keyList(Context ctx) {
-        return AppSettings.twoLineKeys(ctx)
+        final List<ExtensionKeyboard.Key> keys = new ArrayList<>(AppSettings.twoLineKeys(ctx)
                 ? ExtensionKeyboard.twoLineKeys()
-                : ExtensionKeyboard.standardKeys();
+                : ExtensionKeyboard.standardKeys());
+        if (!AppSettings.macKeys(ctx)) {
+            keys.removeIf(k -> "Option".equals(k.label()) || "CMD".equals(k.label()));
+        }
+        return keys;
     }
 
     /**
