@@ -1,0 +1,154 @@
+From d1e80a332081e6023de9e2e64f83bdd8a9cabf53 Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Sun, 16 Aug 2026 15:58:34 -0400
+Subject: [PATCH 2/4] compression: openh264 behind a feature
+
+openh264-sys2 builds a C++ decoder from vendored source, which is a
+toolchain a pure-Rust consumer does not otherwise need and a second
+decoder on a platform that has one in hardware. Off, a STREAM_CREATE
+naming H.264 is an unsupported codec like any other.
+
+diff --git a/Cargo.lock b/Cargo.lock
+index a83c70e..109f225 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -6405,6 +6405,7 @@ dependencies = [
+  "rand 0.8.7",
+  "rcgen",
+  "rsa",
++ "rustls",
+  "rustls-pemfile",
+  "serde",
+  "sha1 0.10.7",
+diff --git a/shakenfist-spice-compression/Cargo.toml b/shakenfist-spice-compression/Cargo.toml
+index 3404b5d..858b6b7 100644
+--- a/shakenfist-spice-compression/Cargo.toml
++++ b/shakenfist-spice-compression/Cargo.toml
+@@ -12,7 +12,7 @@ readme = "README.md"
+ workspace = true
+ 
+ [features]
+-default = ["quic", "glz", "lz", "lz4", "jpeg", "mozjpeg"]
++default = ["quic", "glz", "lz", "lz4", "jpeg", "mozjpeg", "h264"]
+ quic = []
+ glz = ["dep:tokio"]
+ lz = []
+@@ -25,6 +25,10 @@ jpeg = ["dep:jpeg-decoder"]
+ # `JpegDecoder` trait surface exists; the pure-Rust
+ # `jpeg-decoder` crate remains the universal fallback.
+ mozjpeg = ["dep:mozjpeg", "jpeg"]
++# Software H.264 through openh264. Off, this crate is pure Rust and needs no
++# C++ toolchain; a consumer on a platform with a hardware decoder of its own
++# wants the stream data rather than a second software one.
++h264 = ["dep:openh264", "jpeg"]
+ 
+ [dependencies]
+ anyhow = "1"
+@@ -51,7 +55,7 @@ mozjpeg = { version = "=0.10.13", optional = true, features = ["with_simd"] }
+ # dependency). The same crate is used on the encode side in
+ # shakenfist-spice-renderer/src/encoder/h264.rs. Used by
+ # `H264VideoDecoder` in `src/video.rs`.
+-openh264 = "0.9"
++openh264 = { version = "0.9", optional = true }
+ 
+ # macOS-only: ImageIO JPEG decoder backend. Pinned to the 0.3.x
+ # `objc2-*` family so the framework crates all agree on the
+diff --git a/shakenfist-spice-compression/src/video.rs b/shakenfist-spice-compression/src/video.rs
+index aa15b7c..181d2fd 100644
+--- a/shakenfist-spice-compression/src/video.rs
++++ b/shakenfist-spice-compression/src/video.rs
+@@ -7,6 +7,10 @@
+ //! `Box<dyn VideoDecoder>` selected at `STREAM_CREATE` by
+ //! [`for_stream`].
+ //!
++//! H.264 is behind the `h264` feature; without it a
++//! `STREAM_CREATE` naming that codec is an unsupported codec
++//! like any other.
++//!
+ //! Today MJPEG (`MJpegVideoDecoder`) wraps the phase-3
+ //! [`JpegDecoder`] backend and absorbs the DHT extract/inject
+ //! state that used to live on `StreamState`. H.264
+@@ -18,6 +22,7 @@
+ 
+ use std::sync::Arc;
+ 
++#[cfg(feature = "h264")]
+ use tracing::{info, warn};
+ 
+ use crate::jpeg::{DecodedJpeg, JpegDecoder};
+@@ -133,6 +138,7 @@ pub fn for_stream(
+ ) -> Result<Box<dyn VideoDecoder>, VideoDecoderError> {
+     match codec_type {
+         SPICE_VIDEO_CODEC_TYPE_MJPEG => Ok(Box::new(MJpegVideoDecoder::new(jpeg_decoder))),
++        #[cfg(feature = "h264")]
+         SPICE_VIDEO_CODEC_TYPE_H264 => Ok(Box::new(H264VideoDecoder::new()?)),
+         other => Err(VideoDecoderError::UnsupportedCodec(other)),
+     }
+@@ -232,6 +238,7 @@ impl VideoDecoder for MJpegVideoDecoder {
+ /// failures in a row, per the phase-6 plan (Q5). It resets on any
+ /// successful decode (including `Ok(None)`, which is a normal
+ /// "need more data" outcome — not an error).
++#[cfg(feature = "h264")]
+ pub struct H264VideoDecoder {
+     decoder: openh264::decoder::Decoder,
+     /// Caller-owned RGBA scratch buffer reused across frames to
+@@ -259,8 +266,10 @@ pub struct H264VideoDecoder {
+ /// Number of consecutive H.264 decode errors before we escalate
+ /// the log level from `debug!` to `warn!`. Chosen to avoid noise
+ /// from single-packet glitches but surface persistent corruption.
++#[cfg(feature = "h264")]
+ const H264_WARN_AFTER_CONSECUTIVE_FAILURES: u32 = 3;
+ 
++#[cfg(feature = "h264")]
+ impl H264VideoDecoder {
+     /// Construct a new openh264-backed decoder.
+     ///
+@@ -282,6 +291,7 @@ impl H264VideoDecoder {
+     }
+ }
+ 
++#[cfg(feature = "h264")]
+ impl VideoDecoder for H264VideoDecoder {
+     fn decode(&mut self, packet: &[u8]) -> Result<Option<DecodedFrame>, VideoDecoderError> {
+         // SPICE STREAM_DATA carries H.264 NAL units in Annex B
+@@ -454,6 +464,7 @@ mod tests {
+         );
+     }
+ 
++    #[cfg(feature = "h264")]
+     #[test]
+     fn for_stream_h264_returns_h264_decoder() {
+         let jpeg_dec: Arc<dyn JpegDecoder> = Arc::new(JpegDecoderRsDecoder::new());
+@@ -801,7 +812,7 @@ mod mjpeg_round_trip_tests {
+ // up to 50, mean up to 15. H.264 with no rate control hint at
+ // 64x64 is unusually lossy compared to 1080p video — these
+ // numbers are calibrated to the worst case, not the typical one.
+-#[cfg(test)]
++#[cfg(all(test, feature = "h264"))]
+ mod h264_round_trip_tests {
+     use super::*;
+ 
+diff --git a/shakenfist-spice-protocol/Cargo.toml b/shakenfist-spice-protocol/Cargo.toml
+index fa17bbe..7cf748e 100644
+--- a/shakenfist-spice-protocol/Cargo.toml
++++ b/shakenfist-spice-protocol/Cargo.toml
+@@ -49,3 +49,6 @@ tokio = { version = "1", features = ["io-util", "net", "macros", "rt"] }
+ # Mints certificates with controlled subject DNs for the host_subject
+ # matcher tests. Same version the ryll crate uses for its --web TLS tests.
+ rcgen = "0.14"
++# A provider for the tests, since the crate itself no longer links one. ring
++# is what ryll installs.
++rustls = { version = "0.23", features = ["ring"] }
+diff --git a/shakenfist-spice-protocol/src/client.rs b/shakenfist-spice-protocol/src/client.rs
+index 3efc63b..21706e4 100644
+--- a/shakenfist-spice-protocol/src/client.rs
++++ b/shakenfist-spice-protocol/src/client.rs
+@@ -347,7 +347,7 @@ mod tests {
+     /// (the only caller that consults the global default), so a fresh
+     /// instance per test avoids any cross-test install race entirely.
+     fn crypto_provider() -> Arc<CryptoProvider> {
+-        Arc::new(tokio_rustls::rustls::crypto::aws_lc_rs::default_provider())
++        Arc::new(tokio_rustls::rustls::crypto::ring::default_provider())
+     }
+ 
+     fn utf8(s: &str) -> DnValue {

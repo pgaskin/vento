@@ -1,0 +1,108 @@
+From decb59d2df2a040de666882f334852ae8f44af1a Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Sun, 16 Aug 2026 18:43:09 -0400
+Subject: [PATCH 4/4] compression: an LZ4 image's blocks are its chunks, not
+ its rows
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+spice-server compresses each QXLDataChunk of the source bitmap in one
+LZ4 call, so the number of blocks is the number of chunks and each one
+holds however many rows that chunk had. A bitmap small enough to be one
+chunk — which a 1024x768 desktop is — arrives as a single block holding
+all 768 rows.
+
+Decoding a block per row therefore fails on the first one: lz4_flex is
+given a row's worth of output space for a whole image's worth of data,
+returns "provided output is too small", and the loop breaks with the
+RGBA buffer still zeroed. The image decodes to a black rectangle, and
+the decoder returns Some, so nothing above it can tell.
+
+Decoding block by block until the bitmap is full covers both shapes,
+since a chunk boundary is always a row boundary. The cap handed to
+lz4_flex is what is left of the image rather than a whole one, so a
+block that claims more than the bitmap holds is still refused.
+
+Checked against qemu 10.1 with `-spice image-compression=lz4`: the
+desktop is now identical, pixel for pixel, to the same desktop under
+GLZ, where before it was blank.
+
+diff --git a/shakenfist-spice-compression/src/lz4.rs b/shakenfist-spice-compression/src/lz4.rs
+index 72a2f54..3879386 100644
+--- a/shakenfist-spice-compression/src/lz4.rs
++++ b/shakenfist-spice-compression/src/lz4.rs
+@@ -1,8 +1,9 @@
+ /// SPICE LZ4 image decompression.
+ ///
+-/// Format: 1 byte top_down, 1 byte spice_format, then per-row blocks
+-/// each with a 4-byte big-endian compressed size followed by the LZ4
+-/// compressed row data. Returns RGBA pixels.
++/// Format: 1 byte top_down, 1 byte spice_format, then one block per
++/// chunk of the source bitmap, each with a 4-byte big-endian
++/// compressed size followed by the LZ4 compressed rows. Returns RGBA
++/// pixels.
+ use tracing::{debug, warn};
+ 
+ use crate::DecompressedImage;
+@@ -41,12 +42,23 @@ pub fn decompress_spice_lz4(data: &[u8], width: usize, height: usize) -> Option<
+     let row_bytes = width * bpp;
+     let total_pixels = width.checked_mul(height)?;
+     let rgba_size = total_pixels.checked_mul(4)?;
++    let raw_size = row_bytes.checked_mul(height)?;
+     let mut rgba = vec![0u8; rgba_size];
+ 
++    // The blocks are the source bitmap's *chunks* rather than its rows:
++    // spice-server compresses each QXLDataChunk in one call, and a bitmap that
++    // fits in one chunk — which a whole desktop does — arrives as a single
++    // block holding every row it has. Decoding block by block covers both,
++    // since a chunk boundary is always a row boundary.
++    let mut raw = Vec::with_capacity(raw_size);
+     let mut offset = 2usize; // skip top_down + format bytes
+-    for row in 0..height {
++    while raw.len() < raw_size {
+         if offset + 4 > data.len() {
+-            warn!("display: LZ4 truncated at row {}/{}", row, height);
++            warn!(
++                "display: LZ4 truncated after {}/{} rows",
++                raw.len() / row_bytes,
++                height
++            );
+             break;
+         }
+ 
+@@ -60,24 +72,27 @@ pub fn decompress_spice_lz4(data: &[u8], width: usize, height: usize) -> Option<
+ 
+         if offset + enc_size > data.len() {
+             warn!(
+-                "display: LZ4 row {} enc_size={} exceeds data ({})",
+-                row,
++                "display: LZ4 block enc_size={} exceeds data ({})",
+                 enc_size,
+                 data.len() - offset
+             );
+             break;
+         }
+ 
+-        let row_data = match lz4_flex::decompress(&data[offset..offset + enc_size], row_bytes) {
+-            Ok(d) => d,
++        // The cap is what is left of the image, so a block that claims more
++        // than the bitmap holds is refused rather than allocated for.
++        match lz4_flex::decompress(&data[offset..offset + enc_size], raw_size - raw.len()) {
++            Ok(block) => raw.extend_from_slice(&block),
+             Err(e) => {
+-                warn!("display: LZ4 row {} decompression failed: {}", row, e);
++                warn!("display: LZ4 block decompression failed: {}", e);
+                 break;
+             }
+-        };
++        }
+         offset += enc_size;
++    }
+ 
+-        // Convert decoded row to RGBA
++    for row in 0..raw.len() / row_bytes {
++        let row_data = &raw[row * row_bytes..(row + 1) * row_bytes];
+         let dst_row = if top_down { row } else { height - 1 - row };
+         let dst_row_start = dst_row * width * 4;
+         match bpp {

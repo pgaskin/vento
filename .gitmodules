@@ -43,3 +43,8 @@
 	url = https://github.com/rustdesk/hbb_common.git
 	shallow = true
 	ignore = all
+[submodule "third_party/ryll"]
+	path = third_party/ryll
+	url = https://github.com/shakenfist/ryll.git
+	shallow = true
+	ignore = all

@@ -7,8 +7,11 @@ cd "$(dirname "$0")"
 
 NAME="${NAME:-protoqemu}"
 PORT="${PORT:-5902}"
+SPICE_PORT="${SPICE_PORT:-5930}"
+SPICE_TLS_PORT="${SPICE_TLS_PORT:-5931}"
 MEMORY="${MEMORY:-512}"
 VNC_PASSWORD="${VNC_PASSWORD:-vncpass}"
+SPICE_PASSWORD="${SPICE_PASSWORD:-spicepass}"
 POINTER="${POINTER:-relative}"
 
 case "$1" in
@@ -29,11 +32,16 @@ fi
 
 docker run -d --name "$NAME" "${kvm[@]}" \
     -p "$PORT:5900" \
+    -p "$SPICE_PORT:5930" \
+    -p "$SPICE_TLS_PORT:5931" \
     -e MEMORY="$MEMORY" \
     -e VNC_PASSWORD="$VNC_PASSWORD" \
+    -e SPICE_PASSWORD="$SPICE_PASSWORD" \
     -e POINTER="$POINTER" \
+    -e SPICE_WAN="${SPICE_WAN:-}" \
     "$NAME:latest" >/dev/null
 
 ip="$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -1)"
 echo "$NAME up: $ip:$PORT  (pointer $POINTER, password '$VNC_PASSWORD')"
+echo "     spice: $ip:$SPICE_PORT  (password '$SPICE_PASSWORD'), TLS on $ip:$SPICE_TLS_PORT"
 echo "the guest takes a few seconds to reach its desktop"

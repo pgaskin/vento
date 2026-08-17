@@ -27,6 +27,7 @@ include ':backends:ironrdp'
 include ':backends:freerdp'
 include ':backends:realvnc'
 include ':backends:rustdesk'
+include ':backends:spice'
 include ':control'
 
 include ':plugins'

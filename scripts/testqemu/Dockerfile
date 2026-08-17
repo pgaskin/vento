@@ -19,15 +19,28 @@
 #
 # No `usb-tablet`, deliberately: that is the device that would make the pointer
 # absolute and turn this container into a slower `testvnc`.
+#
+# It also serves **SPICE**, on the same QEMU and the same guest, which is the
+# only place here where one far end speaks two protocols. Debian splits the
+# server out of `qemu-system-x86` into `qemu-system-modules-spice`, so without
+# that package `-spice` is not an option group at all.
+#
+# SPICE's TLS is a **second port** rather than a negotiation, so it is a second
+# port here too: 5930 plain and 5931 with a certificate generated when this
+# image is built. Built rather than started, so that the fingerprint the phone
+# pins survives a restart of the container and a *changed* one is something the
+# rig can be made to do on purpose by rebuilding.
 FROM debian:trixie
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         qemu-system-x86 \
+        qemu-system-modules-spice \
         seabios \
         ipxe-qemu \
         ca-certificates \
+        openssl \
         curl \
         libarchive-tools \
     && rm -rf /var/lib/apt/lists/*
@@ -44,8 +57,25 @@ RUN curl -fsSL -o /kolibri.7z "${KOLIBRI_URL}" \
     && bsdtar -xf /kolibri.7z -C / kolibri.img \
     && rm -f /kolibri.7z
 
+# QEMU wants its own names: a CA it made up, and a certificate under it. There
+# is nothing for the CA to be worth here — this app pins the leaf and verifies
+# no chain — so it is one command and the shortest life a certificate can have
+# without being a nuisance.
+RUN mkdir -p /certs \
+    && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+        -keyout /certs/ca-key.pem -out /certs/ca-cert.pem \
+        -subj "/CN=protoqemu ca" 2>/dev/null \
+    && openssl req -newkey rsa:2048 -nodes \
+        -keyout /certs/server-key.pem -out /certs/server-req.pem \
+        -subj "/CN=protoqemu" 2>/dev/null \
+    && openssl x509 -req -in /certs/server-req.pem -days 3650 \
+        -CA /certs/ca-cert.pem -CAkey /certs/ca-key.pem -set_serial 1 \
+        -out /certs/server-cert.pem 2>/dev/null \
+    && rm -f /certs/server-req.pem \
+    && openssl x509 -in /certs/server-cert.pem -noout -fingerprint -sha256
+
 COPY start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
 
-EXPOSE 5900
+EXPOSE 5900 5930 5931
 ENTRYPOINT ["/usr/local/bin/start.sh"]

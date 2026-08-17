@@ -12,9 +12,10 @@ that does to a control stack built entirely on owning the cursor here. TigerVNC 
 POINTER=absolute ./run.sh   # the same guest with a usb-tablet, for the A/B
 ```
 
-Defaults: port `5902`, 256 MB, `VncAuth` with password `vncpass`, KVM if this
-machine has it. There is no `shot` command: the guest's screen is not an X
-display anybody can reach from the host — use the client under test.
+Defaults: port `5902`, SPICE on `5930` and its TLS port on `5931`, 256 MB,
+`VncAuth` with password `vncpass` and a SPICE ticket of `spicepass`, KVM if this
+machine has it. There is no `shot` command: the guest's screen is not an X display anybody can reach
+from the host — use the client under test.
 
 ```
 $ cargo run -q --example rfb-probe -- 127.0.0.1:5902 vncpass /tmp/f.ppm
@@ -24,6 +25,37 @@ pointer mode: relative
 pointer:      relative
 buttons:      8
 ```
+
+## And SPICE, on the same QEMU
+
+The one far end here that speaks **two protocols to the same guest**, which is
+what makes a comparison between them a comparison rather than an analogy. It is
+one package (`qemu-system-modules-spice`, which Debian splits out of
+`qemu-system-x86` — without it `-spice` is not an option group at all) and two
+more ports; `scripts/measure/spice-probe` drives the crates and
+`backends/spice`'s own example drives the backend.
+
+**TLS is a second port rather than a negotiation**, so it is one here too: 5931,
+with a certificate and a throwaway CA made when the image is *built*. Built
+rather than started, so the fingerprint a phone pins survives a restart of the
+container — and a rebuild is how to make the identity change on purpose, which
+is the case the pin prompt exists for. `./run.sh` prints the fingerprint, and so
+does the container's log.
+
+```sh
+SPICE_WAN=1 ./run.sh     # jpeg and zlib-glz, which a client cannot ask for
+```
+
+That switch turns on the two encodings a server only reaches for when it thinks
+the link is a WAN. It is here because they are otherwise unreachable — though
+this guest does not trip QEMU's own heuristic for either, since a dithered
+desktop is not a photograph.
+
+`POINTER` decides SPICE's mouse mode as well as RFB's, and the same way: with
+no `usb-tablet` the server offers *server* mode alone, and with one it offers
+*server+client* and lets the client ask. That is the pairing a relative pointer
+needs and the one no reachable RDP server has
+([68](../../notes/68-relative-pointer-usable.md) §7).
 
 ## The guest
 

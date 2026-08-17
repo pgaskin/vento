@@ -29,6 +29,7 @@ MODULES=(
     "freerdp:net/pgaskin/remotedesktop/backend/freerdp/FreeRdpNative:remotedesktop_freerdp:cmake"
     "realvnc:net/pgaskin/remotedesktop/backend/realvnc/RealVncTraffic:remotedesktop_realvnc:cmake"
     "rustdesk:net/pgaskin/remotedesktop/backend/rustdesk/RustDeskNative:remotedesktop_rustdesk:cargo"
+    "spice:net/pgaskin/remotedesktop/backend/spice/SpiceNative:remotedesktop_spice:cargo"
 )
 
 if [ "${NOBUILD:-0}" != 1 ]; then

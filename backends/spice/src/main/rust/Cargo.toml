@@ -1,0 +1,74 @@
+# The SPICE backend's native half: their protocol and their decoders under a
+# session of ours. The session layer is plain Rust and `src/bindings` is
+# Android-only, so `cargo test` and `cargo run --example spice-probe` exercise
+# it on the host against a real server.
+[package]
+name = "remotedesktop-spice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+# `lib` for the tests and the example, `cdylib` for the library the app loads —
+# one crate for one protocol.
+name = "remotedesktop_spice"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+log.workspace = true
+remotedesktop-common.workspace = true
+remotedesktop-tls.workspace = true
+
+# A submodule rather than the published crates, because two things had to
+# change upstream before either would build for a phone: `patches/ryll/`, and
+# note 83 §2 for what they are. `client` is deliberately not among them — it is
+# their TLS opinion with a bundled root store in it, which is 922 KB and is
+# replaced here by `remotedesktop-tls`'s pinning.
+shakenfist-spice-protocol = { path = "../../../../../third_party/ryll/shakenfist-spice-protocol", default-features = false }
+shakenfist-spice-compression = { path = "../../../../../third_party/ryll/shakenfist-spice-compression", default-features = false, features = [
+    "quic",
+    "glz",
+    "lz",
+    "lz4",
+    "jpeg", # images and MJPEG streams, through the pure-Rust decoder
+] }
+
+# The first async runtime in this repository, and the reason is the protocol:
+# a session is four sockets that have to be read concurrently, which is the one
+# shape here where a thread each is the awkward answer. One current-thread
+# runtime per session, owned by the thread the session already has.
+tokio = { version = "1", default-features = false, features = [
+    "rt",
+    "net",
+    "io-util",
+    "time",
+    "sync",
+    "macros",
+] }
+# The TLS port, with `remotedesktop-tls`'s verifier in it. No provider feature:
+# the patched protocol crate takes the process-wide default, which is the
+# `ring` our own crate installs.
+tokio-rustls = { version = "0.26", default-features = false, features = [
+    "logging",
+    "tls12",
+] }
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+    "logging",
+] }
+# ZLIB_GLZ_RGB, which is a GLZ image with a zlib wrapper round it. The RFB
+# client already inflates with this one.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
+[dev-dependencies]
+# The example's own logger, which is where the client's warnings go when there
+# is no logcat to put them in.
+log.workspace = true
+
+# The only part of this crate that knows a phone exists.
+[target.'cfg(target_os = "android")'.dependencies]
+jni.workspace = true
+android_logger.workspace = true

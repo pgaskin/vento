@@ -1,0 +1,30 @@
+#!/bin/sh
+# Apply whatever layout the client asked for, which is what a desktop
+# environment does and a bare window manager does not.
+#
+# A client's monitors config does not reach `spice-vdagent` at all when the
+# guest's display is a QXL device: the SPICE server intercepts it and hands it
+# to the virtual hardware, so what arrives in here is a **preferred RandR mode
+# per output** — and a second head asked for arrives as an output that has
+# become *connected*. Something has to switch to them, and GNOME and KDE do it
+# from their own display managers.
+#
+# Every connected output takes its preferred mode, laid left to right in the
+# order RandR lists them, which is the layout a client asking for two heads side
+# by side is asking for.
+last=""
+while true; do
+    wanted="$(xrandr 2>/dev/null | awk '
+        / connected/                          { out = $1; pending = 1; next }
+        pending && /^ +[0-9]+x[0-9]+/ && /\+/ {
+            printf " --output %s --mode %s --pos %dx0", out, $1, x
+            split($1, size, "x")
+            x += size[1]
+            pending = 0
+        }')"
+    if [ -n "$wanted" ] && [ "$wanted" != "$last" ]; then
+        echo "applying:$wanted"
+        xrandr $wanted && last="$wanted"
+    fi
+    sleep 1
+done

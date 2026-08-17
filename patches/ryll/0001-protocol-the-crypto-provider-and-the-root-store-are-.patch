@@ -1,0 +1,68 @@
+From 4dd70c0a661f48141236a7df7294e1a9fb5272a0 Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Sun, 16 Aug 2026 15:55:45 -0400
+Subject: [PATCH 1/4] protocol: the crypto provider and the root store are the
+ embedder's
+
+rustls 0.23 resolves its provider at runtime and this crate already reads
+the process-wide default, so tokio-rustls's own provider feature only
+decides which one is *linked*. aws-lc-rs is the default it brings, wants
+cmake and bindgen to cross-compile, and is a second provider beside the
+ring ryll installs.
+
+webpki-roots goes behind a feature for the same reason it is unused by
+anyone verifying a server some other way: a private CA, or a pinned key.
+
+diff --git a/shakenfist-spice-protocol/Cargo.toml b/shakenfist-spice-protocol/Cargo.toml
+index daf2bf6..fa17bbe 100644
+--- a/shakenfist-spice-protocol/Cargo.toml
++++ b/shakenfist-spice-protocol/Cargo.toml
+@@ -11,6 +11,13 @@ readme = "README.md"
+ [lints]
+ workspace = true
+ 
++[features]
++default = ["webpki-roots"]
++# The public root store `SpiceClient` adds to every connection. A consumer
++# that verifies a SPICE server some other way — a pinned key, a private CA —
++# links a megabyte of certificate authorities it never consults otherwise.
++webpki-roots = ["dep:webpki-roots"]
++
+ [dependencies]
+ anyhow = "1"
+ serde = { version = "1", features = ["derive"] }
+@@ -19,12 +26,20 @@ rand = "0.8"
+ rsa = "0.9"
+ sha1 = "0.10"
+ tokio = { version = "1", features = ["io-util", "net"] }
+-tokio-rustls = "0.26"
++# No provider feature: rustls 0.23 picks one at runtime from the
++# process-wide default, which this crate already delegates to
++# (`CryptoProvider::get_default`). The default here would be aws-lc-rs,
++# which wants cmake and bindgen to cross-compile and is a second provider
++# beside the ring that ryll installs.
++tokio-rustls = { version = "0.26", default-features = false, features = [
++    "logging",
++    "tls12",
++] }
+ thiserror = "2"
+ tracing = "0.1"
+ rustls-pemfile = "2"
+ socket2 = { version = "0.6", features = ["all"] }
+-webpki-roots = "1.0"
++webpki-roots = { version = "1.0", optional = true }
+ # Certificate subject DN parsing for host_subject pinning. Already in the
+ # workspace lockfile transitively (rcgen pulls it), so no new registry entry.
+ x509-parser = "0.18"
+diff --git a/shakenfist-spice-protocol/src/client.rs b/shakenfist-spice-protocol/src/client.rs
+index 3fbede8..3efc63b 100644
+--- a/shakenfist-spice-protocol/src/client.rs
++++ b/shakenfist-spice-protocol/src/client.rs
+@@ -197,6 +197,7 @@ impl SpiceClient {
+         let mut root_store = RootCertStore::empty();
+ 
+         // Add system roots
++        #[cfg(feature = "webpki-roots")]
+         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+ 
+         let has_custom_ca = config.ca_cert.is_some();

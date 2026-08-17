@@ -13,11 +13,12 @@
 #   scripts/session.sh -b rdp                # the RDP test desktop (scripts/testrdp/)
 #   scripts/session.sh -b freerdp            # the same desktop, the other RDP client
 #   scripts/session.sh -b rustdesk           # the RustDesk desktop (scripts/testrustdesk/)
+#   scripts/session.sh -b spice              # the QEMU rig's SPICE port (scripts/testqemu/)
 #   scripts/session.sh -b rustdesk -o ConnectBy=id <peer-id>   # the same by ID
 #
-# The default address is the test desktop's (5901), 3389 with -b rdp, or 21118
-# with -b rustdesk; the QEMU and H.264 rigs are 5902 and 5903 and have to be
-# given. RustDesk is an add-on rather than part of the app, so -b rustdesk
+# The default address is the test desktop's (5901), 3389 with -b rdp, 21118
+# with -b rustdesk or 5930 with -b spice; the QEMU rig's VNC port and the H.264
+# rig are 5902 and 5903 and have to be given. RustDesk is an add-on rather than part of the app, so -b rustdesk
 # installs that APK as well.
 set -euo pipefail
 cd "$(dirname "$0")/.."   # the build is at the repository root
@@ -36,7 +37,7 @@ log() {
     exec adb logcat -v time \
         RealVnc:V CSession:V CSessionMgr:V CConnection:V CConn:V CProtoV4Down:V \
         CDesktop:V ConfigParameter:V Rfb:V Rdp:V FreeRdp:V LibVnc:V TigerVnc:V \
-        RustDesk:V Backends:V \
+        RustDesk:V Spice:V Backends:V \
         AndroidRuntime:E DEBUG:F "$PKG:V" '*:S'
 }
 
@@ -63,6 +64,8 @@ if [ -z "$ADDRESS" ]; then
         ADDRESS="$ip:${PORT:-3389}"
     elif [ "$BACKEND" = rustdesk ]; then
         ADDRESS="$ip:${PORT:-21118}"
+    elif [ "$BACKEND" = spice ]; then
+        ADDRESS="$ip:${PORT:-5930}"
     else
         ADDRESS="$ip:${PORT:-5901}"
     fi

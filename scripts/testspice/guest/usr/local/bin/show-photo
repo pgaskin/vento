@@ -1,0 +1,8 @@
+#!/bin/sh
+# A photograph on the guest's screen, full screen, until something kills feh.
+# What it is for is the two encodings a client cannot ask for: a server reaches
+# for JPEG and zlib-over-GLZ when it decides an image is gradual enough to be a
+# photograph, and nothing else on this desktop is.
+pkill feh
+[ "$1" = "off" ] && exit 0
+DISPLAY=:0 feh --fullscreen --hide-pointer /root/photo.png >/dev/null 2>&1 &

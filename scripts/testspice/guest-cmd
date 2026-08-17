@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+# Run a command inside the guest and print what it said.
+#
+# The guest has a shell on a virtio-serial port (see `guest-init`); this
+# connects to the host end of it, writes the command with a marker after it,
+# and reads until the marker comes back. A connection is one command: closing
+# it is what ends the shell the guest reopens for the next one.
+import os
+import socket
+import sys
+import time
+
+SOCK = "/run/guest-cmd.sock"
+READY = b"__guestcmd_ready__"
+MARK = b"__guestcmd_done__"
+TIMEOUT = float(os.environ.get("GUEST_CMD_TIMEOUT", "20"))
+
+
+def read_until(s: socket.socket, marker: bytes, deadline: float) -> bytes:
+    out = b""
+    while marker not in out:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        s.settimeout(remaining)
+        try:
+            chunk = s.recv(4096)
+        except socket.timeout:
+            break
+        if not chunk:
+            break
+        out += chunk
+    return out
+
+
+def main() -> int:
+    cmd = " ".join(sys.argv[1:])
+    if not cmd:
+        print("usage: guest-cmd <command>", file=sys.stderr)
+        return 2
+
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    for attempt in range(40):
+        try:
+            s.connect(SOCK)
+            break
+        except OSError:
+            if attempt == 39:
+                raise
+            time.sleep(0.25)
+
+    deadline = time.monotonic() + TIMEOUT
+    # The guest's shell announces itself when it has the port open, and a
+    # command sent before that goes nowhere: virtio-serial discards what
+    # arrives while the guest end is shut.
+    if READY not in read_until(s, READY, deadline):
+        print("guest-cmd: the guest never announced a shell", file=sys.stderr)
+        return 1
+
+    s.sendall(cmd.encode() + b"\nprintf '%s %d\\n' " + MARK + b" $?\n")
+    out = b""
+    while MARK not in out:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        s.settimeout(remaining)
+        try:
+            chunk = s.recv(4096)
+        except socket.timeout:
+            break
+        if not chunk:
+            break
+        out += chunk
+    s.close()
+
+    status = 1
+    body, mark, tail = out.partition(MARK)
+    if mark:
+        parts = tail.split()
+        if parts and parts[0].isdigit():
+            status = int(parts[0])
+    sys.stdout.buffer.write(body)
+    sys.stdout.flush()
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())

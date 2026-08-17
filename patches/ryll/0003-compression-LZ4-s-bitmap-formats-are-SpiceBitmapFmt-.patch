@@ -1,0 +1,206 @@
+From f998d5703c498afca7e38f265aa978124a40caef Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Sun, 16 Aug 2026 18:39:24 -0400
+Subject: [PATCH 3/4] compression: LZ4's bitmap formats are SpiceBitmapFmt's
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The format byte in an LZ4 image is SpiceBitmapFmt from spice-protocol's
+enums.h, where 32BIT is 8, RGBA is 9, 24BIT is 7 and 16BIT is 6. The
+table here reads it as 4, 6, 3 and 2, so every LZ4 image a real server
+sends — QEMU's does whenever a client advertises LZ4_COMPRESSION and
+asks for it — falls through to "unsupported spice format" and decodes
+to nothing.
+
+Found against qemu 10.1 with `-spice image-compression=lz4`: the whole
+desktop arrives as format 8 and the picture is blank. With the table
+corrected it is identical, pixel for pixel, to the same desktop under
+GLZ.
+
+The tests moved with it: they were written against the same numbers, so
+they passed while the decoder could not decode anything real.
+
+diff --git a/shakenfist-spice-compression/src/lz4.rs b/shakenfist-spice-compression/src/lz4.rs
+index 17e2f2c..72a2f54 100644
+--- a/shakenfist-spice-compression/src/lz4.rs
++++ b/shakenfist-spice-compression/src/lz4.rs
+@@ -24,14 +24,14 @@ pub fn decompress_spice_lz4(data: &[u8], width: usize, height: usize) -> Option<
+         &data[..data.len().min(16)]
+     );
+ 
+-    // Bytes per pixel based on spice bitmap format.
++    // Bytes per pixel, from SpiceBitmapFmt in spice-protocol's enums.h.
+     // Format 0 (INVALID) is treated as 32BIT — some servers
+     // or proxies send this for standard BGRX data.
+     let bpp: usize = match spice_format {
+-        0 | 4 => 4, // SPICE_BITMAP_FMT_32BIT (BGRX) or unspecified
+-        6 => 4,     // SPICE_BITMAP_FMT_RGBA (BGRA)
+-        3 => 3,     // SPICE_BITMAP_FMT_24BIT (BGR)
+-        2 => 2,     // SPICE_BITMAP_FMT_16BIT
++        0 | 8 => 4, // SPICE_BITMAP_FMT_32BIT (BGRX) or unspecified
++        9 => 4,     // SPICE_BITMAP_FMT_RGBA (BGRA)
++        7 => 3,     // SPICE_BITMAP_FMT_24BIT (BGR)
++        6 => 2,     // SPICE_BITMAP_FMT_16BIT
+         other => {
+             warn!("display: LZ4 unsupported spice format: {}", other);
+             return None;
+@@ -83,7 +83,7 @@ pub fn decompress_spice_lz4(data: &[u8], width: usize, height: usize) -> Option<
+         match bpp {
+             4 => {
+                 // BGRX or BGRA → RGBA
+-                let has_alpha = spice_format == 6;
++                let has_alpha = spice_format == 9;
+                 for x in 0..width {
+                     let s = x * 4;
+                     let d = dst_row_start + x * 4;
+@@ -126,8 +126,8 @@ mod tests {
+     /// Return bytes-per-pixel for the spice_format values used in tests.
+     fn bpp_for_format(spice_format: u8) -> usize {
+         match spice_format {
+-            0 | 4 | 6 => 4,
+-            3 => 3,
++            0 | 8 | 9 => 4,
++            7 => 3,
+             _ => panic!("bpp_for_format: unsupported test format {}", spice_format),
+         }
+     }
+@@ -163,16 +163,16 @@ mod tests {
+     }
+ 
+     // ---------------------------------------------------------------
+-    // Test 1: format 4 (BGRX), top_down = true, single row
++    // Test 1: format 8 (BGRX), top_down = true, single row
+     // ---------------------------------------------------------------
+     #[test]
+-    fn decompress_spice_lz4_format4_bgrx_top_down() {
++    fn decompress_spice_lz4_format8_bgrx_top_down() {
+         // Two pixels: red and blue-ish.
+         // Wire format is BGRX.
+         //   red:      R=255, G=0,   B=0   -> BGRX [0,   0,   255, 0]
+         //   blue-ish: R=0,   G=128, B=255 -> BGRX [255, 128, 0,   0]
+         let rows = vec![vec![0u8, 0, 255, 0, 255, 128, 0, 0]];
+-        let data = encode_spice_lz4(true, 4, 2, &rows);
++        let data = encode_spice_lz4(true, 8, 2, &rows);
+         let result = decompress_spice_lz4(&data, 2, 1);
+         assert!(result.is_some(), "expected Some, got None");
+         let img = result.unwrap();
+@@ -182,21 +182,21 @@ mod tests {
+         assert_eq!(
+             img.pixels,
+             vec![255, 0, 0, 255, 0, 128, 255, 255],
+-            "RGBA mismatch for format 4 BGRX"
++            "RGBA mismatch for format 8 BGRX"
+         );
+     }
+ 
+     // ---------------------------------------------------------------
+-    // Test 2: format 6 (BGRA), alpha preserved, single row
++    // Test 2: format 9 (BGRA), alpha preserved, single row
+     // ---------------------------------------------------------------
+     #[test]
+-    fn decompress_spice_lz4_format6_bgra() {
++    fn decompress_spice_lz4_format9_bgra() {
+         // Two pixels with explicit alpha.
+         // Wire format is BGRA.
+         //   pixel 1: B=10, G=20, R=30, A=128 -> BGRA [10, 20, 30, 128]
+         //   pixel 2: B=50, G=60, R=70, A=200 -> BGRA [50, 60, 70, 200]
+         let rows = vec![vec![10u8, 20, 30, 128, 50, 60, 70, 200]];
+-        let data = encode_spice_lz4(true, 6, 2, &rows);
++        let data = encode_spice_lz4(true, 9, 2, &rows);
+         let result = decompress_spice_lz4(&data, 2, 1);
+         assert!(result.is_some(), "expected Some, got None");
+         let img = result.unwrap();
+@@ -206,21 +206,21 @@ mod tests {
+         assert_eq!(
+             img.pixels,
+             vec![30, 20, 10, 128, 70, 60, 50, 200],
+-            "RGBA mismatch for format 6 BGRA"
++            "RGBA mismatch for format 9 BGRA"
+         );
+     }
+ 
+     // ---------------------------------------------------------------
+-    // Test 3: format 3 (BGR 24-bit), single row
++    // Test 3: format 7 (BGR 24-bit), single row
+     // ---------------------------------------------------------------
+     #[test]
+-    fn decompress_spice_lz4_format3_bgr24() {
++    fn decompress_spice_lz4_format7_bgr24() {
+         // Two pixels, 3 bytes each.
+         // Wire format is BGR.
+         //   pixel 1: B=10, G=20, R=30 -> BGR [10, 20, 30]
+         //   pixel 2: B=40, G=50, R=60 -> BGR [40, 50, 60]
+         let rows = vec![vec![10u8, 20, 30, 40, 50, 60]];
+-        let data = encode_spice_lz4(true, 3, 2, &rows);
++        let data = encode_spice_lz4(true, 7, 2, &rows);
+         let result = decompress_spice_lz4(&data, 2, 1);
+         assert!(result.is_some(), "expected Some, got None");
+         let img = result.unwrap();
+@@ -230,7 +230,7 @@ mod tests {
+         assert_eq!(
+             img.pixels,
+             vec![30, 20, 10, 255, 60, 50, 40, 255],
+-            "RGBA mismatch for format 3 BGR"
++            "RGBA mismatch for format 7 BGR"
+         );
+     }
+ 
+@@ -251,7 +251,7 @@ mod tests {
+         assert_eq!(
+             img.pixels,
+             vec![255, 0, 0, 255, 0, 128, 255, 255],
+-            "format 0 output should match format 4 BGRX"
++            "format 0 output should match format 8 BGRX"
+         );
+     }
+ 
+@@ -260,7 +260,7 @@ mod tests {
+     // ---------------------------------------------------------------
+     #[test]
+     fn decompress_spice_lz4_bottom_up_row_order() {
+-        // Two rows, 1 pixel wide, format 4 (BGRX).
++        // Two rows, 1 pixel wide, format 8 (BGRX).
+         // Wire row 0 (first in data) = red:   BGRX [0, 0, 255, 0]
+         // Wire row 1                  = green: BGRX [0, 255, 0, 0]
+         //
+@@ -271,7 +271,7 @@ mod tests {
+         // Expected output: top row = green RGBA [0, 255, 0, 255],
+         //                  bottom row = red RGBA [255, 0, 0, 255].
+         let rows = vec![vec![0u8, 0, 255, 0], vec![0u8, 255, 0, 0]];
+-        let data = encode_spice_lz4(false, 4, 1, &rows);
++        let data = encode_spice_lz4(false, 8, 1, &rows);
+         let result = decompress_spice_lz4(&data, 1, 2);
+         assert!(result.is_some(), "expected Some, got None for bottom-up");
+         let img = result.unwrap();
+@@ -296,7 +296,7 @@ mod tests {
+     // ---------------------------------------------------------------
+     #[test]
+     fn decompress_spice_lz4_multi_row() {
+-        // Four rows, 1 pixel wide, format 4 (BGRX), top_down = true.
++        // Four rows, 1 pixel wide, format 8 (BGRX), top_down = true.
+         // Each row is a different distinct colour so cross-contamination
+         // shows up.
+         //   row 0: red   -> BGRX [0, 0, 255, 0]     -> RGBA [255, 0, 0, 255]
+@@ -309,7 +309,7 @@ mod tests {
+             vec![255u8, 0, 0, 0],
+             vec![255u8, 255, 255, 0],
+         ];
+-        let data = encode_spice_lz4(true, 4, 1, &rows);
++        let data = encode_spice_lz4(true, 8, 1, &rows);
+         let result = decompress_spice_lz4(&data, 1, 4);
+         assert!(result.is_some(), "expected Some for multi-row");
+         let img = result.unwrap();
+@@ -343,10 +343,10 @@ mod tests {
+     // ---------------------------------------------------------------
+     #[test]
+     fn decompress_spice_lz4_truncated_returns_partial_image() {
+-        // Two rows, 1 pixel wide, format 4 (BGRX).
++        // Two rows, 1 pixel wide, format 8 (BGRX).
+         // Row 0: red.  Row 1: green.
+         let rows = vec![vec![0u8, 0, 255, 0], vec![0u8, 255, 0, 0]];
+-        let mut data = encode_spice_lz4(true, 4, 1, &rows);
++        let mut data = encode_spice_lz4(true, 8, 1, &rows);
+ 
+         // Truncate the last byte of row 1's compressed payload.
+         // After row 0 is decoded and consumed, the decoder reads the

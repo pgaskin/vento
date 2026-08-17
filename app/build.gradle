@@ -10,10 +10,10 @@ plugins {
 // `scripts/session.sh` and every `installDebug` assume, and one APK is one
 // versionCode, which is what a build server that republishes this wants.
 //
-// The cost is only the other architecture's libraries, and as of ed0b535 a
-// universal release APK is 31.7 MB: 9.9 MB of arm64-v8a, 10.3 MB of
-// x86_64, and 11.5 MB that is neither. Splitting would save a phone 10.3 MB of
-// a 31.7 MB download and cost every consumer of this build a second artefact,
+// The cost is only the other architecture's libraries, and as of 3a19cb0 a
+// universal release APK is 35.9 MB: 11.6 MB of arm64-v8a, 12.2 MB of
+// x86_64, and 12.0 MB that is neither. Splitting would save a phone 12.2 MB of
+// a 35.9 MB download and cost every consumer of this build a second artefact,
 // while also making versioning more complicated.
 final shippedAbis = ['arm64-v8a', 'x86_64']
 
@@ -94,6 +94,7 @@ final backendModules = [
         ':backends:tigervnc': null,
         ':backends:ironrdp' : 'remotedesktop-ironrdp',
         ':backends:freerdp' : null,
+        ':backends:spice'   : 'remotedesktop-spice',
 ]
 
 dependencies {
@@ -162,6 +163,15 @@ androidComponents {
                     f.getText('UTF-8')
                 }
                 [[
+                        // The two crates the SPICE backend is built on, which
+                        // arrive as a submodule of their own repository rather
+                        // than from the registry — and whose published packages
+                        // carry no licence file at all, so the text is the one
+                        // at the root of the tree they came out of.
+                        name: 'ryll (shakenfist-spice-protocol, -compression)',
+                        spdx: 'Apache-2.0',
+                        text: licenceText('third_party/ryll/LICENSE'),
+                ], [
                         name: 'LibVNCServer/LibVNCClient',
                         spdx: 'GPL-2.0-or-later',
                         text: licenceText('third_party/libvncserver/COPYING'),

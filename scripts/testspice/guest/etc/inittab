@@ -1,0 +1,12 @@
+# busybox init, and three lines of it. There is no service manager in this
+# guest on purpose: what it has to bring up is a udev, a dbus, the agent and an
+# X server, and that is a script rather than a dependency graph.
+#
+# The console is ttyS0 and goes to the container's log; ttyS1 is a shell for
+# somebody debugging by hand, and it is a socket the host connects to rather
+# than a file, so a getty with nobody on the other end waits instead of
+# respawning.
+::sysinit:/sbin/guest-init
+::respawn:/sbin/getty -n -l /bin/sh -L 115200 ttyS1 vt100
+::ctrlaltdel:/sbin/reboot
+::shutdown:/bin/umount -a -r

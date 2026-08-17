@@ -1,0 +1,71 @@
+#!/bin/sh
+# PID 1's sysinit: the filesystems, the devices, the agent's daemon, the
+# command channel the host drives this guest down, and X.
+set -x
+
+# Alpine's initramfs mounts the root read-only whatever `rw` on the command
+# line says, and leaves the remount to the service manager this guest does not
+# have.
+mount -o remount,rw /
+exec >/var/log/guest-init.log 2>&1
+
+mount -t proc proc /proc 2>/dev/null
+mount -t sysfs sys /sys 2>/dev/null
+mount -t devtmpfs dev /dev 2>/dev/null
+mkdir -p /dev/pts /dev/shm /run/dbus /tmp /var/log
+mount -t devpts devpts /dev/pts 2>/dev/null
+mount -t tmpfs tmpfs /dev/shm 2>/dev/null
+mount -t tmpfs tmpfs /tmp 2>/dev/null
+chmod 1777 /tmp /dev/shm
+hostname spiceguest
+
+/sbin/udevd -d
+/bin/udevadm trigger --action=add
+/bin/udevadm settle -t 10
+
+# The name a virtio-serial port is addressed by is in sysfs and the device node
+# is not: `/dev/virtio-ports/<name>` is a udev rule everywhere else, and this
+# guest's udev has no such rule, so the symlinks are made here. The agent's
+# daemon looks for its port by that path and nothing else.
+mkdir -p /dev/virtio-ports
+for p in /sys/class/virtio-ports/*; do
+    [ -e "$p/name" ] || continue
+    ln -sf "/dev/$(basename "$p")" "/dev/virtio-ports/$(cat "$p/name")"
+done
+
+modprobe qxl
+# The agent's daemon exits without this one: an absolute pointer from a client
+# is delivered into the guest as a uinput device, so the module is a
+# dependency of the daemon rather than of the display.
+modprobe uinput
+dbus-daemon --system
+
+# The agent is two halves: a daemon holding the virtio port, and a per-session
+# process inside X (.xinitrc) that owns the clipboard and calls xrandr.
+/usr/sbin/spice-vdagentd
+
+# The host's way in. A shell on a virtio port rather than on the serial console,
+# because a console is also where the boot output goes and a command channel
+# that has to be told apart from a kernel message is not one. The loop is the
+# reconnect: the host closing its end is EOF to the shell, and the next
+# connection gets a fresh one.
+# A virtio port opens once and once only, so it is one `<>` and two dups rather
+# than a redirect each way. Anything the host writes while nothing in here has
+# the port open is *discarded* rather than queued, which is why the shell
+# announces itself and the host waits for that before sending a command.
+set +x   # from here the trace would go down the command channel with the output
+if [ -e /dev/virtio-ports/net.pgaskin.guestcmd ]; then
+    while true; do
+        {
+            printf '__guestcmd_ready__\n'
+            DISPLAY=:0 /bin/sh
+        } 0<>/dev/virtio-ports/net.pgaskin.guestcmd 1>&0 2>&0
+        sleep 0.5
+    done &
+fi
+
+# X on VT1, in the background because sysinit is what init waits for before it
+# starts anything else. HOME is what startx reads .xinitrc out of and init has
+# no environment to speak of.
+export HOME=/root
+(startx -- :0 vt1 -ac -nolisten tcp >/var/log/xorg.log 2>&1) &
