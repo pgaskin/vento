@@ -28,8 +28,8 @@ android {
         // Checked for equality against the app's before this APK's dex is
         // loaded: the seam between the two is a set of Java interfaces that no
         // release has promised to keep stable, so they ship together.
-        versionCode 1
-        versionName "1"
+        versionCode 2
+        versionName "2"
 
         ndk {
             abiFilters 'arm64-v8a', 'x86_64'

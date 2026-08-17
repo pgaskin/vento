@@ -1,0 +1,8 @@
+* Add SPICE backend.
+* Enable AnonTLS VNC auth for LibVNC and TigerVNC.
+* Add button to share a full-size screenshot.
+* Fix in-app plugin uninstall button.
+* Apply input setting changes to existing sessions.
+* Improve panning behaviour, add option to add margins.
+* Add more reset options.
+* Implement app shortcuts and home screen pinning.
