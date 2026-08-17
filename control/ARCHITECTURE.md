@@ -1230,6 +1230,10 @@ layer, this claims pointers before the gesture layer sees them — so nothing
 arbitrates between them, and both hand the host the same four names, which is
 what stops them drifting apart in what they do.
 
+**Flush to the left edge**, whatever that edge costs — a column indented by a
+corner radius reads as a panel that has come loose — and held off the top and
+the bottom, which is where a bar, a cutout or the key row is.
+
 **44 dp buttons and a 24 dp grip, which is 200 dp, and that is the whole of the
 geometry argument.** The left edge is where the system's back gesture is, a
 claimed pointer does not change that (the platform decides before the app sees

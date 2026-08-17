@@ -123,6 +123,9 @@ public final class Toolbar implements TouchRouter.Claim {
      * something offers three buttons rather than four greyed ones.
      */
     public void setItems(List<Item> defs) {
+        if (this.defs.equals(defs)) {
+            return;   // a press under the finger is not to be cancelled for nothing
+        }
         this.defs = List.copyOf(defs);
         release();
         layout();

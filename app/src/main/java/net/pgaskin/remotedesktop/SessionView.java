@@ -43,6 +43,7 @@ import net.pgaskin.remotedesktop.control.input.PhysicalKeyboard;
 import net.pgaskin.remotedesktop.control.input.PhysicalMouse;
 import net.pgaskin.remotedesktop.control.input.RegionSink;
 import net.pgaskin.remotedesktop.control.input.TapRegions;
+import net.pgaskin.remotedesktop.control.input.Toolbar;
 import net.pgaskin.remotedesktop.control.input.TouchRouter;
 import net.pgaskin.remotedesktop.control.input.ZoomSink;
 import net.pgaskin.remotedesktop.control.ui.Chrome;
@@ -77,8 +78,8 @@ import java.util.Set;
 @SuppressLint("ViewConstructor")
 public final class SessionView extends View implements ZoomSink, CursorController.Listener,
         CursorController.PointerSink, RegionSink, Backend.Listener, KeySink,
-        MouseOverlay.Listener, ExtensionKeyboard.Listener, PhysicalMouse.Listener,
-        PhysicalKeyboard.Listener {
+        MouseOverlay.Listener, ExtensionKeyboard.Listener, Toolbar.Listener,
+        PhysicalMouse.Listener, PhysicalKeyboard.Listener {
 
     public interface Host {
         /** A tap in the {@code disconnect} region. */
@@ -164,6 +165,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     private final TapRegions tapRegions = TapRegions.standard();
     private final MouseOverlay overlay;
     private final ExtensionKeyboard keyboard;
+    private final Toolbar toolbar;
     private final PhysicalMouse mouse;
     private final PhysicalKeyboard keys;
     private final Chrome chrome;
@@ -195,6 +197,9 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
      * would never be set at all.
      */
     private int[] windowEdges = {-1, -1, -1, -1};
+    /** The toolbar's box, handed back to the system: see {@link #applyGestureExclusion}. */
+    private final android.graphics.Rect exclusion = new android.graphics.Rect();
+    private final List<android.graphics.Rect> exclusions = new ArrayList<>(1);
 
     // Volatile because damaged() is the one thing here that arrives on the
     // protocol's thread; everything that replaces the mirror is the main
@@ -287,6 +292,10 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         keyboard = new ExtensionKeyboard(cfg, this, scheduler, keyList(ctx));
         keyboard.setListener(this);
         router.addClaim(keyboard);
+        toolbar = new Toolbar(cfg);
+        toolbar.setItems(Toolbar.standard());
+        toolbar.setPosition(AppSettings.toolbarPosition(ctx));
+        router.addClaim(toolbar);
         // A third button source, for the same reason the overlay has the second:
         // a mouse holding LEFT while a finger taps the touchpad must not have
         // its button released by the tap's own 250 ms window.
@@ -296,6 +305,10 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         keys.setListener(this);
         chrome = new Chrome(cfg);
         chrome.attach(keyboard);
+        // Listening only now: a change notification asks the chrome for a
+        // ripple, and the chrome does not exist above this line.
+        toolbar.setListener(this);
+        applyControls();
         clipboard = new SessionClipboard(ctx, backend::clipboardToRemote);
         hud = new Hud(cfg);
         subtleHaptics = canTick(ctx);
@@ -662,6 +675,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         gestures.setViewSize(w, h);
         overlay.setViewSize(w, h);
         keyboard.setViewSize(w, h);
+        toolbar.setViewSize(w, h);
         place();
         // The window changing shape rather than the orientation changing: a
         // split screen dragged about asks the same question, and this activity
@@ -1101,6 +1115,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         gestures.setExternalButtonHeld((overlay.heldMask() & Button.DRAG_MASK) != 0);
         if (overlayShown != overlay.visible()) {
             overlayShown = overlay.visible();
+            syncToolbarState();
             applyInsets();
         }
         invalidate();
@@ -1113,6 +1128,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         if (keyboardShown != keyboard.visible()) {
             keyboardShown = keyboard.visible();
             syncKeyboardChrome();
+            syncToolbarState();
             applyInsets();
         }
         chrome.keyboardChanged(keyboard);
@@ -1281,6 +1297,16 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         viewport.setPanMargins(panMargin(windowEdges[0], 0), panMargin(windowEdges[1], 0),
                 panMargin(windowEdges[2], right), panMargin(windowEdges[3], bottom));
         cursor.setInsets(0, 0, right, bottom);
+        // Not one of those: the toolbar floats over the picture. What it needs
+        // is the band it may be dragged in — inside this window's own edges, and
+        // clear of what the keyboard *occupies*, which is a bigger number than
+        // what the keyboard insets by.
+        // Flush to the left edge, whatever that edge costs: this is a widget
+        // over the picture rather than part of it, and a column indented by a
+        // corner radius reads as a panel that has come loose. Only the vertical
+        // ends are held off, since those are where a bar or a cutout is.
+        toolbar.setInsets(0, windowEdges[1],
+                Math.max(windowEdges[3], keyboard.heightPx()));
         baseScale = viewport.getScale();
         invalidate();
     }
@@ -1306,13 +1332,23 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     @Override
     public boolean regionTapped(TapRegions.Region region, float x, float y) {
         lastRegion = region.name();
-        switch (region.name()) {
+        return controlAction(region.name());
+    }
+
+    /**
+     * What either affordance does, in the one place both go through, so the two
+     * cannot drift apart in what they do — only in how they are reached.
+     *
+     * @return whether it was done. The two input actions are not there at all on
+     * a view-only session: refused rather than consumed, so a tap in a region
+     * clicks as usual and does visibly nothing, like a tap anywhere else on a
+     * view-only desktop ({@code TapRegions} §"the handler decides"). The toolbar
+     * does not need the answer, since it simply does not offer those two.
+     */
+    private boolean controlAction(String name) {
+        switch (name) {
             case TapRegions.DISCONNECT -> host.disconnectRequested();
             case TapRegions.INFORMATION -> host.informationRequested();
-            // The two input regions are not there at all on a view-only session.
-            // Refused rather than consumed, so the tap clicks as usual and does
-            // visibly nothing, like a tap anywhere else on a view-only desktop
-            // (TapRegions §"the handler decides").
             case TapRegions.MOUSE -> {
                 if (backend.viewOnly()) {
                     return false;
@@ -1332,6 +1368,72 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         return true;
     }
 
+    // ---- Toolbar.Listener --------------------------------------------------
+
+    @Override
+    public void toolbarChanged() {
+        chrome.toolbarChanged(toolbar);
+        applyGestureExclusion();
+        invalidate();
+    }
+
+    @Override
+    public void toolbarAction(String name) {
+        lastRegion = name;
+        controlAction(name);
+    }
+
+    @Override
+    public void toolbarMoved(float fraction) {
+        AppSettings.setToolbarPosition(getContext(), fraction);
+    }
+
+    /**
+     * The left edge is where the system's back gesture is, and a claimed pointer
+     * does not change that: the platform decides before this view sees the
+     * stream. So the box the toolbar occupies is handed back through the one
+     * mechanism there is for it, and handed back again every time it moves —
+     * which is why this hangs off the change notification rather than the
+     * layout.
+     */
+    private void applyGestureExclusion() {
+        exclusions.clear();
+        if (toolbar.visible()) {
+            exclusion.set((int) toolbar.left(), (int) toolbar.top(),
+                    (int) toolbar.right(), (int) toolbar.bottom());
+            exclusions.add(exclusion);
+        }
+        setSystemGestureExclusionRects(exclusions);
+    }
+
+    /**
+     * Which affordance this session offers, from this phone's preferences, and
+     * what the toolbar has to say about the two widgets that have a state.
+     * Applied to a running session, since it is answered on the first frame's
+     * dialog with the session already underneath it.
+     */
+    public void applyControls() {
+        final Context ctx = getContext();
+        gestures.setRegions(AppSettings.regionsShown(ctx) ? tapRegions : null, this);
+        toolbar.setVisible(AppSettings.toolbarShown(ctx));
+        syncToolbarState();
+        invalidate();
+    }
+
+    /**
+     * A view-only session gets a shorter column rather than two dead buttons:
+     * the keyboard and the mouse overlay are not inactive there, they are
+     * absent. And the two that remain report what they are showing, the way the
+     * info bar reports an armed modifier.
+     */
+    private void syncToolbarState() {
+        toolbar.setItems(backend.viewOnly()
+                ? List.of(Toolbar.standard().get(0), Toolbar.standard().get(1))
+                : Toolbar.standard());
+        toolbar.setActive(TapRegions.MOUSE, overlay.visible());
+        toolbar.setActive(TapRegions.KEYBOARD, keyboard.visible());
+    }
+
     /**
      * Something about the connection changed that this screen shows — today,
      * only whether it is view-only, which is a control on the connection panel
@@ -1345,6 +1447,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
             overlay.setVisible(false);
             overlayHiddenByKeyboard = false;
         }
+        syncToolbarState();
         invalidate();
     }
 
@@ -1380,6 +1483,10 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
             chrome.drawOverlay(c, overlay);
         }
         if (keyboard.visible() && chrome.drawKeyboard(c, keyboard, getWidth(), cursor.screenY())) {
+            postInvalidateOnAnimation();
+        }
+        if (chrome.drawToolbar(c, toolbar, getWidth(), getHeight(),
+                cursor.screenX(), cursor.screenY())) {
             postInvalidateOnAnimation();
         }
 

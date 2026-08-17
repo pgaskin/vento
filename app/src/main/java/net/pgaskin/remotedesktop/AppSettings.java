@@ -29,6 +29,8 @@ public final class AppSettings {
     public static final String KEY_MODIFIER_RESETS_IME = "modifierResetsIme";
     public static final String KEY_TWO_LINE_KEYS = "twoLineKeys";  // the extension row's shape
     public static final String KEY_MAC_KEYS = "macKeys";           // Option and CMD on it
+    public static final String KEY_CONTROLS = "controls";          // which affordance the session has
+    public static final String KEY_TOOLBAR_POS = "toolbarPos";     // ... and where that one sits, %
     public static final String KEY_CLIPBOARD_OUT = "clipboardOut";
     public static final String KEY_CLIPBOARD_IN = "clipboardIn";
     public static final String KEY_REGION_HINTS = "regionHints";  // where the controls are
@@ -63,6 +65,8 @@ public final class AppSettings {
         m.put(KEY_MODIFIER_RESETS_IME, true);
         m.put(KEY_TWO_LINE_KEYS, false);
         m.put(KEY_MAC_KEYS, true);
+        m.put(KEY_CONTROLS, CONTROLS_REGIONS);
+        m.put(KEY_TOOLBAR_POS, "35");
         m.put(KEY_CLIPBOARD_OUT, true);
         m.put(KEY_CLIPBOARD_IN, true);
         m.put(KEY_REGION_HINTS, true);
@@ -156,7 +160,7 @@ public final class AppSettings {
      * way a keyboard groups them, rather than as the one scrolling line this app
      * has always had.
      *
-     * <p>Off by default: the second line costs 46 dp of somebody else's desktop,
+     * <p>Off by default: the second line costs 40 dp of somebody else's desktop,
      * and what it buys — the F-keys without scrolling for them — is worth that to
      * the people who use them and to nobody else.
      */
@@ -203,11 +207,13 @@ public final class AppSettings {
     }
 
     /**
-     * Whether a session still explains its tap regions on the first frame.
+     * Whether a session still explains its controls on the first frame — and,
+     * since {@link #KEY_CONTROLS} exists, asks which of them it should have.
      *
-     * <p>Turned off by the explanation's own "do not show again", and turned
-     * back on in the settings tree — dismissing something by accident should
-     * not be the last time it can be read.
+     * <p>Turned off by the dialog's own "do not ask again", and turned back on
+     * in the settings tree — dismissing something by accident should not be the
+     * last time it can be read. The choice it offers is saved as it is made,
+     * whether or not that box is ticked: they are different questions.
      */
     public static boolean regionHints(Context ctx) {
         return get(ctx, KEY_REGION_HINTS);
@@ -234,6 +240,65 @@ public final class AppSettings {
 
     public static void setRegionHints(Context ctx, boolean show) {
         prefs(ctx).edit().putBoolean(KEY_REGION_HINTS, show).apply();
+    }
+
+    /** What {@link #KEY_CONTROLS} may be, in the order the rows offer them. */
+    public static final String CONTROLS_TOOLBAR = "toolbar";
+    public static final String CONTROLS_REGIONS = "regions";
+    public static final String CONTROLS_BOTH = "both";
+
+    /**
+     * Which affordance the session screen offers: the toolbar, the tap regions,
+     * or both.
+     *
+     * <p>The regions are the default, which is what every phone that has this
+     * app already has: the toolbar is the visible one and the one the first
+     * frame's dialog offers, and a phone that has not been asked keeps what it
+     * was doing.
+     *
+     * <p>One key with three values rather than two switches, because two
+     * switches have a fourth state — neither — in which the session screen has
+     * no affordance at all beyond the notification and the system's own back
+     * gesture, and a preference that can be set to "no way out" is one that will
+     * be.
+     */
+    public static String controls(Context ctx) {
+        final String v = (String) value(ctx, KEY_CONTROLS);
+        return CONTROLS_TOOLBAR.equals(v) || CONTROLS_BOTH.equals(v) ? v : CONTROLS_REGIONS;
+    }
+
+    public static void setControls(Context ctx, String value) {
+        prefs(ctx).edit().putString(KEY_CONTROLS, value).apply();
+    }
+
+    public static boolean toolbarShown(Context ctx) {
+        return !CONTROLS_REGIONS.equals(controls(ctx));
+    }
+
+    public static boolean regionsShown(Context ctx) {
+        return !CONTROLS_TOOLBAR.equals(controls(ctx));
+    }
+
+    /**
+     * Where the toolbar sits, as a fraction of the band it may be dragged in.
+     *
+     * <p>Per phone rather than per connection: where a thumb reaches is about
+     * the hand holding it. Stored as a percentage in a string, and parsed
+     * leniently for the reason the session timeout is — a file from another
+     * phone can say anything, and the middle of the band is a safe answer.
+     */
+    public static float toolbarPosition(Context ctx) {
+        try {
+            final int pc = Integer.parseInt((String) value(ctx, KEY_TOOLBAR_POS));
+            return Math.min(100, Math.max(0, pc)) / 100f;
+        } catch (NumberFormatException e) {
+            return 0.35f;
+        }
+    }
+
+    public static void setToolbarPosition(Context ctx, float fraction) {
+        prefs(ctx).edit().putString(KEY_TOOLBAR_POS,
+                String.valueOf(Math.round(Math.min(1, Math.max(0, fraction)) * 100))).apply();
     }
 
     /**

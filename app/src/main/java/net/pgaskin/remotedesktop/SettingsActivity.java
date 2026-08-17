@@ -416,6 +416,13 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             screen.addPreference(switchPref(AppSettings.KEY_MAC_KEYS,
                     R.string.settings_mac_keys,
                     R.string.settings_mac_keys_summary, true));
+            // The two rows about the session's controls, beside each other:
+            // which affordance it has, and whether it says so on the first
+            // frame — where the same choice is offered again.
+            screen.addPreference(controls());
+            screen.addPreference(switchPref(AppSettings.KEY_REGION_HINTS,
+                    R.string.settings_region_hints,
+                    R.string.settings_region_hints_summary, true));
             screen.addPreference(switchPref(AppSettings.KEY_CLIPBOARD_OUT,
                     R.string.settings_clipboard_out,
                     R.string.settings_clipboard_out_summary, true));
@@ -425,9 +432,6 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             screen.addPreference(switchPref(AppSettings.KEY_RELEASE_KEYS,
                     R.string.settings_release_keys,
                     R.string.settings_release_keys_summary, true));
-            screen.addPreference(switchPref(AppSettings.KEY_REGION_HINTS,
-                    R.string.settings_region_hints,
-                    R.string.settings_region_hints_summary, true));
 
             // Turning previews off deletes the ones already taken. Leaving them
             // would make the switch a promise about the future only, and the
@@ -442,6 +446,32 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             });
             screen.addPreference(previews);
             store.built();
+        }
+
+        /** Which affordance a session offers, of the two and the pair of them. */
+        private ListPreference controls() {
+            final ListPreference p = new ListPreference(requireContext());
+            p.setKey(AppSettings.KEY_CONTROLS);
+            p.setTitle(R.string.settings_controls);
+            p.setDialogTitle(R.string.settings_controls);
+            p.setIconSpaceReserved(false);
+            p.setSingleLineTitle(false);
+            p.setEntryValues(new CharSequence[]{AppSettings.CONTROLS_TOOLBAR,
+                    AppSettings.CONTROLS_REGIONS, AppSettings.CONTROLS_BOTH});
+            p.setEntries(new CharSequence[]{getString(R.string.controls_toolbar),
+                    getString(R.string.controls_regions), getString(R.string.controls_both)});
+            p.setDefaultValue(AppSettings.CONTROLS_REGIONS);
+            p.setSummaryProvider(x -> controlsLabel()
+                    + "\n" + getString(R.string.settings_controls_summary));
+            return p;
+        }
+
+        private String controlsLabel() {
+            return switch (AppSettings.controls(requireContext())) {
+                case AppSettings.CONTROLS_REGIONS -> getString(R.string.controls_regions);
+                case AppSettings.CONTROLS_BOTH -> getString(R.string.controls_both);
+                default -> getString(R.string.controls_toolbar);
+            };
         }
 
         /**
