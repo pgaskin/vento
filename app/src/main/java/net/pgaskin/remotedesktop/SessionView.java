@@ -161,7 +161,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     private final CursorController cursor;
     private final GestureRecognizer gestures;
     private final TouchRouter router;
-    private final TapRegions tapRegions = TapRegions.toolbar();
+    private final TapRegions tapRegions = TapRegions.standard();
     private final MouseOverlay overlay;
     private final ExtensionKeyboard keyboard;
     private final PhysicalMouse mouse;

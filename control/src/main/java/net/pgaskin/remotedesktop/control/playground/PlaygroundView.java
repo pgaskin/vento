@@ -5,10 +5,13 @@ package net.pgaskin.remotedesktop.control.playground;
 
 import android.annotation.SuppressLint;
 import android.content.ClipData;
+import android.app.Activity;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
@@ -37,12 +40,15 @@ import net.pgaskin.remotedesktop.control.input.PhysicalKeyboard;
 import net.pgaskin.remotedesktop.control.input.PhysicalMouse;
 import net.pgaskin.remotedesktop.control.input.RegionSink;
 import net.pgaskin.remotedesktop.control.input.TapRegions;
+import net.pgaskin.remotedesktop.control.input.Toolbar;
 import net.pgaskin.remotedesktop.control.input.TouchRouter;
 import net.pgaskin.remotedesktop.control.input.ZoomSink;
 import net.pgaskin.remotedesktop.control.ui.Chrome;
 import net.pgaskin.remotedesktop.control.ui.Hud;
 import net.pgaskin.remotedesktop.control.ui.TextInput;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
 
@@ -57,7 +63,7 @@ import java.util.function.Consumer;
  */
 public final class PlaygroundView extends View
         implements ZoomSink, CursorController.Listener, FakeDesktop.ToggleHandler, RegionSink,
-        MouseOverlay.Listener, ExtensionKeyboard.Listener, TextInput.Watcher,
+        MouseOverlay.Listener, ExtensionKeyboard.Listener, Toolbar.Listener, TextInput.Watcher,
         PhysicalMouse.Listener, PhysicalKeyboard.Listener {
 
     // A common laptop/remote size, so this can be compared
@@ -75,6 +81,7 @@ public final class PlaygroundView extends View
     private final TouchRecorder recorder;
     private final MouseOverlay overlay;
     private final ExtensionKeyboard keyboard;
+    private final Toolbar toolbar;
     private final PhysicalMouse mouse;
     private final PhysicalKeyboard keys;
     private final KeyTrace keyTrace;
@@ -108,7 +115,16 @@ public final class PlaygroundView extends View
     private boolean imeUp;                   // ... which is not the same as it being up
     private final boolean subtleHaptics;     // or only a buzz
 
-    private final TapRegions tapRegions = TapRegions.toolbar();
+    /**
+     * The left edge belongs to the system's back gesture, and a claimed pointer
+     * does not change that: the decision is made before this view sees the
+     * stream. So the box the toolbar occupies is handed back through the one
+     * mechanism there is for it, and re-handed every time the column moves.
+     */
+    private final Rect exclusion = new Rect();
+    private final List<Rect> exclusions = new ArrayList<>(1);
+
+    private final TapRegions tapRegions = TapRegions.standard();
     private boolean regionsOn = true;
     private boolean twoLine;                  // which key list the row is drawn from
     private String lastRegion = "-";          // for the HUD; what a region means is the host's
@@ -163,6 +179,11 @@ public final class PlaygroundView extends View
                 ExtensionKeyboard.standardKeys());
         keyboard.setListener(this);
         router.addClaim(keyboard);
+        // Ahead of the keyboard in the claim order for no reason of substance —
+        // they never overlap, the column stopping where the row begins.
+        toolbar = new Toolbar(cfg);
+        toolbar.setItems(Toolbar.standard());
+        router.addClaim(toolbar);
         // The physical pair, against the one desktop whose reaction to them can
         // be checked without a server.
         mouse = new PhysicalMouse(cfg, cursor.newButtonSource());
@@ -179,6 +200,10 @@ public final class PlaygroundView extends View
         marker.setColor(0x66ffffff);
         chrome = new Chrome(cfg);
         chrome.attach(keyboard);
+        // Listening only now, and visible only now: a change notification draws
+        // a ripple, and the thing that draws it does not exist above this line.
+        toolbar.setListener(this);
+        toolbar.setVisible(true);   // as the regions are; the two never meet
         subtleHaptics = canTick(ctx);
         setFocusable(true);
         // The IME will not open against a view that cannot take focus by touch.
@@ -212,6 +237,8 @@ public final class PlaygroundView extends View
         recorder.setViewSize(w, h);
         overlay.setViewSize(w, h);
         keyboard.setViewSize(w, h);
+        toolbar.setViewSize(w, h);
+        applyGestureExclusion();
         if (!laidOut) {
             laidOut = true;
             viewport.setFocus(DESKTOP_W / 2f, DESKTOP_H / 2f);
@@ -562,6 +589,7 @@ public final class PlaygroundView extends View
             // both are reachable with the regions off, and from a script.
             case MOUSE -> toggleOverlay();
             case KEYBOARD -> setKeyboardVisible(!keyboard.visible());
+            case TOOLBAR -> toolbar.setVisible(!toolbar.visible());
             case TWOLINE -> {
                 twoLine = !twoLine;
                 keyboard.setKeys(twoLine
@@ -583,6 +611,48 @@ public final class PlaygroundView extends View
         invalidate();
     }
 
+    // ---- Toolbar.Listener -------------------------------------------------
+
+    /** What the two widgets with a state are doing, for the buttons that show it. */
+    private void syncToolbarState() {
+        toolbar.setActive(TapRegions.MOUSE, overlay.visible());
+        toolbar.setActive(TapRegions.KEYBOARD, keyboard.visible());
+    }
+
+    @Override
+    public void toolbarChanged() {
+        chrome.toolbarChanged(toolbar);
+        applyGestureExclusion();
+        invalidate();
+    }
+
+    private void applyGestureExclusion() {
+        exclusions.clear();
+        if (toolbar.visible()) {
+            exclusion.set((int) toolbar.left(), (int) toolbar.top(),
+                    (int) toolbar.right(), (int) toolbar.bottom());
+            exclusions.add(exclusion);
+        }
+        setSystemGestureExclusionRects(exclusions);
+    }
+
+    /**
+     * The same four names the tap regions carry, answered in the same place, so
+     * the two affordances cannot drift apart in what they do — only in how they
+     * are reached.
+     */
+    @Override
+    public void toolbarAction(String name) {
+        lastRegion = name + " (toolbar)";
+        controlAction(name);
+        invalidate();
+    }
+
+    @Override
+    public void toolbarMoved(float fraction) {
+        invalidate();
+    }
+
     // ---- RegionSink -------------------------------------------------------
 
     /**
@@ -596,13 +666,31 @@ public final class PlaygroundView extends View
     @Override
     public boolean regionTapped(TapRegions.Region region, float x, float y) {
         lastRegion = region.name() + " @" + (int) x + "," + (int) y;
-        if (TapRegions.MOUSE.equals(region.name())) {
-            toggleOverlay();
-        } else if (TapRegions.KEYBOARD.equals(region.name())) {
-            setKeyboardVisible(!keyboard.visible());
-        }
+        controlAction(region.name());
         invalidate();
         return true;
+    }
+
+    /**
+     * What either affordance does, in one place, so the two cannot drift apart
+     * in what they do — only in how they are reached. {@code information} is the
+     * one with nothing to say here: what a connection is doing is a question
+     * only a host with a session can answer.
+     */
+    private void controlAction(String name) {
+        if (TapRegions.MOUSE.equals(name)) {
+            toggleOverlay();
+        } else if (TapRegions.KEYBOARD.equals(name)) {
+            setKeyboardVisible(!keyboard.visible());
+        } else if (TapRegions.DISCONNECT.equals(name)) {
+            // There is no session to end, so it does what leaving one does.
+            for (Context c = getContext(); c instanceof ContextWrapper w; c = w.getBaseContext()) {
+                if (c instanceof Activity a) {
+                    a.finish();
+                    return;
+                }
+            }
+        }
     }
 
     /**
@@ -640,6 +728,7 @@ public final class PlaygroundView extends View
         // the viewport; being pressed does not. This fires on every press.
         if (overlayShown != overlay.visible()) {
             overlayShown = overlay.visible();
+            syncToolbarState();
             applyInsets();
         }
         invalidate();
@@ -652,6 +741,7 @@ public final class PlaygroundView extends View
         if (keyboardShown != keyboard.visible()) {
             keyboardShown = keyboard.visible();
             syncKeyboardChrome();
+            syncToolbarState();
             applyInsets();
         }
         chrome.keyboardChanged(keyboard);
@@ -764,6 +854,10 @@ public final class PlaygroundView extends View
         final int margin = (int) cfg.panMarginPx;
         viewport.setPanMargins(margin, margin, margin, margin);
         cursor.setInsets(left, top, right, bottom);
+        // Not one of the viewport's insets — the toolbar floats over the picture
+        // — but the band it may be dragged in is bounded by what the keyboard
+        // *occupies*, which is a bigger number than what it insets by.
+        toolbar.setInsets(0, top, Math.max(top, keyboard.heightPx()));
         baseScale = viewport.getScale();
     }
 
@@ -791,6 +885,7 @@ public final class PlaygroundView extends View
             case REGIONS -> regionsOn ? "ON" : "OFF";
             case MOUSE -> overlay.visible() ? "ON" : "OFF";
             case KEYBOARD -> keyboard.visible() ? "ON" : "OFF";
+            case TOOLBAR -> toolbar.visible() ? "ON" : "OFF";
             case TWOLINE -> twoLine ? "ON" : "OFF";
             case HOVER -> cfg.hoverAssistEnabled ? "ON" : "OFF";
             case LAG -> lagMs + "MS";
@@ -835,6 +930,11 @@ public final class PlaygroundView extends View
         }
 
         if (keyboard.visible() && chrome.drawKeyboard(c, keyboard, getWidth(), cursor.screenY())) {
+            postInvalidateOnAnimation();
+        }
+
+        if (chrome.drawToolbar(c, toolbar, getWidth(), getHeight(),
+                cursor.screenX(), cursor.screenY())) {
             postInvalidateOnAnimation();
         }
 

@@ -15,6 +15,7 @@ import net.pgaskin.remotedesktop.control.input.MouseOverlay;
 import net.pgaskin.remotedesktop.control.input.MouseSink;
 import net.pgaskin.remotedesktop.control.input.RegionSink;
 import net.pgaskin.remotedesktop.control.input.TapRegions;
+import net.pgaskin.remotedesktop.control.input.Toolbar;
 import net.pgaskin.remotedesktop.control.input.TouchFrame;
 import net.pgaskin.remotedesktop.control.input.TouchRouter;
 import net.pgaskin.remotedesktop.control.input.ZoomSink;
@@ -54,6 +55,7 @@ public final class Harness implements ZoomSink, CursorController.PointerSink, Mo
     // Each null until the matching with*() wires one in.
     public MouseOverlay overlay;
     public ExtensionKeyboard keyboard;
+    public Toolbar toolbar;
     public PhysicalMouse physicalMouse;
     public PhysicalKeyboard physicalKeys;
 
@@ -67,6 +69,7 @@ public final class Harness implements ZoomSink, CursorController.PointerSink, Mo
     public final List<String> regionTaps = new ArrayList<>(); // region <name> x,y
     public final List<String> keys = new ArrayList<>();       // key down Ctrl
     public final List<String> keyActions = new ArrayList<>(); // action keys, by name
+    public final List<String> toolbarTaps = new ArrayList<>();// toolbar <name>, and moved <f>
     public int keyFeedbacks;                                  // haptics the row asked for
     // How far the picture was actually moved by a pinch's pan, summed step by
     // step: the clamp means the sum of what was asked for is not the same thing.
@@ -246,6 +249,39 @@ public final class Harness implements ZoomSink, CursorController.PointerSink, Mo
     }
 
     /**
+     * Add the toolbar, visible, with the four standard items. Its actions are
+     * logged to {@link #toolbarTaps} as {@code toolbar disconnect}, and a drag
+     * that ends as {@code toolbar moved 0.42}.
+     */
+    public Harness withToolbar() {
+        return withToolbar(Toolbar.standard());
+    }
+
+    public Harness withToolbar(List<Toolbar.Item> items) {
+        toolbar = new Toolbar(cfg);
+        toolbar.setItems(items);
+        toolbar.setListener(new Toolbar.Listener() {
+            @Override
+            public void toolbarChanged() {
+            }
+
+            @Override
+            public void toolbarAction(String name) {
+                record(toolbarTaps, "toolbar " + name);
+            }
+
+            @Override
+            public void toolbarMoved(float fraction) {
+                record(toolbarTaps, fmt("toolbar moved %.3f", fraction));
+            }
+        });
+        toolbar.setViewSize(viewW, viewH);
+        toolbar.setVisible(true);
+        router.addClaim(toolbar);
+        return this;
+    }
+
+    /**
      * Add a physical mouse, on its own {@link CursorController} button source
      * exactly as the two real screens wire it. Its output is logged to
      * {@link #mouse} with a {@code phys} prefix, so a mouse button and a
@@ -351,6 +387,15 @@ public final class Harness implements ZoomSink, CursorController.PointerSink, Mo
         ids.remove(i);
         pos.remove(i);
         return this;
+    }
+
+    /**
+     * Lift somewhere other than where the pointer last was, in one event, which
+     * is what a finger sliding off a target as it goes really produces.
+     */
+    public Harness up(int id, float x, float y) {
+        set(id, x, y);
+        return up(id);
     }
 
     public Harness cancel() {

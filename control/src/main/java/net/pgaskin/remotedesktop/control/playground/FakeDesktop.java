@@ -51,6 +51,8 @@ public final class FakeDesktop implements CursorController.PointerSink, KeySink 
         RELATIVE,
         /** The toolbar tap regions, drawn while they are on. */
         REGIONS,
+        /** The column of buttons on the left edge, which is the other answer. */
+        TOOLBAR,
         /** The mouse button / wheel overlay; the {@code mouse} region does this too. */
         MOUSE,
         /** The extension keyboard and the system IME; the {@code keyboard} region too. */

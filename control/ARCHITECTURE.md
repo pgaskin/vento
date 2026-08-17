@@ -690,7 +690,9 @@ over it. Both are off — false and zero — by default.
 
 ### 3.5 Toolbar tap regions
 
-The original puts a floating toolbar on top of the desktop. Instead, rectangles
+**One of two answers to the same question, and the invisible one** — §3.22 is
+the other, and the two are compatible by construction rather than by
+arrangement. The original puts a floating toolbar on top of the desktop. Instead, rectangles
 of the touch surface — given in fractions of the view, so rotation moves them
 with it — can claim a **tap** and suppress the click it would otherwise have
 made. The default layout is a top band of 2/22 of the height split 1:4 and a
@@ -1217,6 +1219,59 @@ id is a position in that list and a release sent after the swap names an id the
 far end never saw pressed — a modifier left down on somebody's machine for the
 rest of the session. The active touch, the timers and the fling go with it, each
 of them holding a key that may not be in the new list.
+
+### 3.22 A toolbar that can be seen
+
+Four buttons and a grip on the left edge, over the desktop, dragged up and down
+by either. It is not a reversal of §3.5 but the second answer to the question
+§3.5 left open: the bands work and there is nothing to look at. The two are
+compatible by construction — the regions classify a *tap* inside the gesture
+layer, this claims pointers before the gesture layer sees them — so nothing
+arbitrates between them, and both hand the host the same four names, which is
+what stops them drifting apart in what they do.
+
+**44 dp buttons and a 24 dp grip, which is 200 dp, and that is the whole of the
+geometry argument.** The left edge is where the system's back gesture is, a
+claimed pointer does not change that (the platform decides before the app sees
+the stream), and `setSystemGestureExclusionRects` — which nothing here used
+before — is honoured up to **200 dp per edge**. Four buttons and a grip are
+exactly that, so the button size comes from the limit rather than from Material's
+48 dp. The rects are the host's to set, from the box the model exposes, and have
+to be re-set as the column moves. A shorter item list is shorter and claims less:
+a view-only session offers three buttons rather than four greyed ones.
+
+**The grip is at the bottom**, away from the button with no undo: a mis-aimed
+drag next to *disconnect* is a mis-aimed tap next to it. It is a hint rather
+than a requirement — a pointer that lands on a button and travels more than
+8 dp drags too, and abandons the press — and buttons fire on release, on the
+item they started on, which is the extension row's rule.
+
+**It does not inset the desktop.** The picture runs underneath and the pointer
+can reach the pixels behind it, which is the floating info bar's bargain. What
+that costs is the left edge's bump scroll (§1.6) wherever the column has been
+dragged to, which is the second reason it moves; insetting would take the same
+pixels away permanently and from the picture as well.
+
+The panel is fainter than the info bar's — that is a readout with nothing behind
+it, and this covers a picture — with a faint outline on the three sides that are
+not against the screen's own edge, since at that opacity the panel's edge is lost
+against a dark desktop. The fade is the info bar's, generalised to a distance
+from a rectangle, of which the bar is the degenerate case. Two rules it adds: **the hit test does not fade**,
+so a column at a tenth is still a target at full size, and **a finger on it
+cancels the fade**, since the widget under the finger must not be the faintest
+thing on the screen. A button whose thing is on — the keyboard up, the overlay
+out — is drawn the way the bar draws an armed modifier, which is the one piece
+of state the widget has.
+
+Its five glyphs are `KeyIcons`', drawn in the keycaps' style at the same stroke
+weight, rather than Material Symbols like the app's other eighteen: these are
+drawn on the canvas and the nearest glyphs to them are the ⇧ and ⌫ of the key
+row, and a filled outline at Material's weight beside a 0.09-stroked ⇧ is two
+icon sets on one screen.
+
+It has **no dismiss**: something would have to bring it back, and that something
+is a tap region — the thing it exists to be an alternative to. It is on or off,
+and that is the host's preference.
 
 ---
 

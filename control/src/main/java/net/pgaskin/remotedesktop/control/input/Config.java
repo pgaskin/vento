@@ -217,6 +217,19 @@ public final class Config {
      */
     public boolean keyboardInfoSolid = false;
 
+    // ---- the toolbar (ours; the original's is a floating panel) -------------
+
+    /**
+     * A square button, and the grip under the column of them. Four buttons and a
+     * grip come to exactly 200 dp, which is what the platform will let an app
+     * take back from the system's own edge gesture
+     * ({@code setSystemGestureExclusionRects}) — so the size is that limit
+     * divided up rather than Material's 48 dp.
+     */
+    public float toolbarButtonPx;
+    public float toolbarGripPx;
+    public float toolbarDragSlopPx;   // movement that turns a button press into a drag
+
     // ---- momentum ----------------------------------------------------------
 
     public boolean inertiaEnabled = true;
@@ -312,6 +325,9 @@ public final class Config {
         this.keyboardIconWidthPx = dp(18);
         this.keyboardMinKeyWidthPx = dp(32);
         this.keyboardScrollSlopPx = dp(8);
+        this.toolbarButtonPx = dp(44);
+        this.toolbarGripPx = dp(24);
+        this.toolbarDragSlopPx = dp(8);
         this.keyboardFlingMinPx = dp(0.3f);
         this.keyboardFlingStopPx = dp(0.02f);
     }
@@ -375,6 +391,9 @@ public final class Config {
         keyboardIconWidthPx = o.keyboardIconWidthPx;
         keyboardMinKeyWidthPx = o.keyboardMinKeyWidthPx;
         keyboardScrollSlopPx = o.keyboardScrollSlopPx;
+        toolbarButtonPx = o.toolbarButtonPx;
+        toolbarGripPx = o.toolbarGripPx;
+        toolbarDragSlopPx = o.toolbarDragSlopPx;
         keyboardFlingTickMs = o.keyboardFlingTickMs;
         keyboardFlingDecay = o.keyboardFlingDecay;
         keyboardFlingMinPx = o.keyboardFlingMinPx;
