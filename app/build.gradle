@@ -10,10 +10,10 @@ plugins {
 // `scripts/session.sh` and every `installDebug` assume, and one APK is one
 // versionCode, which is what a build server that republishes this wants.
 //
-// The cost is only the other architecture's libraries, and as of 3a19cb0 a
-// universal release APK is 35.9 MB: 11.6 MB of arm64-v8a, 12.2 MB of
-// x86_64, and 12.0 MB that is neither. Splitting would save a phone 12.2 MB of
-// a 35.9 MB download and cost every consumer of this build a second artefact,
+// The cost is only the other architecture's libraries, and as of c2d5aaf a
+// universal release APK is 36.0 MB: 11.6 MB of arm64-v8a, 12.2 MB of
+// x86_64, and 12.1 MB that is neither. Splitting would save a phone 12.2 MB of
+// a 36.0 MB download and cost every consumer of this build a second artefact,
 // while also making versioning more complicated.
 final shippedAbis = ['arm64-v8a', 'x86_64']
 
