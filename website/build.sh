@@ -12,7 +12,7 @@ rm -rf build
 mkdir build
 
 shopt -s nullglob
-changelogs=../metadata/en-US/changelogs
+changelogs=../app/fastlane/metadata/android/en-US/changelogs
 files=("$changelogs"/*.txt)
 shopt -u nullglob
 test ${#files[@]} -gt 0 || die "no changelogs in $changelogs"
@@ -69,8 +69,8 @@ font() {
 }
 font 'Roboto:wght@400..700' build/roboto.woff2
 
-icon=../metadata/en-US/images/icon.png
-shots=../metadata/en-US/images/phoneScreenshots
+icon=../app/fastlane/metadata/android/en-US/images/icon.png
+shots=../app/fastlane/metadata/android/en-US/images/phoneScreenshots
 test -f "$icon" || die "missing $icon"
 
 # imagemagick 7 calls it magick, 6 only has convert

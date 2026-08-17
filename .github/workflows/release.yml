@@ -36,11 +36,21 @@ jobs:
             const tag = context.ref.replace(/^refs\/tags\//, '')
             if (versionName !== versionCode) fail(`versionName (${versionName}) does not match versionCode (${versionCode})`)
             if (tag !== `v${versionName}`) fail(`tag (${tag}) does not match versionName (${versionName})`)
-            if (!fs.existsSync(`metadata/en-US/changelogs/${versionCode}.txt`)) fail(`missing changelog for versionCode ${versionCode}`)
-            for (const plugin of ['realvnc', 'rustdesk']) {
-              const pluginGradle = fs.readFileSync(`plugins/${plugin}/build.gradle`, 'utf8')
-              const pluginCode = pluginGradle.match(/^\s*versionCode\s+([0-9]+)/m)?.[1]
-              if (pluginCode !== versionCode) fail(`the ${plugin} add-on's versionCode (${pluginCode}) does not match the app's (${versionCode})`)
+            if (!fs.existsSync(`app/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`)) fail(`missing changelog for versionCode ${versionCode}`)
+            const assets = {
+              realvnc: 'vento-rvnc.apk',
+              rustdesk: 'vento-rustdesk.apk',
+            }
+            const plugins = fs.readdirSync('plugins', {withFileTypes: true})
+              .filter(e => e.isDirectory() && fs.existsSync(`plugins/${e.name}/build.gradle`))
+              .map(e => e.name)
+            if (!plugins.length) fail('no add-ons found under plugins/')
+            for (const name of plugins) {
+              const plugin = fs.readFileSync(`plugins/${name}/build.gradle`, 'utf8')
+              const pluginCode = plugin.match(/^\s*versionCode\s+([0-9]+)/m)?.[1]
+              if (pluginCode !== versionCode) fail(`the ${name} add-on's versionCode (${pluginCode}) does not match the app's (${versionCode})`)
+              if (!fs.existsSync(`plugins/${name}/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`)) fail(`missing changelog for the ${name} add-on's versionCode ${versionCode}`)
+              if (!assets[name]) fail(`the ${name} add-on has no release asset name: add it to this step and to the sign, verify, and upload steps`)
             }
             core.setOutput('name', versionName)
             core.setOutput('code', versionCode)
@@ -125,7 +135,7 @@ jobs:
               tag_name: tag,
               target_commitish: context.sha,
               name: tag,
-              body: require('fs').readFileSync(`metadata/en-US/changelogs/${versionCode}.txt`, 'utf8'),
+              body: require('fs').readFileSync(`app/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`, 'utf8'),
               draft: true,
             })
             core.setOutput('id', id)
