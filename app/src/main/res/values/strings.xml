@@ -43,6 +43,9 @@
     <string name="plugin_restart_action">Restart</string>
     <string name="plugin_set_up">Set up</string>
     <string name="plugin_uninstall">Uninstall</string>
+    <!-- Opens a download of the plugin built for this version of the app, where the plugin says
+         where one is. Only ever beside the line above about an incompatible one. -->
+    <string name="plugin_update">Update</string>
 
     <!-- editor -->
     <string name="editor_new">New connection</string>

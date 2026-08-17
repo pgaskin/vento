@@ -31,6 +31,26 @@ android {
         versionCode 2
         versionName "2"
 
+        // Where the build of this add-on for some other version of the app is,
+        // and what the file there is signed with — meta-data on this APK's
+        // manifest, since the app reads it out of a package whose dex it has
+        // refused to load. `{versionCode}` is the app's own, filled in by
+        // whoever is asking: the release tag is `v<versionCode>` because the
+        // release workflow refuses to publish one where the two differ.
+        //
+        // The fingerprint is the release keystore's certificate, as `apksigner
+        // verify --print-certs` prints it. It is here rather than passed in by
+        // the workflow that holds the key so that what an installed APK claims
+        // about a download is a thing somebody can read in this repository. The
+        // app follows it only where it is the key the app is itself signed with,
+        // which is the whole of what makes the claim worth anything: a file
+        // signed with another one is a download that ends at the installer
+        // refusing it.
+        manifestPlaceholders = [
+                updateUrl      : 'https://github.com/pgaskin/vento/releases/download/v{versionCode}/vento-rustdesk.apk',
+                updateSignature: '08d46917a818ad0c479733b458acb7488a4cc39f0a5a20ccc6a39181b2fb8f55',
+        ]
+
         ndk {
             abiFilters 'arm64-v8a', 'x86_64'
         }

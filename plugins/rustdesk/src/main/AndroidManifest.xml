@@ -31,6 +31,25 @@
         android:label="@string/app_name"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/backup_rules"
-        tools:ignore="MissingApplicationIcon" />
+        tools:ignore="MissingApplicationIcon">
+
+        <!--
+            The one thing this package says about itself that is for the app to
+            read: where a build of it for the app's version is, and what the
+            file there is signed with. Both values are in this module's
+            build.gradle, which is where the reasoning about them is.
+
+            Meta-data because this is read out of a package whose dex the app
+            has refused to load — being built for another version of the app is
+            the whole reason anybody is asking.
+        -->
+        <meta-data
+            android:name="net.pgaskin.remotedesktop.plugin.updateUrl"
+            android:value="${updateUrl}" />
+        <meta-data
+            android:name="net.pgaskin.remotedesktop.plugin.updateSignature"
+            android:value="${updateSignature}" />
+
+    </application>
 
 </manifest>

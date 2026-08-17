@@ -573,7 +573,9 @@ public final class HomeActivity extends AppCompatActivity {
             h.setUp.setVisibility(card.kind() == Plugins.Kind.SETUP ? View.VISIBLE : View.GONE);
             h.restart.setVisibility(card.kind() == Plugins.Kind.RESTART
                     ? View.VISIBLE : View.GONE);
+            h.update.setVisibility(card.updateUrl() == null ? View.GONE : View.VISIBLE);
             h.uninstall.setVisibility(card.packageName() == null ? View.GONE : View.VISIBLE);
+            h.update.setOnClickListener(v -> Plugins.update(HomeActivity.this, card.updateUrl()));
             h.setUp.setOnClickListener(v -> Plugins.setup(HomeActivity.this, card.backendId()));
             h.restart.setOnClickListener(v -> Plugins.restart(HomeActivity.this));
             h.uninstall.setOnClickListener(
@@ -663,6 +665,7 @@ public final class HomeActivity extends AppCompatActivity {
         final TextView detail;
         final View setUp;
         final View restart;
+        final View update;
         final View uninstall;
 
         PluginHolder(View v) {
@@ -672,6 +675,7 @@ public final class HomeActivity extends AppCompatActivity {
             detail = v.findViewById(R.id.detail);
             setUp = v.findViewById(R.id.setup);
             restart = v.findViewById(R.id.restart);
+            update = v.findViewById(R.id.update);
             uninstall = v.findViewById(R.id.uninstall);
         }
     }

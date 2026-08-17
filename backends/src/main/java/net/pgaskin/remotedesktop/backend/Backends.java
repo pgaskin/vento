@@ -59,6 +59,33 @@ public final class Backends {
     public static final String PLUGIN_ACTION =
             "net.pgaskin.remotedesktop.action.BACKEND_PLUGIN";
 
+    /**
+     * What an add-on may say on its {@code <application>} about where a build of
+     * itself for another version of the app can be got: a URL with
+     * {@link #PLUGIN_UPDATE_VERSION} standing in for the version code wanted,
+     * and beside it the SHA-256 of the signing certificate the APK at that URL
+     * carries.
+     *
+     * <p>Manifest meta-data rather than anything in its dex, because the add-on
+     * this is for is precisely the one whose dex is never loaded: an add-on
+     * built for another version of the app is a manifest and nothing else as far
+     * as this process is concerned ({@link PluginState#INCOMPATIBLE}).
+     *
+     * <p>Both are optional, and an add-on that names one without the other has
+     * said nothing. The signature is the add-on's <em>claim</em> about a file
+     * nobody has yet, and is worth nothing on its own: what makes it usable is
+     * the app weighing it against the key it will only install an add-on signed
+     * with, which is the app's own business and is done there.
+     */
+    public static final String PLUGIN_UPDATE_URL = "net.pgaskin.remotedesktop.plugin.updateUrl";
+
+    /** @see #PLUGIN_UPDATE_URL */
+    public static final String PLUGIN_UPDATE_SIGNATURE =
+            "net.pgaskin.remotedesktop.plugin.updateSignature";
+
+    /** What {@link #PLUGIN_UPDATE_URL} carries in place of a version code. */
+    public static final String PLUGIN_UPDATE_VERSION = "{versionCode}";
+
     /** What became of one installed package, for a screen that has to say so. */
     public enum PluginState {
         /** Its providers are in the list. */
