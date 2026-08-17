@@ -1,14 +1,14 @@
-From d6161af2072a293f2864c9eea6e59a3f1dd5975e Mon Sep 17 00:00:00 2001
+From b585e6be4038425aa2bb764a316eff97e353b768 Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Fri, 14 Aug 2026 04:14:14 -0400
 Subject: [PATCH 5/5] libvncclient: count what the two socket funnels carry
 
 
 diff --git a/include/rfb/rfbclient.h b/include/rfb/rfbclient.h
-index 21ef0ac..a149f81 100644
+index 738095a..90627af 100644
 --- a/include/rfb/rfbclient.h
 +++ b/include/rfb/rfbclient.h
-@@ -517,6 +517,15 @@ typedef struct _rfbClient {
+@@ -527,6 +527,15 @@ typedef struct _rfbClient {
           */
          rfbExtDesktopScreen* screens;
          int numScreens;

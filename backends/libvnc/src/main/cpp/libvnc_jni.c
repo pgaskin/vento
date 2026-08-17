@@ -101,7 +101,9 @@ typedef struct {
     int credWaiting, credAnswered;
     char *credUser, *credPass;
 
-    /* and the certificate one, which is the same shape */
+    /* and the certificate one, which is the same shape. The anonymous-TLS
+       question rides on the same pair: only one of the two can be outstanding,
+       since one is asked in place of the other. */
     int trustAnswered, trustAccepted;
 
     /* true while rfbInitClient has not returned; see nativeDisconnect */
@@ -127,6 +129,7 @@ typedef struct {
     char *host;
     int port;
     int shared;
+    int anonymousTls;
     char *encodings;
     int compressLevel;
     int qualityLevel;
@@ -142,7 +145,7 @@ typedef struct {
 
 static jclass gCallbacksClass;
 static jmethodID mConnected, mDesktopSize, mDamage, mFrameEnd, mCursor, mBell,
-        mClipboard, mCredentialsNeeded, mTrustNeeded, mClosed;
+        mClipboard, mCredentialsNeeded, mTrustNeeded, mUnverified, mClosed;
 
 /* ---- JNI plumbing ------------------------------------------------------- */
 
@@ -664,8 +667,11 @@ static int askCredentials(Session *s, int needsUserName) {
     return ok;
 }
 
-/* The same wait, for the other question a handshake can ask. */
-static int askTrust(Session *s, const char *fingerprint) {
+/* The same wait, for the other two questions a handshake can ask: a
+   fingerprint to accept, or a far end with no identity to prove at all. Both
+   are answered through nativeAnswerTrust, since only one of them is ever
+   outstanding. */
+static int askIdentity(Session *s, jmethodID method, const char *arg) {
     pthread_mutex_lock(&s->lock);
     s->trustAnswered = 0;
     s->trustAccepted = 0;
@@ -674,8 +680,8 @@ static int askTrust(Session *s, const char *fingerprint) {
     int attached;
     JNIEnv *env = attach(s, &attached);
     if (env) {
-        jstring js = (*env)->NewStringUTF(env, fingerprint);
-        (*env)->CallVoidMethod(env, s->callbacks, mTrustNeeded, js);
+        jstring js = (*env)->NewStringUTF(env, arg);
+        (*env)->CallVoidMethod(env, s->callbacks, method, js);
         cleared(env);
         (*env)->DeleteLocalRef(env, js);
         detach(s, attached);
@@ -712,7 +718,32 @@ static rfbBool onCertMismatch(rfbClient *cl, const char *subject, time_t from, t
     }
     hex[len * 3 - 1] = '\0';
     LOGI("certificate %s (%s)", hex, subject ? subject : "no subject");
-    return askTrust(s, hex) ? TRUE : FALSE;
+    return askIdentity(s, mTrustNeeded, hex) ? TRUE : FALSE;
+}
+
+/* The anonymous VeNCrypt sub-types: in the patched library this hook's presence
+   is what puts them in the acceptable set, and it is called once the server has
+   agreed one of them and before the handshake. There is no certificate coming
+   and nothing further to learn, so this is both the last moment the question is
+   worth asking and the first at which it can be.
+
+   Always installed, even for a connection that does not allow them, so that
+   the refusal is this file's sentence rather than the library's "unknown
+   authentication scheme" — which is what the same server said before, and is
+   not what happened. The TigerVNC backend refuses at the same point for a
+   reason of its own. */
+static rfbBool onConfirmAnonymousTLS(rfbClient *cl) {
+    Session *s = sessionOf(cl);
+    LOGI("anonymous VeNCrypt sub-type %u", (unsigned) cl->subAuthScheme);
+    if (!s->anonymousTls) {
+        rfbClientErr("This server offers encryption with nothing to identify it by, "
+                     "and this connection does not allow that.\n");
+        return FALSE;
+    }
+    return askIdentity(s, mUnverified,
+                       "This server offers encryption with nothing to identify it by.")
+                   ? TRUE
+                   : FALSE;
 }
 
 static char *onGetPassword(rfbClient *cl) {
@@ -1051,6 +1082,7 @@ static void *protocolThread(void *arg) {
     cl->GetPassword = onGetPassword;
     cl->GetCredential = onGetCredential;
     cl->GetX509CertFingerprintMismatchDecision = onCertMismatch;
+    cl->ConfirmAnonymousTLS = onConfirmAnonymousTLS;
 
     free(cl->serverHost);
     cl->serverHost = strdup(s->host ? s->host : "");
@@ -1181,8 +1213,8 @@ Java_net_pgaskin_remotedesktop_backend_libvnc_LibVncNative_nativeVersion(JNIEnv 
 JNIEXPORT jlong JNICALL
 Java_net_pgaskin_remotedesktop_backend_libvnc_LibVncNative_nativeCreate(
         JNIEnv *env, jclass cls, jobject listener, jstring address, jstring userName,
-        jstring password, jboolean shared, jstring encoding, jint compressLevel,
-        jint qualityLevel, jint colorLevel, jint connectTimeoutMs) {
+        jstring password, jboolean shared, jboolean anonymousTls, jstring encoding,
+        jint compressLevel, jint qualityLevel, jint colorLevel, jint connectTimeoutMs) {
     (void) cls;
     if (!gCallbacksClass) {
         jclass k = (*env)->GetObjectClass(env, listener);
@@ -1195,6 +1227,7 @@ Java_net_pgaskin_remotedesktop_backend_libvnc_LibVncNative_nativeCreate(
         mClipboard = (*env)->GetMethodID(env, k, "onClipboard", "(Ljava/lang/String;)V");
         mCredentialsNeeded = (*env)->GetMethodID(env, k, "onCredentialsNeeded", "(Z)V");
         mTrustNeeded = (*env)->GetMethodID(env, k, "onTrustNeeded", "(Ljava/lang/String;)V");
+        mUnverified = (*env)->GetMethodID(env, k, "onUnverified", "(Ljava/lang/String;)V");
         mClosed = (*env)->GetMethodID(env, k, "onClosed", "(Ljava/lang/String;)V");
         /* Last, and that is the point: it is what every other caller tests, so
            publishing it first would let a second one past while the method ids
@@ -1242,6 +1275,7 @@ Java_net_pgaskin_remotedesktop_backend_libvnc_LibVncNative_nativeCreate(
     s->qualityLevel = qualityLevel;
     s->colorLevel = colorLevel;
     s->shared = shared != JNI_FALSE;
+    s->anonymousTls = anonymousTls != JNI_FALSE;
     s->connectTimeoutMs = connectTimeoutMs;
 
     rfbClientLog = logInfo;
@@ -1571,6 +1605,26 @@ static void describeFormat(char *out, size_t size, const rfbPixelFormat *f) {
              f->bigEndian ? "big" : "little", r, g, b);
 }
 
+/* A VeNCrypt sub-type as the panel's Security row: which authentication ran,
+   and, for the three with no certificate under them, that the encryption
+   proved nothing about the server. A session that said only "TLS" would be
+   claiming the identity check this family does not have. */
+static void describeVeNCrypt(char *out, size_t size, uint32_t subType) {
+    const char *auth;
+    switch (subType) {
+        case rfbVeNCryptTLSNone:
+        case rfbVeNCryptX509None: auth = "None"; break;
+        case rfbVeNCryptTLSVNC:
+        case rfbVeNCryptX509VNC: auth = "VNC password"; break;
+        case rfbVeNCryptTLSPlain:
+        case rfbVeNCryptX509Plain: auth = "User name and password"; break;
+        default: snprintf(out, size, "VeNCrypt type %u", subType); return;
+    }
+    const int anonymous = subType == rfbVeNCryptTLSNone || subType == rfbVeNCryptTLSVNC
+                          || subType == rfbVeNCryptTLSPlain;
+    snprintf(out, size, "%s (VeNCrypt)%s", auth, anonymous ? ", encrypted and unverified" : "");
+}
+
 JNIEXPORT jobjectArray JNICALL
 Java_net_pgaskin_remotedesktop_backend_libvnc_LibVncNative_nativeInfo(
         JNIEnv *env, jclass cls, jlong handle) {
@@ -1579,7 +1633,7 @@ Java_net_pgaskin_remotedesktop_backend_libvnc_LibVncNative_nativeInfo(
     if (!s) {
         return NULL;
     }
-    char desktop[256] = "", protocol[64] = "", security[64] = "", encoding[64] = "";
+    char desktop[256] = "", protocol[64] = "", security[96] = "", encoding[64] = "";
     char serverPixels[64] = "", viewerPixels[64] = "";
 
     pthread_rwlock_rdlock(&s->fbLock);
@@ -1587,9 +1641,14 @@ Java_net_pgaskin_remotedesktop_backend_libvnc_LibVncNative_nativeInfo(
     if (cl) {
         snprintf(desktop, sizeof(desktop), "%s", cl->desktopName ? cl->desktopName : "");
         snprintf(protocol, sizeof(protocol), "RFB %d.%d", cl->major, cl->minor);
+        /* VeNCrypt leaves authScheme at 19 and puts the sub-type beside it, and
+           the sub-type is the whole of what the session is: which
+           authentication ran, and whether the tunnel it ran inside proved
+           anything about the server. */
         switch (cl->authScheme) {
             case rfbNoAuth: snprintf(security, sizeof(security), "None"); break;
             case rfbVncAuth: snprintf(security, sizeof(security), "VNC password"); break;
+            case rfbVeNCrypt: describeVeNCrypt(security, sizeof(security), cl->subAuthScheme); break;
             default: snprintf(security, sizeof(security), "Type %u", cl->authScheme); break;
         }
         /* What was asked for, not what arrived: libvncclient tells nobody which

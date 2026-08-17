@@ -1,0 +1,119 @@
+From 28e648e455d27118e55f40f5f2650d78f9c3a122 Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Sun, 16 Aug 2026 14:37:52 -0400
+Subject: [PATCH 1/5] libvncclient: anonymous VeNCrypt behind a hook that asks
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+TLSNone, TLSVnc and TLSPlain are VeNCrypt over an anonymous key
+exchange. They encrypt the line and prove nothing about the far end, and
+there is no certificate to pin afterwards — but refusing them outright
+deletes the whole session for the ordinary case of somebody's own server
+with TLS switched on and no certificate arranged.
+
+So they are acceptable exactly when the caller has installed
+ConfirmAnonymousTLS, and it is called once the server has agreed one of
+them and before the handshake starts: the offer and the question are the
+same thing, and what a client does with the question is its own.
+
+The priority guard gains the three as replaceable for the reason the
+comment above it already gives. The server's list is in the server's
+order, so a server naming TLSVnc before X509Vnc would otherwise be
+talked to over the one with no identity.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+diff --git a/include/rfb/rfbclient.h b/include/rfb/rfbclient.h
+index f72d84a..360d4d7 100644
+--- a/include/rfb/rfbclient.h
++++ b/include/rfb/rfbclient.h
+@@ -229,6 +229,14 @@ typedef rfbBool (*GetX509CertFingerprintMismatchDecisionProc)(struct _rfbClient*
+                                                               time_t remote_cert_valid_until,
+                                                               const uint8_t *remote_cert_sha256_fingerprint,
+                                                               size_t remote_cert_sha256_fingerprint_len);
++/**
++   Callback that decides whether to go on with a VeNCrypt sub-type whose TLS is
++   anonymous (TLSNone, TLSVnc, TLSPlain): the line is encrypted and the server
++   proves nothing about itself, so there is nothing to check and nothing to pin.
++   Those sub-types are acceptable only when this is set, and it is called once
++   the server has agreed one of them and before the handshake starts.
++ */
++typedef rfbBool (*ConfirmAnonymousTLSProc)(struct _rfbClient* client);
+ typedef rfbBool (*MallocFrameBufferProc)(struct _rfbClient* client);
+ typedef void (*GotXCutTextProc)(struct _rfbClient* client, const char *text, int textlen);
+ typedef void (*GotXCutTextUTF8Proc)(struct _rfbClient* client, const char* buffer, int buffer_len);
+@@ -506,6 +514,8 @@ typedef struct _rfbClient {
+         rfbBool isUpdateRectManagedByLib;
+ 
+         GetX509CertFingerprintMismatchDecisionProc GetX509CertFingerprintMismatchDecision;
++
++        ConfirmAnonymousTLSProc ConfirmAnonymousTLS;
+ } rfbClient;
+ 
+ /* cursor.c */
+diff --git a/src/libvncclient/tls_gnutls.c b/src/libvncclient/tls_gnutls.c
+index 6e46029..a768c52 100644
+--- a/src/libvncclient/tls_gnutls.c
++++ b/src/libvncclient/tls_gnutls.c
+@@ -443,14 +443,22 @@ ReadVeNCryptSecurityType(rfbClient* client, uint32_t *result)
+         if (!ReadFromRFBServer(client, (char *)&tAuth[loop], 4)) return FALSE;
+         t=rfbClientSwap32IfLE(tAuth[loop]);
+         rfbClientLog("%d) Received security type %d\n", loop, t);
++        /* The rfbVeNCryptTLS* sub-types are TLS over an anonymous key
++           exchange: encrypted against somebody listening, worth nothing
++           against somebody in the middle, since the server proves nothing
++           about itself and there is no certificate to pin. So they are offered
++           only when the caller has installed ConfirmAnonymousTLS, which is
++           where that is put to whoever is at this end.
++
++           rfbVeNCryptTLSSASL is left out with them and stays out: it is the
++           same tunnel with an authentication this client does not build. */
+         if (t==rfbNoAuth ||
+             t==rfbVncAuth ||
+             t==rfbVeNCryptPlain ||
+-            t==rfbVeNCryptTLSNone ||
+-            t==rfbVeNCryptTLSVNC ||
+-            t==rfbVeNCryptTLSPlain ||
++            ((t==rfbVeNCryptTLSNone ||
++              t==rfbVeNCryptTLSVNC ||
++              t==rfbVeNCryptTLSPlain) && client->ConfirmAnonymousTLS) ||
+ #ifdef LIBVNCSERVER_HAVE_SASL
+-            t==rfbVeNCryptTLSSASL ||
+             t==rfbVeNCryptX509SASL ||
+ #endif /*LIBVNCSERVER_HAVE_SASL */
+             t==rfbVeNCryptX509None ||
+@@ -461,7 +469,14 @@ ReadVeNCryptSecurityType(rfbClient* client, uint32_t *result)
+                 authScheme==0 ||
+                 authScheme==rfbNoAuth ||
+                 authScheme==rfbVncAuth ||
+-                authScheme==rfbVeNCryptPlain)
++                authScheme==rfbVeNCryptPlain ||
++                /* An anonymous tunnel is better than none and worse than a
++                   checked one, and the server's list is in the server's order:
++                   without these three a server naming TLSVnc before X509Vnc
++                   would be talked to over the one with no identity. */
++                authScheme==rfbVeNCryptTLSNone ||
++                authScheme==rfbVeNCryptTLSVNC ||
++                authScheme==rfbVeNCryptTLSPlain)
+             {
+                 /* for security reasons, the encrypted type has a higher priority */
+                 origAuthScheme=tAuth[loop];
+@@ -643,6 +658,17 @@ HandleVeNCryptAuth(rfbClient* client)
+     return FALSE;
+   }
+ 
++  /* Nothing about the far end is going to be proved, and nothing more is
++     learned by starting the tunnel, so the question goes out here: after the
++     server has acknowledged the sub-type and before any of it runs. The hook
++     is what put these sub-types in the acceptable set in the first place, so
++     it is always set when anonTLS is. */
++  if (anonTLS && !client->ConfirmAnonymousTLS(client))
++  {
++    rfbClientLog("Anonymous VeNCrypt was refused at this end.\n");
++    return FALSE;
++  }
++
+   if (!InitializeTLS()) return FALSE;
+ 
+   /* Get X509 Credentials if it's not anonymous */

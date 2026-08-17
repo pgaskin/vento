@@ -1,7 +1,7 @@
-From d2f494d6a97c500502c1e0cd36da764563fbc8c6 Mon Sep 17 00:00:00 2001
+From aade60eb5272b2d36b39f3396a90f0e2d17b907e Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Wed, 12 Aug 2026 22:36:41 -0400
-Subject: [PATCH 4/5] core: a timer list per thread
+Subject: [PATCH 4/6] core: a timer list per thread
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

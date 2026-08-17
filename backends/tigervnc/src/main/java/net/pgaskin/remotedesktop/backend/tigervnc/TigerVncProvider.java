@@ -37,6 +37,8 @@ public final class TigerVncProvider implements BackendProvider {
     public static final String COLOUR = "ColorLevel";
     public static final String VIEW_ONLY = "ViewOnly";
     public static final String SHARED = "Shared";
+    /** The same key, words and default the libvncclient backend's row has. */
+    public static final String ANONYMOUS_TLS = "AnonymousTLS";
     public static final String BELL = "AcceptBell";
     public static final String H264 = "H264";
 
@@ -99,6 +101,9 @@ public final class TigerVncProvider implements BackendProvider {
                     false, Scope.CONNECTION, true),
             BackendOption.bool(SHARED, "Shared",
                     "Do not ask the server to disconnect other clients.",
+                    true, Scope.CONNECTION, false),
+            BackendOption.bool(ANONYMOUS_TLS, "Unverified encryption",
+                    "Ask before using encryption with no certificate to check the server against.",
                     true, Scope.CONNECTION, false),
 
             // ---- per backend -------------------------------------------------

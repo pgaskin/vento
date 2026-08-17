@@ -120,6 +120,7 @@ public final class LibVncBackend implements Backend, LibVncNative.Callbacks {
         fireState(State.CONNECTING, "Connecting to " + address);
         final long h = LibVncNative.nativeCreate(this, address, userName, password,
                 bool(LibVncProvider.SHARED),
+                bool(LibVncProvider.ANONYMOUS_TLS),
                 LibVncProvider.encodings(options.get(LibVncProvider.ENCODING)),
                 LibVncProvider.level(options.get(LibVncProvider.COMPRESSION)),
                 LibVncProvider.level(options.get(LibVncProvider.QUALITY)),
@@ -476,6 +477,35 @@ public final class LibVncBackend implements Backend, LibVncNative.Callbacks {
             return;
         }
         main.post(() -> KnownHosts.ask(context, address, fingerprint, prompts, this::answerTrust));
+    }
+
+    /**
+     * The far end could not be verified at all, which is a different question
+     * from whether an identity is the right one: there is nothing to pin and
+     * nothing to compare, so this is {@link Prompt.Message} rather than
+     * {@link Prompt.Trust} and nothing is remembered. Asked every time, and the
+     * same question in the same words as the TigerVNC backend beside it.
+     */
+    @Override
+    public void onUnverified(String why) {
+        Log.w(TAG, "cannot verify " + address + ": " + why);
+        main.post(() -> {
+            final Prompt.Handler h = prompts;
+            final Prompt.Message prompt = new Prompt.Message(address,
+                    why + " Connecting anyway hides the session from somebody listening"
+                            + " and not from a machine in the middle.",
+                    Prompt.Message.Severity.WARNING, true, "Connect anyway") {
+                @Override
+                protected void deliver(boolean ok) {
+                    answerTrust(ok);
+                }
+            };
+            if (h == null) {
+                prompt.cancel();
+            } else {
+                h.message(prompt);
+            }
+        });
     }
 
     private void answerTrust(boolean accept) {

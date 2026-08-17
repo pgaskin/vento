@@ -24,6 +24,11 @@ import java.util.Map;
  * client does VeNCrypt, but it takes whatever the server offers and there is no
  * call to prefer, require or refuse it.
  *
+ * <p>The one row about encryption here asks something else: whether a tunnel
+ * with no certificate in it may be taken at all. That is not a preference
+ * between encrypted and not, it is whether a question gets asked or the session
+ * ends, and the same row is on the TigerVNC backend for the same reason.
+ *
  * <p>The colour row is the same question the RealVNC and TigerVNC backends ask,
  * asked in the same words, and it is the only one of the three that cannot
  * change mid-session: libvncclient sends a pixel format and reallocates around
@@ -39,6 +44,7 @@ public final class LibVncProvider implements BackendProvider {
     public static final String COLOUR = "ColorLevel";
     public static final String VIEW_ONLY = "ViewOnly";
     public static final String SHARED = "Shared";
+    public static final String ANONYMOUS_TLS = "AnonymousTLS";
     public static final String BELL = "AcceptBell";
 
     /**
@@ -92,6 +98,9 @@ public final class LibVncProvider implements BackendProvider {
                     false, Scope.CONNECTION, true),
             BackendOption.bool(SHARED, "Shared",
                     "Do not ask the server to disconnect other clients.",
+                    true, Scope.CONNECTION, false),
+            BackendOption.bool(ANONYMOUS_TLS, "Unverified encryption",
+                    "Ask before using encryption with no certificate to check the server against.",
                     true, Scope.CONNECTION, false),
 
             // ---- per backend -------------------------------------------------

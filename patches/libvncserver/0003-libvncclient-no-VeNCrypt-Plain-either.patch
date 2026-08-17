@@ -1,4 +1,4 @@
-From 64e700cdf76f379d09c08c5e4458cee6658a647d Mon Sep 17 00:00:00 2001
+From 7e89726d14c7fc339515d6ce485e162ed0fab67b Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Wed, 12 Aug 2026 21:27:45 -0400
 Subject: [PATCH 3/5] libvncclient: no VeNCrypt Plain either
@@ -14,30 +14,32 @@ server rather than authenticate to it in plain text, which is what the
 TigerVNC backend beside it already does with the same list.
 
 diff --git a/src/libvncclient/tls_gnutls.c b/src/libvncclient/tls_gnutls.c
-index c0b469b..efb00cd 100644
+index 16c5218..71b36a1 100644
 --- a/src/libvncclient/tls_gnutls.c
 +++ b/src/libvncclient/tls_gnutls.c
-@@ -455,10 +455,11 @@ ReadVeNCryptSecurityType(rfbClient* client, uint32_t *result)
+@@ -455,13 +455,15 @@ ReadVeNCryptSecurityType(rfbClient* client, uint32_t *result)
             against somebody in the middle, since the server proves nothing
-            about itself and there is no certificate to pin. They are left out
-            deliberately, so that a server offering both is talked to over the
--           one that has an identity. */
-+           one that has an identity. rfbVeNCryptPlain is out for a plainer
-+           reason: as a top-level type there is no TLS under it at all, so it
-+           is the user name and password on the wire in the clear. */
+            about itself and there is no certificate to pin. So they are offered
+            only when the caller has installed ConfirmAnonymousTLS, which is
+-           where that is put to whoever is at this end.
++           where that is put to whoever is at this end. rfbVeNCryptPlain is out
++           for a plainer reason: as a top-level type there is no TLS under it
++           at all, so it is the user name and password on the wire in the
++           clear.
+ 
+            rfbVeNCryptTLSSASL is left out with them and stays out: it is the
+            same tunnel with an authentication this client does not build. */
          if (t==rfbNoAuth ||
              t==rfbVncAuth ||
 -            t==rfbVeNCryptPlain ||
- #ifdef LIBVNCSERVER_HAVE_SASL
-             t==rfbVeNCryptX509SASL ||
- #endif /*LIBVNCSERVER_HAVE_SASL */
-@@ -469,8 +470,7 @@ ReadVeNCryptSecurityType(rfbClient* client, uint32_t *result)
-             if (
+             ((t==rfbVeNCryptTLSNone ||
+               t==rfbVeNCryptTLSVNC ||
+               t==rfbVeNCryptTLSPlain) && client->ConfirmAnonymousTLS) ||
+@@ -476,7 +478,6 @@ ReadVeNCryptSecurityType(rfbClient* client, uint32_t *result)
                  authScheme==0 ||
                  authScheme==rfbNoAuth ||
--                authScheme==rfbVncAuth ||
--                authScheme==rfbVeNCryptPlain)
-+                authScheme==rfbVncAuth)
-             {
-                 /* for security reasons, the encrypted type has a higher priority */
-                 origAuthScheme=tAuth[loop];
+                 authScheme==rfbVncAuth ||
+-                authScheme==rfbVeNCryptPlain ||
+                 /* An anonymous tunnel is better than none and worse than a
+                    checked one, and the server's list is in the server's order:
+                    without these three a server naming TLSVnc before X509Vnc

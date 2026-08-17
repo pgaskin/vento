@@ -135,7 +135,7 @@ int qualityFor(int level, unsigned bps) {
 
 jclass gCallbacksClass;
 jmethodID mConnected, mDesktopSize, mDamage, mFrameEnd, mCursor, mBell,
-        mClipboard, mCredentialsNeeded, mQuestion, mClosed;
+        mClipboard, mCredentialsNeeded, mQuestion, mUnverified, mClosed;
 
 // ---- logging -------------------------------------------------------------
 
@@ -176,11 +176,14 @@ void initLogging() {
  *
  * Their default list includes Plain, which sends the password in the clear when
  * it is not inside a TLS stack — and as a *top-level* type that is exactly what
- * it would be. It also includes the TLS* family, which is VeNCrypt over an
- * anonymous key exchange: encrypted against a passive listener and worth nothing
- * against an active one, since nothing about the far end is proved. The client
- * we wrote refuses those, so this one does too; X509* is the same encryption
- * with a certificate to check.
+ * it would be. The TLS* family is here: VeNCrypt over an anonymous key
+ * exchange, which is encrypted against a passive listener and worth nothing
+ * against an active one, since nothing about the far end is proved. It is
+ * offered because a stock server with TLS switched on and no certificate
+ * arranged is an ordinary setup and refusing deletes the whole session, and
+ * every one of them arrives at a question ({@code Conn::confirmAnonymousTLS}).
+ * X509* is the same encryption with a certificate to check, and the patched
+ * sub-type choice takes one of those wherever a server offers both.
  *
  * RA2ne is here beside RA2 because "ne" is not the anonymous case: the server's
  * RSA key is checked either way, and the difference is whether the session after
@@ -197,6 +200,7 @@ void installSecurityTypes() {
         rfb::SecurityClient::secTypes.setParam("None,VncAuth"
 #ifdef HAVE_GNUTLS
                                                ",X509Vnc,X509Plain,X509None"
+                                               ",TLSVnc,TLSPlain,TLSNone"
 #endif
 #ifdef HAVE_NETTLE
                                                ",RA2,RA2_256,RA2ne,RA2ne_256"
@@ -418,6 +422,8 @@ public:
 
     bool showMsgBox(rfb::MsgBoxFlags flags, const char *title, const char *text) override;
 
+    void confirmAnonymousTLS() override;
+
     void handleClipboardAnnounce(bool available) override;
 
     void handleClipboardData(const char *data) override;
@@ -448,10 +454,12 @@ private:
 class Session {
 public:
     Session(JNIEnv *env, jobject callbacks, std::string address, std::string userName,
-            std::string password, bool shared, int encoding, int compressLevel,
-            int qualityLevel, int colorLevel, bool h264, int connectTimeoutMs)
+            std::string password, bool shared, bool anonymousTls, int encoding,
+            int compressLevel, int qualityLevel, int colorLevel, bool h264,
+            int connectTimeoutMs)
             : address_(std::move(address)), userName_(std::move(userName)),
-              password_(std::move(password)), shared_(shared), encoding_(encoding),
+              password_(std::move(password)), shared_(shared),
+              anonymousTls_(anonymousTls), encoding_(encoding),
               compressLevel_(compressLevel), qualityLevel_(qualityLevel),
               colorLevel_(colorLevel), h264_(h264),
               connectTimeoutMs_(connectTimeoutMs) {
@@ -659,6 +667,26 @@ public:
         return questionYes_ && !quit_;
     }
 
+    /** The same wait again, for a far end with no identity to show at all. */
+    bool askUnverified(const char *why) {
+        {
+            const std::lock_guard<std::mutex> guard(lock_);
+            questionAnswered_ = false;
+        }
+        const Env env(vm_);
+        if (env) {
+            jstring jWhy = fromUtf8(env.get(), why);
+            env->CallVoidMethod(callbacks_, mUnverified, jWhy);
+            cleared(env.get());
+            env->DeleteLocalRef(jWhy);
+        }
+        std::unique_lock<std::mutex> guard(lock_);
+        answered_.wait(guard, [this] { return questionAnswered_ || quit_; });
+        return questionYes_ && !quit_;
+    }
+
+    bool anonymousTls() const { return anonymousTls_; }
+
     void setPicture(int encoding, int compressLevel, int qualityLevel, int colorLevel,
                     bool h264) {
         const std::lock_guard<std::mutex> guard(lock_);
@@ -823,6 +851,7 @@ private:
     const std::string userName_;
     std::string password_;
     const bool shared_;
+    const bool anonymousTls_;
     int encoding_;
     int compressLevel_;
     int qualityLevel_;
@@ -940,9 +969,19 @@ void Conn::initDone() {
 
     char protocol[32];
     snprintf(protocol, sizeof(protocol), "RFB %d.%d", server.majorVersion, server.minorVersion);
-    s->setConnectionFacts(server.name(), protocol,
-                          csecurity != nullptr ? rfb::secTypeName(csecurity->getType()) : "",
-                          pf);
+    // Their own name for the type, and for the three with no certificate under
+    // them what that leaves: a session saying only "TLSVnc" would be claiming
+    // the identity check this family does not have.
+    std::string security;
+    if (csecurity != nullptr) {
+        const int type = csecurity->getType();
+        security = rfb::secTypeName(type);
+        if (type == rfb::secTypeTLSNone || type == rfb::secTypeTLSVnc
+            || type == rfb::secTypeTLSPlain) {
+            security += ", encrypted and unverified";
+        }
+    }
+    s->setConnectionFacts(server.name(), protocol, security.c_str(), pf);
 
     s->resized(server.width(), server.height(), true);
     s->setConnected();
@@ -1125,6 +1164,25 @@ void Conn::getUserPasswd(bool /*secure*/, std::string *user, std::string *passwo
 // is a person's and the handshake waits for it.
 bool Conn::showMsgBox(rfb::MsgBoxFlags /*flags*/, const char *title, const char *text) {
     return s->askQuestion(title, text);
+}
+
+// The tunnel came up with no certificate under it, which is a different
+// question from whether an identity is the right one: there is nothing to show
+// and nothing to remember, so it is asked in the app's own words every time.
+//
+// The refusal is here rather than in the offer because the type list is one
+// string for the process: the sub-types are always offered and a connection
+// that does not want them says so at this point, one handshake later than it
+// would like and before anything has been authenticated inside it.
+void Conn::confirmAnonymousTLS() {
+    if (!s->anonymousTls()) {
+        throw std::runtime_error(
+                "This server offers encryption with nothing to identify it by, "
+                "and this connection does not allow that.");
+    }
+    if (!s->askUnverified("This server offers encryption with nothing to identify it by.")) {
+        throw rfb::auth_cancelled();
+    }
 }
 
 void Conn::handleClipboardAnnounce(bool available) {
@@ -1601,8 +1659,9 @@ NATIVE(jstring, nativeVersion)(JNIEnv *env, jclass) {
 
 NATIVE(jlong, nativeCreate)(JNIEnv *env, jclass, jobject listener, jstring address,
                             jstring userName, jstring password, jboolean shared,
-                            jint encoding, jint compressLevel, jint qualityLevel,
-                            jint colorLevel, jboolean h264, jint connectTimeoutMs) {
+                            jboolean anonymousTls, jint encoding, jint compressLevel,
+                            jint qualityLevel, jint colorLevel, jboolean h264,
+                            jint connectTimeoutMs) {
     initLogging();
     if (gCallbacksClass == nullptr) {
         jclass k = env->GetObjectClass(listener);
@@ -1615,6 +1674,7 @@ NATIVE(jlong, nativeCreate)(JNIEnv *env, jclass, jobject listener, jstring addre
         mClipboard = env->GetMethodID(k, "onClipboard", "(Ljava/lang/String;)V");
         mCredentialsNeeded = env->GetMethodID(k, "onCredentialsNeeded", "(Z)V");
         mQuestion = env->GetMethodID(k, "onQuestion", "(Ljava/lang/String;Ljava/lang/String;)V");
+        mUnverified = env->GetMethodID(k, "onUnverified", "(Ljava/lang/String;)V");
         mClosed = env->GetMethodID(k, "onClosed", "(Ljava/lang/String;)V");
         // Last, and that is the point: it is what every other caller tests, so
         // publishing it first would let a second one past while the method ids
@@ -1623,9 +1683,9 @@ NATIVE(jlong, nativeCreate)(JNIEnv *env, jclass, jobject listener, jstring addre
     }
 
     Session *s = new Session(env, listener, toString(env, address), toString(env, userName),
-                             toString(env, password), shared != JNI_FALSE, encoding,
-                             compressLevel, qualityLevel, colorLevel, h264 != JNI_FALSE,
-                             connectTimeoutMs);
+                             toString(env, password), shared != JNI_FALSE,
+                             anonymousTls != JNI_FALSE, encoding, compressLevel,
+                             qualityLevel, colorLevel, h264 != JNI_FALSE, connectTimeoutMs);
     if (!s->start()) {
         s->destroy();
         delete s;

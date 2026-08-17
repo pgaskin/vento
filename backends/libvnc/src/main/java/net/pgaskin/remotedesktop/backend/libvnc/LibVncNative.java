@@ -98,6 +98,17 @@ final class LibVncNative {
          */
         void onTrustNeeded(String fingerprint);
 
+        /**
+         * The server offered VeNCrypt with no certificate in it, which is
+         * encryption that proves nothing about what is at the far end. There
+         * is no fingerprint to show and nothing to pin, so the answer is a
+         * person's every time, and it goes back the same way a trust answer
+         * does ({@link #nativeAnswerTrust}).
+         *
+         * @param why what could not be checked, as a sentence
+         */
+        void onUnverified(String why);
+
         /** Terminal. Empty {@code detail} for an ordinary disconnect. */
         void onClosed(String detail);
     }
@@ -109,6 +120,10 @@ final class LibVncNative {
      * Start connecting. Returns a handle immediately; everything after this
      * arrives through {@code listener}.
      *
+     * @param anonymousTls  whether the VeNCrypt sub-types with no certificate
+     *                      in them may be used. They are always offered; a
+     *                      connection that says no here ends when one is
+     *                      agreed, before the tunnel is built, and says why
      * @param encoding      a libvncclient encodings string, best first
      * @param compressLevel 0–9, or −1 for the server's own default
      * @param qualityLevel  0–9 for Tight's JPEG, or −1 for lossless — which is
@@ -120,9 +135,9 @@ final class LibVncNative {
      *                      format mid-stream
      */
     static native long nativeCreate(Callbacks listener, String address, String userName,
-                                    String password, boolean shared, String encoding,
-                                    int compressLevel, int qualityLevel, int colorLevel,
-                                    int connectTimeoutMs);
+                                    String password, boolean shared, boolean anonymousTls,
+                                    String encoding, int compressLevel, int qualityLevel,
+                                    int colorLevel, int connectTimeoutMs);
 
     /** A {@code null} password cancels, which ends the session. */
     static native void nativeAnswerCredentials(long handle, String userName, String password);

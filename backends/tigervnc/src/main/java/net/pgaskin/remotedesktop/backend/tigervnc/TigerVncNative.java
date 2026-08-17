@@ -88,6 +88,16 @@ final class TigerVncNative {
          */
         void onQuestion(String title, String text);
 
+        /**
+         * The tunnel came up with no certificate in it, which is encryption
+         * that proves nothing about what is at the far end. There is nothing
+         * to show and nothing to pin, so the answer is a person's every time
+         * and it goes back through {@link #nativeAnswerQuestion}.
+         *
+         * @param why what could not be checked, as a sentence
+         */
+        void onUnverified(String why);
+
         /** Terminal. Empty {@code detail} for an ordinary disconnect. */
         void onClosed(String detail);
     }
@@ -116,6 +126,11 @@ final class TigerVncNative {
      *                      follow the measured line speed. Only the wire format
      *                      changes: the decoders convert into a framebuffer that
      *                      is always 32-bit
+     * @param anonymousTls  whether the VeNCrypt sub-types with no certificate
+     *                      in them may be used. They are always offered, since
+     *                      the library takes its type list once for the
+     *                      process; a connection that says no here ends when
+     *                      one is agreed, before anything runs inside it
      * @param h264          whether to offer H.264 at all. Every other encoding
      *                      this client can decode is offered unconditionally;
      *                      this one is not, because the server picks from the
@@ -123,9 +138,9 @@ final class TigerVncNative {
      *                      however little changed
      */
     static native long nativeCreate(Callbacks listener, String address, String userName,
-                                    String password, boolean shared, int encoding,
-                                    int compressLevel, int qualityLevel, int colorLevel,
-                                    boolean h264, int connectTimeoutMs);
+                                    String password, boolean shared, boolean anonymousTls,
+                                    int encoding, int compressLevel, int qualityLevel,
+                                    int colorLevel, boolean h264, int connectTimeoutMs);
 
     /** A {@code null} password cancels, which ends the session. */
     static native void nativeAnswerCredentials(long handle, String userName, String password);

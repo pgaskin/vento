@@ -1,0 +1,98 @@
+From 3495e7fb940b4654b7f59b5e9bab815685af3af0 Mon Sep 17 00:00:00 2001
+From: Claude Opus 5 <noreply@anthropic.com>
+Date: Sun, 16 Aug 2026 14:45:46 -0400
+Subject: [PATCH 6/6] rfb: anonymous TLS is the client's question, and never
+ its first choice
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The TLS* security types bring up a tunnel with no certificate in it, and
+checkSession returns immediately for them: nothing to verify, nothing to
+write to the known-hosts file, and nothing said. A session over one is
+then indistinguishable from a checked one, which is the part worth
+fixing — a client cannot tell its user what the session is if it is
+never told itself.
+
+So CConnection gains confirmAnonymousTLS(), called there, doing nothing
+by default. A client that wants to refuse or to ask throws from it.
+
+The sub-type choice becomes two passes over the server's own order,
+anything with a certificate in it first. The server's list is the
+server's order and the first match won, so a server naming TLSVnc before
+X509Vnc decided for the client that its identity would not be checked.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+diff --git a/common/rfb/CConnection.h b/common/rfb/CConnection.h
+index 8c8a7625..b8ab869c 100644
+--- a/common/rfb/CConnection.h
++++ b/common/rfb/CConnection.h
+@@ -204,6 +204,13 @@ namespace rfb {
+     virtual bool showMsgBox(MsgBoxFlags flags, const char *title,
+                             const char *text) = 0;
+ 
++    // confirmAnonymousTLS() is called once a TLS* security type has brought
++    // up a tunnel with no certificate in it, before anything is authenticated
++    // inside it.  There is nothing to check and nothing to remember, so a
++    // client that wants to refuse or to ask throws from here; doing nothing
++    // goes on with the session.
++    virtual void confirmAnonymousTLS() {}
++
+   protected:
+ 
+     // Methods overridden from CMsgHandler
+diff --git a/common/rfb/CSecurityTLS.cxx b/common/rfb/CSecurityTLS.cxx
+index 6eefe73b..7134e1ac 100644
+--- a/common/rfb/CSecurityTLS.cxx
++++ b/common/rfb/CSecurityTLS.cxx
+@@ -293,8 +293,14 @@ void CSecurityTLS::checkSession()
+   gnutls_datum_t info;
+   size_t len;
+ 
+-  if (anon)
++  /* An anonymous key exchange leaves nothing to check: no certificate, no
++     name, nothing to write into the known-hosts file. Going on silently is
++     what makes such a session indistinguishable from a checked one, so the
++     client is told and decides. */
++  if (anon) {
++    cc->confirmAnonymousTLS();
+     return;
++  }
+ 
+   if (gnutls_certificate_type_get(session) != GNUTLS_CRT_X509) {
+     gnutls_alert_send(session, GNUTLS_AL_FATAL,
+diff --git a/common/rfb/CSecurityVeNCrypt.cxx b/common/rfb/CSecurityVeNCrypt.cxx
+index a6e30947..a5b05c20 100644
+--- a/common/rfb/CSecurityVeNCrypt.cxx
++++ b/common/rfb/CSecurityVeNCrypt.cxx
+@@ -162,12 +162,23 @@ bool CSecurityVeNCrypt::processMsg()
+ 
+       secTypes = security->GetEnabledExtSecTypes();
+ 
+-      /* Honor server's security type order */
+-      for (i = 0; i < nAvailableTypes; i++) {
+-        if (std::find(secTypes.begin(), secTypes.end(),
+-                      availableTypes[i]) != secTypes.end()) {
+-          chosenType = availableTypes[i];
+-          break;
++      /* Honor server's security type order, in two passes: anything with a
++         certificate in it before the anonymous TLS* family, which proves
++         nothing about the server and is worth taking only when it is all
++         there is. The server's list is the server's order, so without this a
++         server naming TLSVnc before X509Vnc decides that for the client. */
++      for (int pass = 0; pass < 2 && chosenType == secTypeInvalid; pass++) {
++        for (i = 0; i < nAvailableTypes; i++) {
++          bool anonymous = availableTypes[i] == secTypeTLSNone ||
++                           availableTypes[i] == secTypeTLSVnc ||
++                           availableTypes[i] == secTypeTLSPlain;
++          if (anonymous != (pass == 1))
++            continue;
++          if (std::find(secTypes.begin(), secTypes.end(),
++                        availableTypes[i]) != secTypes.end()) {
++            chosenType = availableTypes[i];
++            break;
++          }
+         }
+       }
+ 

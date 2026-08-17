@@ -1,7 +1,7 @@
-From 0e1f1eb7bf1f26b734e56e50a52c647acbe7af11 Mon Sep 17 00:00:00 2001
+From 58694a8ffedad0b24ce4b38f441f896293653603 Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Wed, 12 Aug 2026 22:37:59 -0400
-Subject: [PATCH 5/5] rfb: NoJPEG per connection
+Subject: [PATCH 5/6] rfb: NoJPEG per connection
 
 NoJPEG is a global parameter read while the encoding list is built, so
 a process with two connections has each one deciding for the other

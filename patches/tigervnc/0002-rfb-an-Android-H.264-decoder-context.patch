@@ -1,7 +1,7 @@
-From 0a9a27b7e1ee1a0f512674a07bee2a73d0a96c56 Mon Sep 17 00:00:00 2001
+From 2d11d1e8084008f677b6cc37f16ef6a1f2acb3e9 Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Wed, 12 Aug 2026 12:13:58 -0400
-Subject: [PATCH 2/5] rfb: an Android H.264 decoder context
+Subject: [PATCH 2/6] rfb: an Android H.264 decoder context
 
 The context class itself is in the shim, where a build's own code belongs;
 this is only the branch that selects it, beside the two upstream has.

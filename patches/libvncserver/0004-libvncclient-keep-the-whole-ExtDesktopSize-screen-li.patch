@@ -1,4 +1,4 @@
-From 00824b7d7b70791bc03c667aa701294e64b0f46c Mon Sep 17 00:00:00 2001
+From 33eeb735e19148865405104a3183a84c528537a3 Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Wed, 12 Aug 2026 23:51:22 -0400
 Subject: [PATCH 4/5] libvncclient: keep the whole ExtDesktopSize screen list
@@ -13,13 +13,13 @@ The list is kept beside it, in the same network byte order, and freed
 with the client.
 
 diff --git a/include/rfb/rfbclient.h b/include/rfb/rfbclient.h
-index f72d84a..21ef0ac 100644
+index 360d4d7..738095a 100644
 --- a/include/rfb/rfbclient.h
 +++ b/include/rfb/rfbclient.h
-@@ -506,6 +506,17 @@ typedef struct _rfbClient {
-         rfbBool isUpdateRectManagedByLib;
- 
+@@ -516,6 +516,17 @@ typedef struct _rfbClient {
          GetX509CertFingerprintMismatchDecisionProc GetX509CertFingerprintMismatchDecision;
+ 
+         ConfirmAnonymousTLSProc ConfirmAnonymousTLS;
 +
 +        /**
 +         * The whole screen layout from the last ExtDesktopSize rectangle, which

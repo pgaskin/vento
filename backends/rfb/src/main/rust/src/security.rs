@@ -15,15 +15,22 @@ pub const SEC_VENCRYPT: u8 = 19;
 ///
 /// The other half — 257 `TLSNone`, 258 `TLSVnc`, 259 `TLSPlain` — is
 /// **anonymous** TLS: a Diffie-Hellman exchange with no certificate at all.
-/// Two reasons it is not here, and the second is the real one:
+/// The other two VNC clients here offer them and ask about them; this one
+/// cannot, and the reason is the stack rather than the position.
 ///
-/// 1. `rustls` has no anonymous cipher suites and TLS 1.3 has none to have;
-///    supporting it would mean a second TLS library.
-/// 2. There is nothing to pin. Anonymous TLS encrypts the line and proves
-///    nothing about who is at the end of it, so a man in the middle is
-///    undetectable by construction — and "encrypted" on the panel would be
-///    saying something this client cannot know. A server offering only these
-///    gets an error that says so rather than a quiet downgrade.
+/// A gnutls server offering an anonymous sub-type answers a ClientHello with
+/// `TLS_ECDH_anon_WITH_AES_256_CBC_SHA` and nothing else: measured against
+/// TigerVNC 1.15, whose `+ANON-ECDH:+ANON-DH` leaves the GCM anon suites
+/// unreachable, and it drops the connection outright if the offer contains a
+/// certificate suite it has no credentials for. `rustls` has no anonymous key
+/// exchange (`KeyExchangeAlgorithm` is ECDHE or DHE), no CBC MAC-then-encrypt
+/// suite by policy, and a TLS 1.2 client that reaches `ExpectCertificate`
+/// whatever was agreed. So this is a second TLS library or a TLS 1.2 written
+/// by hand, for a case the two borrowed clients already cover.
+///
+/// And there would still be nothing to pin. Anonymous TLS encrypts the line
+/// and proves nothing about who is at the end of it, so a man in the middle is
+/// undetectable by construction.
 pub const VENCRYPT_X509_NONE: u32 = 260;
 pub const VENCRYPT_X509_VNC: u32 = 261;
 pub const VENCRYPT_X509_PLAIN: u32 = 262;
@@ -251,8 +258,8 @@ fn vencrypt(wire: &mut Wire, host: &str, ask: &mut dyn Ask) -> Result<String> {
         .ok_or_else(|| {
             Error::Unsupported(format!(
                 "the server offers VeNCrypt sub-types {offered:?}, and this client speaks \
-                 the X.509 ones (260, 261, 262). 257–259 are anonymous TLS, which \
-                 encrypts the line and proves nothing about what is at the end of it"
+                 the X.509 ones (260, 261, 262). 257–259 are anonymous TLS, which this \
+                 client's TLS stack has no key exchange for"
             ))
         })?;
     wire.w.write_all(&chosen.to_be_bytes())?;

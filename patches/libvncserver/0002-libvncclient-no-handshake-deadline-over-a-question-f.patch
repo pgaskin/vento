@@ -1,4 +1,4 @@
-From cf7604255d3d2b48763779360342014a823d869f Mon Sep 17 00:00:00 2001
+From 2aa67cf8fcb90da6cade622e502ba8fd85ad4dd7 Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Wed, 12 Aug 2026 04:12:07 -0400
 Subject: [PATCH 2/5] libvncclient: no handshake deadline over a question for a
@@ -14,7 +14,7 @@ whatever owns the socket, which can close it, rather than to a clock
 that cannot tell a stalled server from a person thinking.
 
 diff --git a/src/libvncclient/tls_gnutls.c b/src/libvncclient/tls_gnutls.c
-index 4501ebf..c0b469b 100644
+index a768c52..16c5218 100644
 --- a/src/libvncclient/tls_gnutls.c
 +++ b/src/libvncclient/tls_gnutls.c
 @@ -370,7 +370,14 @@ InitializeTLSSession(rfbClient* client, rfbBool anonTLS)

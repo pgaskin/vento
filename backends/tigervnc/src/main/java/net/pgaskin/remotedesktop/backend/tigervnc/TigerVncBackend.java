@@ -139,6 +139,7 @@ public final class TigerVncBackend implements Backend, TigerVncNative.Callbacks 
         fireState(State.CONNECTING, "Connecting to " + address);
         final long h = TigerVncNative.nativeCreate(this, address, userName, password,
                 bool(TigerVncProvider.SHARED),
+                bool(TigerVncProvider.ANONYMOUS_TLS),
                 TigerVncProvider.encoding(options.get(TigerVncProvider.ENCODING)),
                 TigerVncProvider.level(options.get(TigerVncProvider.COMPRESSION)),
                 TigerVncProvider.quality(options.get(TigerVncProvider.QUALITY)),
@@ -482,6 +483,38 @@ public final class TigerVncBackend implements Backend, TigerVncNative.Callbacks 
             final Prompt.Handler h = prompts;
             final Prompt.Message prompt = new Prompt.Message(address,
                     title + "\n\n" + text, Prompt.Message.Severity.WARNING, true, "Connect") {
+                @Override
+                protected void deliver(boolean ok) {
+                    final long session = handle;
+                    if (session != 0) {
+                        TigerVncNative.nativeAnswerQuestion(session, ok);
+                    }
+                }
+            };
+            if (h == null) {
+                prompt.cancel();
+            } else {
+                h.message(prompt);
+            }
+        });
+    }
+
+    /**
+     * The far end could not be verified at all, which is a different question
+     * from whether an identity is the right one: there is nothing to pin and
+     * nothing to compare, so this is {@link Prompt.Message} rather than
+     * {@link Prompt.Trust} and nothing is remembered. Asked every time, and the
+     * same question in the same words as the libvncclient backend beside it.
+     */
+    @Override
+    public void onUnverified(String why) {
+        Log.w(TAG, "cannot verify " + address + ": " + why);
+        main.post(() -> {
+            final Prompt.Handler h = prompts;
+            final Prompt.Message prompt = new Prompt.Message(address,
+                    why + " Connecting anyway hides the session from somebody listening"
+                            + " and not from a machine in the middle.",
+                    Prompt.Message.Severity.WARNING, true, "Connect anyway") {
                 @Override
                 protected void deliver(boolean ok) {
                     final long session = handle;
