@@ -1,0 +1,5 @@
+* Add hover assist based on cursor changes.
+* Add toolbar option for session controls.
+* Add two-line extension keyboard option.
+* Allow option/command keys to be hidden.
+* Fix IPv6 issues with some backends.
