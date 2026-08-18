@@ -352,8 +352,8 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
      * The same keys in two lines, grouped the way a keyboard groups them:
      *
      * <pre>
-     *   modifiers                home  up   end      pgup    paste    f1-f6
-     *   bksp del esc tab ins     left  down right    pgdn    return   f7-f12
+     *   bksp del esc tab ins     home  up   end      pgup    paste    f1-f6
+     *   modifiers                left  down right    pgdn    return   f7-f12
      * </pre>
      *
      * <p>The arrows are why the columns of a group are shared between its lines
@@ -361,7 +361,7 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
      * {@code home up end} over {@code left down right} as an inverted T, with
      * Home above Left and End above Right — the two keys that mean "the far end
      * of this line, that way" on the axis they mean. The modifiers are the one
-     * group whose columns do not correspond, six over five, and that costs
+     * group whose columns do not correspond, five over six, and that costs
      * nothing.
      *
      * <p>It is a line of somebody else's screen dearer than {@link
@@ -370,17 +370,17 @@ public final class ExtensionKeyboard implements TouchRouter.Claim {
      */
     public static List<Key> twoLineKeys() {
         final List<Key> k = new ArrayList<>();
-        k.add(Key.modifier("Shift", "shift", Keysym.SHIFT_L, 0));
-        k.add(Key.modifier("Ctrl", null, Keysym.CONTROL_L, 0));
-        k.add(Key.modifier("Alt", null, Keysym.ALT_L, 0));
-        k.add(Key.modifier("Windows", "windows", Keysym.SUPER_L, 0));
-        k.add(Key.modifier("Option", "option", Keysym.ISO_LEVEL3_SHIFT, 0));
-        k.add(Key.modifier("CMD", "command", Keysym.SUPER_L, 0));
-        k.add(Key.icon("Backspace", "backspace", Keysym.BACKSPACE, 0).repeating().onRow(1));
-        k.add(Key.normal("Del", Keysym.DELETE, 0).repeating().onRow(1));
-        k.add(Key.normal("Esc", Keysym.ESCAPE, 0).onRow(1));
-        k.add(Key.normal("Tab", Keysym.TAB, 0).repeating().onRow(1));
-        k.add(Key.normal("Ins", Keysym.INSERT, 0).onRow(1));
+        k.add(Key.modifier("Shift", "shift", Keysym.SHIFT_L, 0).onRow(1));
+        k.add(Key.modifier("Ctrl", null, Keysym.CONTROL_L, 0).onRow(1));
+        k.add(Key.modifier("Alt", null, Keysym.ALT_L, 0).onRow(1));
+        k.add(Key.modifier("Windows", "windows", Keysym.SUPER_L, 0).onRow(1));
+        k.add(Key.modifier("Option", "option", Keysym.ISO_LEVEL3_SHIFT, 0).onRow(1));
+        k.add(Key.modifier("CMD", "command", Keysym.SUPER_L, 0).onRow(1));
+        k.add(Key.icon("Backspace", "backspace", Keysym.BACKSPACE, 0).repeating());
+        k.add(Key.normal("Del", Keysym.DELETE, 0).repeating());
+        k.add(Key.normal("Esc", Keysym.ESCAPE, 0));
+        k.add(Key.normal("Tab", Keysym.TAB, 0).repeating());
+        k.add(Key.normal("Ins", Keysym.INSERT, 0));
 
         // Home and End are drawn as arrows here, where they sit over Left and
         // Right: at that width a word beside three arrow glyphs is what breaks
