@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Patrick Gaskin
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package net.pgaskin.remotedesktop;
+package net.pgaskin.remotedesktop.session;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -9,7 +9,6 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.RectF;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -22,11 +21,13 @@ import android.view.MotionEvent;
 import android.view.RoundedCorner;
 import android.view.View;
 import android.view.WindowInsets;
-import android.view.WindowMetrics;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 
+import net.pgaskin.remotedesktop.AppSettings;
+import net.pgaskin.remotedesktop.InputSettings;
+import net.pgaskin.remotedesktop.R;
 import net.pgaskin.remotedesktop.backend.Backend;
 import net.pgaskin.remotedesktop.backend.Monitor;
 import net.pgaskin.remotedesktop.control.CursorController;
@@ -37,7 +38,6 @@ import net.pgaskin.remotedesktop.control.input.Config;
 import net.pgaskin.remotedesktop.control.input.ExtensionKeyboard;
 import net.pgaskin.remotedesktop.control.input.GestureRecognizer;
 import net.pgaskin.remotedesktop.control.input.KeySink;
-import net.pgaskin.remotedesktop.control.input.Keysym;
 import net.pgaskin.remotedesktop.control.input.MouseOverlay;
 import net.pgaskin.remotedesktop.control.input.PhysicalKeyboard;
 import net.pgaskin.remotedesktop.control.input.PhysicalMouse;
@@ -47,13 +47,11 @@ import net.pgaskin.remotedesktop.control.input.Toolbar;
 import net.pgaskin.remotedesktop.control.input.TouchRouter;
 import net.pgaskin.remotedesktop.control.input.ZoomSink;
 import net.pgaskin.remotedesktop.control.ui.Chrome;
-import net.pgaskin.remotedesktop.control.ui.Hud;
 import net.pgaskin.remotedesktop.control.ui.TextInput;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -99,9 +97,9 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         void disconnected();
 
         /**
-         * The paste key, with something worth asking about first: a lot of text,
-         * or a locked modifier that would turn all of it into shortcuts. Run
-         * {@code proceed} if the answer is yes.
+         * The paste key, with something worth asking about first. Run
+         * {@code proceed} if the answer is yes; what makes it worth asking is
+         * {@link PasteTyper}'s question rather than this screen's.
          *
          * @param heldModifiers the locked ones, "Ctrl + Shift", or empty
          */
@@ -141,13 +139,6 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     private static final long SESSION_POLL_MS = 1000;
 
     /**
-     * How soon after the window changes shape the same question is asked. A
-     * rotation is one event and a split screen dragged about is dozens; a
-     * resize is a round trip and, on RDP, a whole reactivation.
-     */
-    private static final long FOLLOW_DEBOUNCE_MS = 600;
-
-    /**
      * Where the pointer went and when a shape came back, which together are the
      * round trip between the two — the interval a cursor change is late by, and
      * so how far past a boundary the pointer already is when the far end says
@@ -173,13 +164,14 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     private final SessionClipboard clipboard;
     private final Host host;
 
+    // The pieces of this screen that are not routing input, forwarding backend
+    // events or drawing, and are small machines of their own. The fourth, the
+    // HUD, is below with the switch that turns it on.
+    private final SoftInput softInput;
+    private final PasteTyper paste;
+    private final WindowFollower follower;
+
     private final boolean subtleHaptics;      // or only a buzz
-    private boolean overlayHiddenByKeyboard;  // put it back when the keyboard goes
-    private boolean overlayShown;
-    private boolean keyboardShown;
-    private int imeHeight;                    // the system IME's, from the window insets
-    private boolean imeUp;                    // ... which is not the same as it being up
-    private boolean imeRequested;             // asked for and not arrived yet
 
     /**
      * What each edge of this window costs the desktop drawn under it, left, top,
@@ -211,8 +203,6 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     private int cursorHotX, cursorHotY;
 
     private final Paint bitmapPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
-    private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF box = new RectF();
 
     private float baseScale = 1.0f;
     private boolean placed;
@@ -231,21 +221,9 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
      */
     private List<Monitor> monitors = List.of();
 
-    /**
-     * Whether this connection asks the far end for a desktop the shape of this
-     * phone's window. Off unless somebody has said so per connection: resizing
-     * a desktop is a change to somebody else's machine, and one that happens
-     * because a phone was turned over is not one they asked for.
-     */
-    private boolean followWindow;
-    /** The size last asked for, so an unchanged window asks for nothing. */
-    private int followedW, followedH;
-    /** The window at the previous tick: two the same means it has settled. */
-    private int settledW, settledH;
-
     // The HUD, off unless asked for: the switch is in the settings tree, and an
     // intent extra overrides it for one session (SessionActivity).
-    private final Hud hud;
+    private final SessionHud hud;
     private boolean hudVisible;
 
     /**
@@ -262,10 +240,6 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
      * somebody else's picture. Black until the app says otherwise.
      */
     private int emptyColor = 0xff000000;
-    private final Hud.Rate frameRate = new Hud.Rate();
-    private final Hud.Rate eventRate = new Hud.Rate();
-    private final Hud.Rate damageRate = new Hud.Rate();
-    private long frames;
     private String lastRegion = "-";
 
     /**
@@ -287,11 +261,21 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         // Its own button source, so a tap on the touchpad during an
         // overlay-held drag cannot release what the overlay is holding.
         overlay = new MouseOverlay(cfg, cursor.newButtonSource(), scheduler);
-        overlay.setListener(this);
         router.addClaim(overlay);
         keyboard = new ExtensionKeyboard(cfg, this, scheduler, keyList(ctx));
-        keyboard.setListener(this);
         router.addClaim(keyboard);
+        // The three small machines the callbacks below hand their work to,
+        // built before either of those two is listened to: measuring the row
+        // counts as a change to it, and Chrome does that on the way in — so a
+        // notification really does arrive during this constructor.
+        softInput = new SoftInput(this, keyboard, overlay, () -> {
+            syncToolbarState();
+            applyInsets();
+        });
+        paste = new PasteTyper(this, scheduler, host::confirmPaste, host::nothingToPaste);
+        follower = new WindowFollower(backend);
+        overlay.setListener(this);
+        keyboard.setListener(this);
         toolbar = new Toolbar(cfg);
         toolbar.setItems(Toolbar.standard());
         toolbar.setPosition(AppSettings.toolbarPosition(ctx));
@@ -310,10 +294,9 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         toolbar.setListener(this);
         applyControls();
         clipboard = new SessionClipboard(ctx, backend::clipboardToRemote);
-        hud = new Hud(cfg);
+        hud = new SessionHud(cfg, backend, clipboard, cursor, viewport, gestures,
+                overlay, keyboard, mouse, keys);
         subtleHaptics = canTick(ctx);
-        textPaint.setColor(0xffe8f0ff);
-        textPaint.setTextSize(cfg.dp(14));
         setFocusable(true);
         setFocusableInTouchMode(true);
     }
@@ -573,40 +556,10 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
                 monitors = now;
                 viewport.setFitSizes(fitSizes(now));
             }
-            followWindow();
+            follower.tick(activity());
             scheduler.postDelayed(this, SESSION_POLL_MS);
         }
     };
-
-    /**
-     * Ask the far end for a desktop the shape of this window, if this
-     * connection has asked for that and the window has stopped moving.
-     *
-     * <p>"Stopped moving" is two ticks the same, which is the debounce: a
-     * split screen being dragged is a new size every frame and a resize is a
-     * round trip. Nothing is asked twice — the same window is the same
-     * question, and a far end that refused it will refuse it again — so a
-     * refusal costs one request rather than one a second.
-     */
-    private void followWindow() {
-        if (!followWindow) {
-            return;
-        }
-        final int[] size = deviceSize(activity());
-        if (size == null) {
-            return;
-        }
-        final boolean settled = size[0] == settledW && size[1] == settledH;
-        settledW = size[0];
-        settledH = size[1];
-        if (!settled || (size[0] == followedW && size[1] == followedH)
-                || !backend.canResize()) {
-            return;
-        }
-        followedW = size[0];
-        followedH = size[1];
-        backend.requestDesktopSize(size[0], size[1]);
-    }
 
     /**
      * One zoom rung per monitor <em>size</em>, so a pair of matched screens is
@@ -643,7 +596,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
      * why the activity calls it rather than this view overriding
      * {@code onWindowFocusChanged}.
      */
-    void refreshClipboard() {
+    public void refreshClipboard() {
         clipboard.read();
     }
 
@@ -656,8 +609,8 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
      * longer looking at. The original does none of this, which is why switching
      * away from it mid-drag leaves the button down.
      */
-    void suspendInput() {
-        cancelPaste();
+    public void suspendInput() {
+        paste.cancel();
         final long now = SystemClock.uptimeMillis();
         router.cancel(now);
         gestures.cancelAll(now);
@@ -683,49 +636,19 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         // hang it on either.
         // Bringing the tick forward rather than starting a second timer, so
         // there is one place the question is asked.
-        if (followWindow) {
+        if (follower.enabled()) {
             scheduler.removeCallbacks(sessionTick);
-            scheduler.postDelayed(sessionTick, FOLLOW_DEBOUNCE_MS);
+            scheduler.postDelayed(sessionTick, WindowFollower.DEBOUNCE_MS);
         }
     }
 
-    /**
-     * Whether this session asks the far end to make its desktop the shape of
-     * this phone's window. Set from the connection's own answer, and asked
-     * again as soon as it is turned on rather than at the next rotation.
-     */
+    /** @see WindowFollower */
     public void setFollowWindow(boolean follow) {
-        followWindow = follow;
+        follower.setEnabled(follow);
     }
 
     private Activity activity() {
         return getContext() instanceof Activity a ? a : null;
-    }
-
-    /**
-     * The window this session gets on this phone, less the status and
-     * navigation bars — the rectangle the desktop is actually drawn in, so a
-     * desktop of this size is one pixel to a pixel at scale 1. Bars hidden at
-     * this instant are still subtracted: they come back, and a desktop that is
-     * a few pixels short is better than one that changed size for a gesture.
-     *
-     * <p>Deliberately not the content rect the viewport works in, which shrinks
-     * for the extension keyboard and the IME: those come and go several times a
-     * minute, and a desktop that resized for each of them would be unusable.
-     */
-    public static int[] deviceSize(Activity activity) {
-        if (activity == null) {
-            return null;
-        }
-        final WindowMetrics metrics = activity.getWindowManager().getCurrentWindowMetrics();
-        final android.graphics.Insets bars = metrics.getWindowInsets().getInsetsIgnoringVisibility(
-                WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-        final int w = metrics.getBounds().width() - bars.left - bars.right;
-        final int h = metrics.getBounds().height() - bars.top - bars.bottom;
-        // A sanity check on the rectangle rather than the protocol's limit:
-        // anything outside this is not a window somebody is looking at a
-        // desktop in, and offering it as a size would be offering nonsense.
-        return w < 200 || h < 200 || w > 16384 || h > 16384 ? null : new int[]{w, h};
     }
 
     /**
@@ -801,13 +724,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         if (hasWindowFocus) {
             requestFocus();
             syncPointerCapture();
-            // Both directions, and unconditionally. Shown: the IME went with the
-            // app switch and does not come back on its own, so the row would
-            // have nothing under it. Hidden: something hid the row while another
-            // window held the focus — turning on view-only from the connection
-            // panel — and an IMM call made then is dropped, leaving a soft
-            // keyboard up under a row that is gone.
-            syncKeyboardChrome();
+            softInput.sync();
         } else {
             // Held there, not here — the same argument as suspendInput().
             mouse.cancel();
@@ -815,7 +732,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         }
     }
 
-    void syncPointerCapture() {
+    private void syncPointerCapture() {
         if (cfg.mouseCapture && hasWindowFocus() && isFocused()) {
             requestPointerCapture();
         } else if (hasPointerCapture()) {
@@ -981,48 +898,19 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     }
 
     /**
-     * The IME's height, so the extension keyboard sits on top of it rather than
-     * behind it and the desktop insets by the pair. A soft keyboard dismissed
-     * with the back gesture takes the extension row with it — the two are one
-     * keyboard as far as the user is concerned.
+     * This window's own shape, which changes for a rotation or a split screen
+     * rather than for anything anybody did here, and then whatever the system
+     * keyboard is doing under the extension row ({@link SoftInput}). Both, and
+     * then one re-inset: the first would not catch the second, since neither a
+     * rotation nor a split screen moves the IME.
      */
     @Override
     public WindowInsets onApplyWindowInsets(WindowInsets insets) {
-        final int ime = insets.getInsets(WindowInsets.Type.ime()).bottom;
-        // Whether it is up, asked separately from how much of this window it
-        // covers. In multi-window the two part company: the window is resized
-        // around the IME rather than overlapped by it, so the inset is 0 the
-        // whole time one is showing, and a height that never rises is a height
-        // that never falls. Reading the dismissal off the height alone left the
-        // extension row up after a back gesture had taken the system keyboard.
-        final boolean up = insets.isVisible(WindowInsets.Type.ime());
-        // The window's own shape, which changes for a rotation or a split screen
-        // rather than for anything the user did here — and which the IME test
-        // below would not catch, since neither of those moves the IME.
         final int[] edges = windowEdges(insets);
         boolean changed = !Arrays.equals(edges, windowEdges);
         windowEdges = edges;
-        if (ime != imeHeight || up != imeUp) {
-            // Only while this window has focus, and only while we are not asking
-            // for the IME back. An IME also closes when the app is switched away
-            // from, and a sheet over this screen takes the focus and the IME with
-            // it; either read as a dismissal hides the extension row, and the
-            // second one is a race between two windows — so closing the
-            // connection panel would put the system keyboard back with no row.
-            // The back gesture this rule is for happens with the session in
-            // front and no request outstanding.
-            final boolean closed = imeUp && !up && hasWindowFocus() && !imeRequested;
-            if (up) {
-                imeRequested = false;
-            }
-            imeHeight = ime;
-            imeUp = up;
-            keyboard.setBottomOffset(ime);
-            if (closed && keyboard.visible()) {
-                setKeyboardVisible(false);
-            }
-            changed = true;
-        }
+        // Not short-circuiting: the IME is asked whatever the edges said.
+        changed |= softInput.imeInsets(insets);
         if (changed) {
             applyInsets();
             invalidate();
@@ -1065,47 +953,6 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         return corner == null ? 0 : corner.getRadius();
     }
 
-    /** Showing one overlay hides the other, and a displaced one comes back. */
-    private void setKeyboardVisible(boolean show) {
-        if (show == keyboard.visible()) {
-            return;
-        }
-        if (show) {
-            overlayHiddenByKeyboard = overlay.visible();
-            overlay.setVisible(false);
-        }
-        // Everything else follows from the model changing, in keyboardChanged()
-        // — because the model can also hide itself, from its own ✕.
-        keyboard.setVisible(show);
-    }
-
-    private void syncKeyboardChrome() {
-        final InputMethodManager imm = getContext().getSystemService(InputMethodManager.class);
-        if (keyboard.visible()) {
-            requestFocus();
-            // Asked for and not yet seen: until the insets say it is up, an
-            // inset saying it is down is this window's own stale state.
-            imeRequested = true;
-            imm.showSoftInput(this, 0);
-        } else {
-            imeRequested = false;
-            imm.hideSoftInputFromWindow(getWindowToken(), 0);
-            if (overlayHiddenByKeyboard) {
-                overlayHiddenByKeyboard = false;
-                overlay.setVisible(true);
-            }
-        }
-    }
-
-    private void toggleOverlay() {
-        if (overlay.visible()) {
-            overlay.setVisible(false);
-        } else {
-            setKeyboardVisible(false);
-            overlay.setVisible(true);
-        }
-    }
-
     // ---- MouseOverlay.Listener ---------------------------------------------
 
     @Override
@@ -1113,11 +960,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         // Bump scroll arms for a drag started while the overlay holds a button,
         // the same as it does inside the 250 ms click window.
         gestures.setExternalButtonHeld((overlay.heldMask() & Button.DRAG_MASK) != 0);
-        if (overlayShown != overlay.visible()) {
-            overlayShown = overlay.visible();
-            syncToolbarState();
-            applyInsets();
-        }
+        softInput.overlayChanged();
         invalidate();
     }
 
@@ -1125,12 +968,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
 
     @Override
     public void keyboardChanged() {
-        if (keyboardShown != keyboard.visible()) {
-            keyboardShown = keyboard.visible();
-            syncKeyboardChrome();
-            syncToolbarState();
-            applyInsets();
-        }
+        softInput.keyboardChanged();
         chrome.keyboardChanged(keyboard);
         invalidate();
     }
@@ -1168,11 +1006,8 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     }
 
     /**
-     * The row's one action key. Pasting is <b>typing</b>: the clipboard's
-     * characters go to the remote one at a time as key presses, rather than as a
-     * Ctrl+V that assumes the far end can reach a clipboard of its own and that
-     * its desktop pastes with that shortcut. Long text is worth a question
-     * first — this cannot be undone from here.
+     * The row's one action key, which types the clipboard out rather than
+     * sending a Ctrl+V ({@link PasteTyper}).
      */
     @Override
     public void keyAction(String name) {
@@ -1189,84 +1024,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
      */
     private void pasteClipboard() {
         clipboard.read();
-        final String text = clipboard.current();
-        if (text == null || text.isEmpty()) {
-            host.nothingToPaste();
-            return;
-        }
-        // A locked modifier is held at the far end for as long as it is locked,
-        // so every character of the paste would arrive as a shortcut — worth a
-        // question at any length. One-shot modifiers are not: the row consumes
-        // those the moment this key fires.
-        final String locked = lockedModifiers();
-        final int chars = text.codePointCount(0, text.length());
-        if (chars > PASTE_CONFIRM_CHARS || !locked.isEmpty()) {
-            host.confirmPaste(chars, locked, () -> typeOut(text));
-        } else {
-            typeOut(text);
-        }
-    }
-
-    /** The locked modifiers, in row order, as "Ctrl + Shift"; empty if none. */
-    private String lockedModifiers() {
-        final StringBuilder sb = new StringBuilder();
-        for (ExtensionKeyboard.Key m : keyboard.modifiers()) {
-            if (keyboard.sticky(m) == ExtensionKeyboard.Sticky.LOCKED) {
-                if (sb.length() > 0) {
-                    sb.append(" + ");
-                }
-                sb.append(m.label());
-            }
-        }
-        return sb.toString();
-    }
-
-    private static final int PASTE_CONFIRM_CHARS = 250; // longer is worth confirming first
-
-    private static final long PASTE_CHAR_MS = 8;        // so a long paste is not a burst
-
-    private String pasting;
-    private int pasteAt;
-
-    /**
-     * Type {@code text} out, a character per tick. On a clock rather than in a
-     * loop for two reasons: a thousand key events posted in one go is a burst
-     * the far end has no reason to survive in order, and a paste in progress has
-     * to be abandonable, which {@link #suspendInput()} does.
-     */
-    private void typeOut(String text) {
-        pasting = text;
-        pasteAt = 0;
-        scheduler.removeCallbacks(pasteTick);
-        scheduler.postDelayed(pasteTick, 0);
-    }
-
-    private final Runnable pasteTick = new Runnable() {
-        @Override
-        public void run() {
-            if (pasting == null) {
-                return;
-            }
-            if (pasteAt >= pasting.length()) {
-                pasting = null;
-                return;
-            }
-            final int cp = pasting.codePointAt(pasteAt);
-            pasteAt += Character.charCount(cp);
-            // A newline is Return, a tab is Tab: the characters a text field
-            // holds but a keyboard does not have as characters.
-            final int keysym = Keysym.forCharacter(cp);
-            if (keysym != 0) {
-                keyDown(keysym, KeySink.ID_TEXT);
-                keyUp(KeySink.ID_TEXT);
-            }
-            scheduler.postDelayed(this, PASTE_CHAR_MS);
-        }
-    };
-
-    private void cancelPaste() {
-        pasting = null;
-        scheduler.removeCallbacks(pasteTick);
+        paste.paste(clipboard.current(), PasteTyper.lockedModifiers(keyboard));
     }
 
     private static boolean canTick(Context ctx) {
@@ -1289,7 +1047,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         final int right = (int) overlay.insetRightPx();
         int bottom = (int) Math.max(overlay.insetBottomPx(), keyboard.insetBottomPx());
         // The IME on its own, in case it outlives the row that asked for it.
-        bottom = Math.max(bottom, imeHeight);
+        bottom = Math.max(bottom, softInput.imeHeight());
         // Nothing insets the left or the top, so there those margins are the
         // whole of what the edge costs. Before the insets rather than after, so
         // that the re-clamp the insets end with is the one that has the last
@@ -1353,13 +1111,13 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
                 if (backend.viewOnly()) {
                     return false;
                 }
-                toggleOverlay();
+                softInput.toggleOverlay();
             }
             case TapRegions.KEYBOARD -> {
                 if (backend.viewOnly()) {
                     return false;
                 }
-                setKeyboardVisible(!keyboard.visible());
+                softInput.toggleKeyboard();
             }
             default -> {
                 return false;
@@ -1441,11 +1199,9 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
      * Both are put away rather than left inert: a row of keys that types nothing
      * is indistinguishable from a session that has stopped answering.
      */
-    void optionsChanged() {
+    public void optionsChanged() {
         if (backend.viewOnly()) {
-            setKeyboardVisible(false);
-            overlay.setVisible(false);
-            overlayHiddenByKeyboard = false;
+            softInput.hideAll();
         }
         syncToolbarState();
         invalidate();
@@ -1495,76 +1251,13 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         if (regionHints != null) {
             chrome.drawRegionHints(c, tapRegions, getWidth(), getHeight(), 1f, regionHints::get);
         }
-        frames++;
         if (hudVisible) {
-            drawHud(c);
+            hud.draw(c, getWidth(), getHeight(), mirror, backendState, lastRegion,
+                    softInput.imeHeight(), hasPointerCapture());
             // The rates are only meaningful if there is a next frame to compare
             // against, and a still desktop produces none.
             postInvalidateOnAnimation();
         }
-    }
-
-    /**
-     * The playground's readout, on a real connection: the same lines in the same
-     * order so the two screens can be read against each other, plus a fifth for
-     * the pixel path — which is the one the playground cannot have, and the only
-     * place "is the mirror keeping up" is answered.
-     */
-    private void drawHud(Canvas c) {
-        final long now = System.nanoTime();
-        final Mirror m = mirror;
-        final long rects = m == null ? 0 : m.damageRects();
-        final String[] lines = {
-                "state " + backendState
-                        + "  desktop " + backend.desktopWidth() + "x" + backend.desktopHeight()
-                        + "  fps " + frameRate.sample(frames, now)
-                        + "  dmg " + rects + " (" + damageRate.sample(rects, now) + "/s)"
-                        // The pixel path, in the order it happens.
-                        + "  tile " + (m == null ? "-" : m.tileWidth() + "x" + m.tileHeight()
-                        + " " + m.visibleTiles() + "/" + m.allocatedTiles() + "/" + m.tileCount()
-                        + " rd " + m.lastRead() + " dty " + m.dirtyCount())
-                        + "  clip " + clipboard.summary(),
-                "cursor " + (cursor.isRelative() ? "theirs"
-                        : (int) cursor.x() + "," + (int) cursor.y())
-                        + "  btn " + cursor.buttonsName()
-                        + "  scale " + String.format(Locale.ROOT, "%.3f", viewport.getScale())
-                        + " [" + (viewport.zoomIndex() + 1) + "/" + viewport.zoomLadder().length + "]"
-                        + "  origin " + (int) viewport.originX() + "," + (int) viewport.originY()
-                        + "  content " + viewport.contentWidth() + "x" + viewport.contentHeight(),
-                "down " + gestures.downCount() + "  max " + gestures.maxDownCount()
-                        + "  mode " + gestures.mode()
-                        + "  moving " + (gestures.moving() ? "Y" : "N")
-                        + "  held " + (gestures.heldButton() == null ? "-" : gestures.heldButton()),
-                "accel x" + String.format(Locale.ROOT, "%.2f", gestures.accelFactor())
-                        // dp/ms, so it can be read against the Config thresholds
-                        + "  spd " + String.format(Locale.ROOT, "%.2f", gestures.accelSpeed() / cfg.density)
-                        + "  lock " + gestures.axisLock()
-                        + "  hover x" + String.format(Locale.ROOT, "%.2f", gestures.hoverGain())
-                        + " lag " + String.format(Locale.ROOT, "%.0f", gestures.hoverLagMs())
-                        + (gestures.hoverLockedOut(SystemClock.uptimeMillis()) ? " LOCKED" : "")
-                        + "  events " + cursor.eventCount()
-                        + " (" + eventRate.sample(cursor.eventCount(), now) + "/s)",
-                "ovl " + (overlay.visible()
-                        ? Button.maskName(overlay.heldMask())
-                        + " rate " + String.format(Locale.ROOT, "%.1f", overlay.scrollRate())
-                        : "off")
-                        + "   kbd " + (keyboard.visible()
-                        ? "on ime " + imeHeight + " mod " + keyboard.heldModifierCount()
-                        : "off")
-                        + "   region " + lastRegion
-                        + (backend.viewOnly() ? "   VIEW ONLY" : ""),
-                // The physical pair. "cap" is worth a column because an
-                // uncaptured mouse looks identical until it reaches the edge of
-                // the screen and stops.
-                "mouse " + (hasPointerCapture() ? "captured"
-                        : mouse.seen() ? "hover" : "-")
-                        + " btn " + Button.maskName(mouse.heldMask())
-                        + "   keys " + keys.heldCount() + " held",
-        };
-        // heightPx(), not insetBottomPx(): the desktop is meant to run under the
-        // info bar and the HUD is not, so the two want different answers.
-        hud.draw(c, lines, getWidth(), getHeight(),
-                Math.max(Math.max(overlay.insetBottomPx(), keyboard.heightPx()), imeHeight));
     }
 
     /**

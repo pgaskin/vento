@@ -14,6 +14,7 @@ import android.util.Log;
 
 import net.pgaskin.remotedesktop.backend.Backend;
 import net.pgaskin.remotedesktop.backend.Prompt;
+import net.pgaskin.remotedesktop.session.SessionView;
 
 import java.util.ArrayDeque;
 import java.util.LinkedHashMap;

@@ -25,6 +25,7 @@ import net.pgaskin.remotedesktop.backend.BackendOption;
 import net.pgaskin.remotedesktop.backend.Backends;
 import net.pgaskin.remotedesktop.backend.ConnectionFact;
 import net.pgaskin.remotedesktop.backend.Monitor;
+import net.pgaskin.remotedesktop.session.WindowFollower;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -493,7 +494,7 @@ final class ConnectionPanel {
      */
     private List<BackendOption.Choice> sizeChoices() {
         final List<BackendOption.Choice> choices = new ArrayList<>();
-        final int[] device = SessionView.deviceSize(activity);
+        final int[] device = WindowFollower.deviceSize(activity);
         if (device != null) {
             choices.add(new BackendOption.Choice(size(device[0], device[1]),
                     activity.getString(R.string.panel_desktop_size_device,

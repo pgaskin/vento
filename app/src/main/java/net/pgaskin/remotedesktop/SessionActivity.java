@@ -40,6 +40,7 @@ import net.pgaskin.remotedesktop.backend.Backend;
 import net.pgaskin.remotedesktop.backend.Backends;
 import net.pgaskin.remotedesktop.backend.Prompt;
 import net.pgaskin.remotedesktop.control.input.TapRegions;
+import net.pgaskin.remotedesktop.session.SessionView;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -516,7 +517,7 @@ public final class SessionActivity extends Activity
      * Focus is told to the backend on the way <em>up</em> only, and from here
      * rather than from {@link #onStart}, because of the clipboard: the core
      * answers a focus gain by asking for ours, the answer comes out of a cache
-     * only the main thread fills ({@link SessionClipboard}), and Android lets
+     * only the main thread fills ({@code SessionClipboard}), and Android lets
      * only a focused window read the clipboard at all — so the refresh has to
      * happen here and before the backend hears about the focus. Saying it again
      * on a re-gain is the point: it is what picks up a copy made in another app.

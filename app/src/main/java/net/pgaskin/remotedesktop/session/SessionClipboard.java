@@ -1,12 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Patrick Gaskin
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package net.pgaskin.remotedesktop;
+package net.pgaskin.remotedesktop.session;
 
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.util.Log;
+
+import net.pgaskin.remotedesktop.AppSettings;
 
 /**
  * The system clipboard, on both sides of a session.
