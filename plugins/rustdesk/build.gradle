@@ -28,8 +28,8 @@ android {
         // Checked for equality against the app's before this APK's dex is
         // loaded: the seam between the two is a set of Java interfaces that no
         // release has promised to keep stable, so they ship together.
-        versionCode 3
-        versionName "3"
+        versionCode 4
+        versionName "4"
 
         // Where the build of this add-on for some other version of the app is,
         // and what the file there is signed with — meta-data on this APK's
