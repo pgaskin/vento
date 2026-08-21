@@ -66,14 +66,10 @@ jobs:
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
-      - run: ./gradlew :plugins:realvnc:assembleDebug
+      - run: ./gradlew -p plugins assembleDebug
       - uses: actions/upload-artifact@v7
         with:
-          name: realvnc-debug
-          path: plugins/realvnc/build/outputs/apk/debug/realvnc-debug.apk
-      - run: ./gradlew :plugins:rustdesk:assembleDebug
-      - uses: actions/upload-artifact@v7
-        with:
-          name: rustdesk-debug
-          path: plugins/rustdesk/build/outputs/apk/debug/rustdesk-debug.apk
+          name: plugins-debug
+          path: plugins/*/build/outputs/apk/debug/*-debug.apk
+          if-no-files-found: error
       #- run: ./scripts/check-jni-symbols.sh

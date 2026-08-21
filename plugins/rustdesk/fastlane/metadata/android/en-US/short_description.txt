@@ -1,0 +1,1 @@
+RustDesk plugin for the Vento remote desktop client

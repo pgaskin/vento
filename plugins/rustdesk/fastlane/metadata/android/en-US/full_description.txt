@@ -1,0 +1,7 @@
+An optional plugin for Vento, adding support for RustDesk.
+
+* Hardware-accelerated VP8, VP9, AV1, H.264, and H.265 (where supported by the server and client).
+* Multi-monitor support.
+* Supports direct or rendezvous connections.
+
+This app must be used with a matching Vento version. It does not have its own launcher icon, and is accessible via the main app.
