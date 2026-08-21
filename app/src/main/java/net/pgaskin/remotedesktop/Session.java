@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 
@@ -312,7 +313,7 @@ public final class Session implements Backend.Listener, Prompt.Handler {
         // Asked of the backend rather than remembered from the callback, so there
         // is one answer to "who owns the cursor". Told even when it is false: a
         // new screen's controller is absolute only by default.
-        v.pointerMode(backend.pointerIsRelative());
+        v.pointerMode(backend.facts().pointerRelative());
         // The backend's own answer, for the same reason and a sharper one: a
         // screen coming back to a session that has been running for an hour was
         // showing "Connecting…" over a desktop that had been up the whole time,
@@ -529,8 +530,33 @@ public final class Session implements Backend.Listener, Prompt.Handler {
 
     // ---- Backend.Listener: remember, then forward --------------------------
 
+    /**
+     * The half of {@link Backend.Listener}'s contract that says "main thread",
+     * checked rather than merely written down.
+     *
+     * <p>Worth checking because this is where every backend's callbacks land,
+     * and because breaking it does not fail here: a view invalidated from a
+     * native thread, a mirror replaced while {@code onDraw} is reading it, a
+     * status set on a widget that is not this thread's — each fails later,
+     * somewhere else, with nothing left to say which of the eight backends did
+     * it. With a plugin ABI, "which one" includes code this repository has
+     * never seen.
+     *
+     * <p>Debug builds only. Not about the cost, which is a flag and a branch,
+     * but about what a release build should do with a backend that breaks the
+     * contract: go on drawing somebody's desktop rather than throw their
+     * session away over it.
+     */
+    private static void assertMain(String what) {
+        if (BuildConfig.DEBUG && Looper.myLooper() != Looper.getMainLooper()) {
+            throw new IllegalStateException("Backend.Listener." + what
+                    + " off the main thread, on " + Thread.currentThread().getName());
+        }
+    }
+
     @Override
     public void state(Backend.State s, String d) {
+        assertMain("state");
         // A backend that has been let go of is still finishing: its own "closed"
         // arrives after close() has already reported one, and the last word has
         // to be the session's. Without this a timeout says why on the window and
@@ -559,6 +585,7 @@ public final class Session implements Backend.Listener, Prompt.Handler {
 
     @Override
     public void desktopSize(int width, int height) {
+        assertMain("desktopSize");
         desktopW = width;
         desktopH = height;
         view.desktopSize(width, height);
@@ -576,6 +603,7 @@ public final class Session implements Backend.Listener, Prompt.Handler {
 
     @Override
     public void cursor(Bitmap shape, int hotX, int hotY) {
+        assertMain("cursor");
         cursor = shape;
         cursorHotX = hotX;
         cursorHotY = hotY;
@@ -584,16 +612,19 @@ public final class Session implements Backend.Listener, Prompt.Handler {
 
     @Override
     public void pointerMode(boolean relative) {
+        assertMain("pointerMode");
         view.pointerMode(relative);
     }
 
     @Override
     public void bell() {
+        assertMain("bell");
         view.bell();
     }
 
     @Override
     public void clipboardFromRemote(String text) {
+        assertMain("clipboardFromRemote");
         view.clipboardFromRemote(text);
     }
 

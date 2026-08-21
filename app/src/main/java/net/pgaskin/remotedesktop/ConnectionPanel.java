@@ -272,12 +272,25 @@ final class ConnectionPanel {
         tick.run();
     }
 
+    /**
+     * What the backend said at the last tick, which is what every row on this
+     * panel is drawn from.
+     *
+     * <p>One crossing per poll rather than one per row, and — more to the
+     * point — one instant: the display list, which display is on screen and
+     * whether a size may be asked for were three separate questions, so a
+     * screen plugged in over there between two of them left the panel drawing
+     * a row from one answer and a value from another.
+     */
+    private Backend.Facts polled = Backend.Facts.NONE;
+
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
             if (!polling) {
                 return;
             }
+            polled = session.isClosed() ? Backend.Facts.NONE : session.backend().facts();
             refreshHeader();
             refreshControls();
             refreshAction();
@@ -324,7 +337,7 @@ final class ConnectionPanel {
         // How the desktop is divided is only worth a word when it is divided:
         // one monitor is what a desktop is, and saying so on every session
         // would be a fact that is never news.
-        final int monitors = session.backend().monitors().size();
+        final int monitors = polled.monitors().size();
         return monitors > 1
                 ? activity.getString(R.string.panel_connected_monitors, backendName, w, h, monitors)
                 : activity.getString(R.string.panel_connected_size, backendName, w, h);
@@ -392,7 +405,7 @@ final class ConnectionPanel {
      */
     private void refreshDisplays() {
         final Backend backend = session.backend();
-        final List<Monitor> displays = session.isClosed() ? List.of() : backend.displays();
+        final List<Monitor> displays = polled.displays();
         displayRow.setVisibility(displays.size() > 1 ? View.VISIBLE : View.GONE);
         if (displays.size() < 2) {
             displayOptions = null;
@@ -419,7 +432,7 @@ final class ConnectionPanel {
         displayOptions = new PanelOptions(displayRow, List.of(option), new PanelOptions.Values() {
             @Override
             public String get(BackendOption o) {
-                return String.valueOf(session.backend().display());
+                return String.valueOf(polled.display());
             }
 
             @Override
@@ -445,8 +458,7 @@ final class ConnectionPanel {
      * that stays where it was.
      */
     private void refreshResize() {
-        final Backend backend = session.backend();
-        final boolean can = !session.isClosed() && backend.canResize();
+        final boolean can = polled.canResize();
         resize.setVisibility(can ? View.VISIBLE : View.GONE);
         if (!can) {
             resizeRow = null;
@@ -524,16 +536,12 @@ final class ConnectionPanel {
     }
 
     /**
-     * What an option is set to right now: what this session was told, else what
-     * it connected with, else what the backend does when nothing is set.
+     * What an option is set to right now — the ladder's top rung.
+     *
+     * @see Options#live
      */
     private String value(BackendOption o) {
-        final String changed = session.liveOption(o.key());
-        if (changed != null) {
-            return changed;
-        }
-        final String connected = connectedWith.get(o.key());
-        return connected != null ? connected : o.defaultValue();
+        return Options.live(session.liveOption(o.key()), connectedWith, o);
     }
 
     // ---- the facts ----------------------------------------------------------

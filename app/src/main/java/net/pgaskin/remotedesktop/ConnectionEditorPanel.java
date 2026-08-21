@@ -5,7 +5,6 @@ package net.pgaskin.remotedesktop;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -402,9 +401,7 @@ final class ConnectionEditorPanel {
                 .setPositiveButton(R.string.editor_credentials_confirm, (d, w) -> {
                     final Connection stored = Connections.byId(activity, id);
                     if (stored != null) {
-                        Connections.save(activity, new Connection(stored.id(), stored.name(),
-                                stored.backendId(), stored.address(), "", "",
-                                stored.options(), stored.pinned()));
+                        Connections.save(activity, stored.withCredentials("", ""));
                     }
                     // Both maps, so that a form which has changed nothing else
                     // still leaves without a question.
@@ -431,7 +428,43 @@ final class ConnectionEditorPanel {
         // One reader for two lists, because they are one list with the
         // credentials between them: what this connection is, what is kept for
         // it, and what speaks to it.
-        final PanelOptions.Values recordValues = new PanelOptions.Values() {
+        final PanelOptions.Values recordValues = recordValues();
+        fieldRows = new PanelOptions(fields, recordFields(), recordValues);
+        final List<BackendOption> protocolField = protocolField();
+        new PanelOptions(protocol, protocolField, recordValues);
+        protocol.setVisibility(protocolField.isEmpty() ? View.GONE : View.VISIBLE);
+
+        final String backendId = value(BACKEND);
+        // What an untouched option would actually do: the backend's own global
+        // setting, or the schema's default where nothing has ever been set. Not
+        // the schema default alone — the editor has to show what would happen,
+        // rather than what the schema says.
+        final Map<String, String> defaults = Options.inherited(activity, backendId);
+        final List<BackendOption> connectionOptions = new ArrayList<>(
+                Backends.options(backendId).stream()
+                        .filter(o -> o.scope() != BackendOption.Scope.GLOBAL)
+                        .map(o -> o.scope() == BackendOption.Scope.LAYERED
+                                ? withAppDefault(o, defaults.get(o.key())) : o)
+                        .toList());
+        // Last, and after the backend's own: what the app wants to know per
+        // machine is a smaller category than what a protocol does, and it reads
+        // as an afterthought because it is one.
+        connectionOptions.addAll(AppOptions.options(activity));
+        optionRows = new PanelOptions(options, connectionOptions, optionValues(defaults));
+        final int vis = optionRows.isEmpty() ? View.GONE : View.VISIBLE;
+        options.setVisibility(vis);
+        optionsTitle.setVisibility(vis);
+    }
+
+    /**
+     * The upper half's reader: the form's own fields, whose answers are the
+     * record being edited and whose unanswered state is the schema's default.
+     *
+     * <p>Two of the keys do something as well as being stored, which is why
+     * this is not a plain map view.
+     */
+    private PanelOptions.Values recordValues() {
+        return new PanelOptions.Values() {
             @Override
             public String get(BackendOption o) {
                 final String v = record.get(o.key());
@@ -467,28 +500,18 @@ final class ConnectionEditorPanel {
                 }
             }
         };
-        fieldRows = new PanelOptions(fields, recordFields(), recordValues);
-        final List<BackendOption> protocolField = protocolField();
-        new PanelOptions(protocol, protocolField, recordValues);
-        protocol.setVisibility(protocolField.isEmpty() ? View.GONE : View.VISIBLE);
+    }
 
-        final String backendId = value(BACKEND);
-        // What an untouched option would actually do: the backend's own global
-        // setting, or the schema's default where nothing has ever been set. Not
-        // the schema default alone — the editor has to show what would happen,
-        // rather than what the schema says.
-        final Map<String, String> defaults = defaults(backendId);
-        final List<BackendOption> connectionOptions = new ArrayList<>(
-                Backends.options(backendId).stream()
-                        .filter(o -> o.scope() != BackendOption.Scope.GLOBAL)
-                        .map(o -> o.scope() == BackendOption.Scope.LAYERED
-                                ? withAppDefault(o, defaults.get(o.key())) : o)
-                        .toList());
-        // Last, and after the backend's own: what the app wants to know per
-        // machine is a smaller category than what a protocol does, and it reads
-        // as an afterthought because it is one.
-        connectionOptions.addAll(AppOptions.options(activity));
-        optionRows = new PanelOptions(options, connectionOptions, new PanelOptions.Values() {
+    /**
+     * The lower half's: this connection's own answers over what an unanswered
+     * option would actually do.
+     *
+     * @param defaults what {@link Options#inherited} said for this backend,
+     *                 read at the rebuild that made these rows — the rows are
+     *                 thrown away and remade when it could have moved
+     */
+    private PanelOptions.Values optionValues(Map<String, String> defaults) {
+        return new PanelOptions.Values() {
             @Override
             public String get(BackendOption o) {
                 final String own = chosen.get(o.key());
@@ -525,10 +548,7 @@ final class ConnectionEditorPanel {
                 final String own = chosen.get(key);
                 return own != null && !own.isEmpty() ? own : defaults.get(key);
             }
-        });
-        final int vis = optionRows.isEmpty() ? View.GONE : View.VISIBLE;
-        options.setVisibility(vis);
-        optionsTitle.setVisibility(vis);
+        };
     }
 
     /**
@@ -683,7 +703,7 @@ final class ConnectionEditorPanel {
         // the point of picking it is that it stays picked when the default
         // moves. For the rest, an untouched row is one that still equals the
         // default it was drawn with.
-        final Map<String, String> defaults = defaults(backendId);
+        final Map<String, String> defaults = Options.inherited(activity, backendId);
         final Map<String, String> options = new LinkedHashMap<>();
         final List<BackendOption> saveable = new ArrayList<>(Backends.options(backendId));
         // The app's own per-connection options ride in the same map, so they are
@@ -737,21 +757,6 @@ final class ConnectionEditorPanel {
     private String value(String key) {
         final String v = record.get(key);
         return v == null ? "" : v;
-    }
-
-    /**
-     * What each of a backend's options would be for this connection without an
-     * override: the same layering {@link Connections#effectiveOptions} does, one
-     * layer short, which is why the editor can show it as the default and mean
-     * it.
-     */
-    private Map<String, String> defaults(String backendId) {
-        final SharedPreferences global = Connections.backendPrefs(activity, backendId);
-        final Map<String, String> out = new LinkedHashMap<>();
-        for (BackendOption o : Backends.options(backendId)) {
-            out.put(o.key(), global.getString(o.key(), o.defaultValue()));
-        }
-        return out;
     }
 
     private static void replace(Map<String, String> map, Map<String, String> with) {

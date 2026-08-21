@@ -537,12 +537,17 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     private final Runnable sessionTick = new Runnable() {
         @Override
         public void run() {
-            final List<Monitor> now = backend.monitors();
-            if (!now.equals(monitors)) {
-                monitors = now;
-                viewport.setFitSizes(fitSizes(now));
+            // One crossing for both questions, and one answer they agree on.
+            final Backend.Facts facts = backend.facts();
+            // The layout on its own, not the whole snapshot: a zoom ladder
+            // rebuilt every second for a desktop that has not moved would snap
+            // the scale under a pinch, and canResize turning true is not news
+            // about how the far end is divided.
+            if (!facts.monitors().equals(monitors)) {
+                monitors = facts.monitors();
+                viewport.setFitSizes(fitSizes(monitors));
             }
-            follower.tick(activity());
+            follower.tick(activity(), facts.canResize());
             scheduler.postDelayed(this, SESSION_POLL_MS);
         }
     };

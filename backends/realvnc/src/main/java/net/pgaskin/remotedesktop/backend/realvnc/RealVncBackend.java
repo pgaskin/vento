@@ -357,6 +357,20 @@ public final class RealVncBackend implements Backend,
     }
 
     /**
+     * The size and the view-only answer, and nothing else: this library exposes
+     * no monitor layout, offers no second display, and its {@code
+     * ServerResizeSupported} is not reachable through the binding surface this
+     * backend has. Answered all the same rather than left to a default, because
+     * a record that disagreed with {@link #viewOnly()} would be worse than one
+     * that admits to knowing little.
+     */
+    @Override
+    public Facts facts() {
+        return new Facts(desktopWidth, desktopHeight, List.of(), List.of(), -1,
+                false, viewOnly(), false);
+    }
+
+    /**
      * Everything {@code ConnectionInfoBindings} knows, gathered on the session
      * thread and handed back on the main one.
      *

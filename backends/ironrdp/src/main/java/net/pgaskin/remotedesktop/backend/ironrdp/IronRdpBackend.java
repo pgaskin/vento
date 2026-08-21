@@ -208,6 +208,17 @@ public final class IronRdpBackend implements Backend, IronRdpNative.Callbacks {
         return desktopHeight;
     }
 
+    @Override
+    public Facts facts() {
+        final long h = handle;
+        final boolean live = h != 0 && !dead;
+        return new Facts(desktopWidth, desktopHeight,
+                live ? Monitor.fromFlat(IronRdpNative.nativeMonitors(h)) : List.of(),
+                List.of(), -1,
+                live && state == State.CONNECTED && IronRdpNative.nativeCanResize(h),
+                viewOnly(), false);
+    }
+
     /**
      * The facts. Two of the panel's rows are simply not here — RDP has no
      * desktop name and no encoding anybody can name from outside the codec
@@ -262,18 +273,6 @@ public final class IronRdpBackend implements Backend, IronRdpNative.Callbacks {
         } catch (NumberFormatException e) {
             return 1;
         }
-    }
-
-    @Override
-    public boolean canResize() {
-        final long h = handle;
-        return h != 0 && !dead && state == State.CONNECTED && IronRdpNative.nativeCanResize(h);
-    }
-
-    @Override
-    public List<Monitor> monitors() {
-        final long h = handle;
-        return h != 0 && !dead ? Monitor.fromFlat(IronRdpNative.nativeMonitors(h)) : List.of();
     }
 
     @Override

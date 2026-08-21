@@ -7,10 +7,10 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
-import net.pgaskin.remotedesktop.backend.BackendOption;
-import net.pgaskin.remotedesktop.backend.Backends;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -24,6 +24,8 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 /**
  * The saved connections, and their desktop previews.
@@ -32,11 +34,9 @@ import java.util.Map;
  * A list somebody scrolls through on a phone is a few dozen entries at the
  * outside, so anything cleverer would be paying for a problem nobody has.
  *
- * <p>The other half of this class is {@link #effectiveOptions}: the map a
- * backend is actually created with, which is the backend's defaults, then that
- * backend's global settings, then this connection's own. Three layers with the
- * most specific last, and the layering lives here rather than in the editor
- * because the session is what needs the answer.
+ * <p>What a connection's options <em>mean</em> is {@link Options}': this holds
+ * the record, and the ladder that turns one into the map a backend is created
+ * with is a question about every layer rather than about this file.
  */
 public final class Connections {
 
@@ -176,6 +176,7 @@ public final class Connections {
                     Log.w(TAG, "could not delete preview for " + id);
                 }
             }
+            previewChanged(id);
         }
     }
 
@@ -216,76 +217,6 @@ public final class Connections {
         Shortcuts.publish(ctx);
     }
 
-    // ---- options -----------------------------------------------------------
-
-    /**
-     * What to hand {@link Backends#create}: schema defaults, then the backend's
-     * global settings, then the connection's own overrides.
-     *
-     * <p>{@link BackendOption.Scope#GLOBAL} options are read from the backend's
-     * preference file and {@link BackendOption.Scope#CONNECTION} ones from the
-     * record, so a setting cannot be answered from the wrong place because
-     * someone once edited it in the other screen. A
-     * {@link BackendOption.Scope#LAYERED} one is read from both, the record
-     * first.
-     */
-    public static Map<String, String> effectiveOptions(Context ctx, Connection conn) {
-        final Map<String, String> out = new LinkedHashMap<>();
-        final SharedPreferences global = backendPrefs(ctx, conn.backendId());
-        for (BackendOption o : Backends.options(conn.backendId())) {
-            String value = null;
-            if (o.scope() != BackendOption.Scope.GLOBAL) {
-                final String own = conn.options().get(o.key());
-                if (own != null && !own.isEmpty()) {
-                    value = own;
-                }
-            }
-            if (value == null && o.scope() != BackendOption.Scope.CONNECTION) {
-                value = global.getString(o.key(), null);
-            }
-            // Only what somebody has actually chosen — which is what a stored
-            // value is, since both screens offer an explicit unanswered state
-            // and store nothing for it. Filling in every default as well looks
-            // harmless and is not: a backend then cannot tell "this connection
-            // asked for full colour" from "nobody has ever said", and one that
-            // wants to move a setting on another's behalf has no way to know
-            // whether it may. That cost the RealVNC quality control, which
-            // re-wrote ColorLevel at whatever it already was, so applyOptions
-            // re-applied the same pixel format and the picture never changed.
-            // Backends fill their own defaults in, which is where a default
-            // belongs.
-            if (value != null && !value.isEmpty()) {
-                out.put(o.key(), value);
-            }
-        }
-        return out;
-    }
-
-    /**
-     * The backend's own half of the same thing, for a session that has no record
-     * behind it — everything set in its settings screen, and nothing else.
-     */
-    public static Map<String, String> backendOptions(Context ctx, String backendId) {
-        final Map<String, String> out = new LinkedHashMap<>();
-        final SharedPreferences global = backendPrefs(ctx, backendId);
-        for (BackendOption o : Backends.options(backendId)) {
-            if (o.scope() == BackendOption.Scope.CONNECTION) {
-                continue;
-            }
-            final String value = global.getString(o.key(), null);
-            if (value != null && !value.isEmpty()) {
-                out.put(o.key(), value);
-            }
-        }
-        return out;
-    }
-
-    /** Where a backend's {@link BackendOption.Scope#GLOBAL} settings live. */
-    public static SharedPreferences backendPrefs(Context ctx, String backendId) {
-        return ctx.getApplicationContext()
-                .getSharedPreferences("backend_" + backendId, Context.MODE_PRIVATE);
-    }
-
     // ---- thumbnails ---------------------------------------------------------
 
     /**
@@ -320,7 +251,54 @@ public final class Connections {
         return dir;
     }
 
-    public static Bitmap thumbnail(Context ctx, String id) {
+    /**
+     * Which version of a connection's preview is on disk, counted from the
+     * moment this process started.
+     *
+     * <p>What a cache of decoded previews compares against. A preview costs a
+     * keystore round trip and a PNG decode, so it is worth keeping — and the
+     * only thing that can have changed one while a list was away is a session
+     * that has just left, which is <em>one</em> connection. Dropping the whole
+     * cache on every resume made returning from a session re-decode every card
+     * on the screen to pick up one of them.
+     *
+     * <p>Not a file timestamp: that is a stat call per card per bind, and the
+     * question is not when the picture was taken but whether it is the one
+     * already in hand.
+     */
+    public static int previewVersion(String id) {
+        return previewEpoch + previewVersions.getOrDefault(id, 0);
+    }
+
+    /** Every preview at once, for the two things that take all of them. */
+    private static volatile int previewEpoch;
+    private static final Map<String, Integer> previewVersions = new ConcurrentHashMap<>();
+
+    private static void previewChanged(String id) {
+        previewVersions.merge(id, 1, Integer::sum);
+    }
+
+    /**
+     * The preview, decoded off the main thread and handed back on it.
+     *
+     * <p>On the same one thread the writes go through, which is what makes
+     * "the version asked for is the version that comes back" true with no lock
+     * of its own: a session leaving bumps the number and queues its write
+     * before this screen is resumed, so a read is behind that write rather
+     * than racing it.
+     */
+    public static void readThumbnail(Context ctx, String id, Consumer<Bitmap> then) {
+        final Context app = ctx.getApplicationContext();
+        previewIo.execute(() -> {
+            final Bitmap bmp = thumbnail(app, id);
+            main.post(() -> then.accept(bmp));
+        });
+    }
+
+    private static final Handler main = new Handler(Looper.getMainLooper());
+
+    /** Blocking, and so private: {@link #readThumbnail} is the way in. */
+    private static Bitmap thumbnail(Context ctx, String id) {
         final File sealed = thumbnailFile(ctx, id);
         if (sealed.exists()) {
             try {
@@ -362,6 +340,7 @@ public final class Connections {
                 Log.w(TAG, "could not delete " + f.getName());
             }
         }
+        previewEpoch++;
     }
 
     /**
@@ -379,12 +358,22 @@ public final class Connections {
             return;
         }
         final Context app = ctx.getApplicationContext();
-        previewWriter.execute(() -> writeThumbnail(app, id, bmp));
+        // Before the write is queued rather than after it completes: a list
+        // resuming behind this must see a number it does not have a picture
+        // for, and then read behind the write on the same thread.
+        previewChanged(id);
+        previewIo.execute(() -> writeThumbnail(app, id, bmp));
     }
 
-    private static final java.util.concurrent.ExecutorService previewWriter =
+    /**
+     * One thread for the preview directory, reads and writes alike. Single
+     * because two leaves in quick succession must not write the same file at
+     * once, and because a grid of cards decoding all at the same moment is a
+     * burst of allocations for pictures that are drawn one after another.
+     */
+    private static final java.util.concurrent.ExecutorService previewIo =
             java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-                final Thread t = new Thread(r, "preview-writer");
+                final Thread t = new Thread(r, "previews");
                 t.setDaemon(true);
                 return t;
             });

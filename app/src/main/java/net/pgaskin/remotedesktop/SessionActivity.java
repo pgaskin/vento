@@ -188,7 +188,7 @@ public final class SessionActivity extends Activity
                 InputSettings.config(this, getResources().getDisplayMetrics().density));
         // The connection's own map rather than what the backend was created
         // with: an app option is not part of a backend's schema and never
-        // reaches one, so `effectiveOptions` has already dropped it. A session
+        // reaches one, so `Options.forConnection` has already dropped it. A session
         // off the command line reads it out of the same --es options it reads
         // every other setting from.
         view.setFollowWindow(AppOptions.followWindow(
@@ -368,7 +368,7 @@ public final class SessionActivity extends Activity
         // an address from the command line gets the defaults. The application
         // context, because the backend outlives this activity by design.
         final Map<String, String> options = connection != null
-                ? Connections.effectiveOptions(this, connection) : optionsFromIntent();
+                ? Options.forConnection(this, connection) : optionsFromIntent();
         final Backend backend = Backends.create(getApplicationContext(), backendId(), address,
                 connection != null ? connection.userName() : getIntent().getStringExtra("user"),
                 connection != null ? connection.password()
@@ -688,7 +688,7 @@ public final class SessionActivity extends Activity
      * line is the connection's half of the layering.
      */
     private Map<String, String> optionsFromIntent() {
-        final Map<String, String> out = Connections.backendOptions(this, backendId());
+        final Map<String, String> out = Options.forBackend(this, backendId());
         final String spec = getIntent().getStringExtra("options");
         if (spec == null || spec.isEmpty()) {
             return out;
@@ -892,12 +892,10 @@ public final class SessionActivity extends Activity
         if (connection == null || pendingPassword == null) {
             return;
         }
-        connection = new Connection(connection.id(), connection.name(), connection.backendId(),
-                connection.address(),
+        connection = connection.withCredentials(
                 pendingUser != null && !pendingUser.isEmpty() ? pendingUser
                         : connection.userName(),
-                connection.sealedPassword(), connection.options(), connection.pinned())
-                .withPassword(pendingPassword);
+                pendingPassword);
         Connections.save(this, connection);
         pendingUser = null;
         pendingPassword = null;

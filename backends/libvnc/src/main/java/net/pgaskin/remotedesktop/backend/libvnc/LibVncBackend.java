@@ -178,15 +178,14 @@ public final class LibVncBackend implements Backend, LibVncNative.Callbacks {
     }
 
     @Override
-    public boolean canResize() {
+    public Facts facts() {
         final long h = handle;
-        return h != 0 && !dead && state == State.CONNECTED && LibVncNative.nativeCanResize(h);
-    }
-
-    @Override
-    public List<Monitor> monitors() {
-        final long h = handle;
-        return h != 0 && !dead ? Monitor.fromFlat(LibVncNative.nativeMonitors(h)) : List.of();
+        final boolean live = h != 0 && !dead;
+        return new Facts(desktopWidth, desktopHeight,
+                live ? Monitor.fromFlat(LibVncNative.nativeMonitors(h)) : List.of(),
+                List.of(), -1,
+                live && state == State.CONNECTED && LibVncNative.nativeCanResize(h),
+                viewOnly(), false);
     }
 
     @Override

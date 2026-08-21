@@ -188,15 +188,19 @@ public final class RfbBackend implements Backend, RfbNative.Callbacks {
     }
 
     @Override
-    public boolean canResize() {
+    public Facts facts() {
         final long h = handle;
-        return h != 0 && !dead && state == State.CONNECTED && RfbNative.nativeCanResize(h);
-    }
-
-    @Override
-    public List<Monitor> monitors() {
-        final long h = handle;
-        return h != 0 && !dead ? Monitor.fromFlat(RfbNative.nativeMonitors(h)) : List.of();
+        final boolean live = h != 0 && !dead;
+        final boolean connected = live && state == State.CONNECTED;
+        // Live rather than connected, which is what the layout used to be
+        // asked under: a rectangle can arrive before the state does.
+        final int[] flat = live ? RfbNative.nativeMonitors(h) : null;
+        return new Facts(desktopWidth, desktopHeight,
+                flat == null ? List.of() : Monitor.fromFlat(flat),
+                List.of(), -1,
+                connected && RfbNative.nativeCanResize(h),
+                viewOnly(),
+                live && RfbNative.nativePointerIsRelative(h));
     }
 
     @Override
@@ -289,12 +293,6 @@ public final class RfbBackend implements Backend, RfbNative.Callbacks {
         if (h != 0) {
             RfbNative.nativePointerRelative(h, dx, dy, buttonMask);
         }
-    }
-
-    @Override
-    public boolean pointerIsRelative() {
-        final long h = handle;
-        return h != 0 && RfbNative.nativePointerIsRelative(h);
     }
 
     @Override

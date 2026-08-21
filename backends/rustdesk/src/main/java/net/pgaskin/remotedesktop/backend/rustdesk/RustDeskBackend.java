@@ -188,33 +188,29 @@ public final class RustDeskBackend implements Backend, RustDeskNative.Callbacks 
     }
 
     /**
-     * The peer's displays, of which it sends one at a time.
+     * The peer's displays, of which it sends one at a time, and which one that
+     * is.
      *
-     * <p>There is no {@code monitors()} beside this, deliberately: a second
-     * display is not part of the picture on screen, so reporting the layout
-     * would describe a desktop nobody is looking at. Which one is being sent is
-     * the choice {@link #requestDisplay} makes.
+     * <p>There is no monitor layout beside them, deliberately: a second display
+     * is not part of the picture on screen, so reporting the layout would
+     * describe a desktop nobody is looking at. Which one is being sent is the
+     * choice {@link #requestDisplay} makes.
+     *
+     * <p>The current index rides on the end of the same array, and now that
+     * both come out of one call the two cannot disagree about a display that
+     * arrived between them — which, when they were two calls, they could.
      */
     @Override
-    public List<Monitor> displays() {
+    public Facts facts() {
         final long h = handle;
-        if (h == 0 || dead || state != State.CONNECTED) {
-            return List.of();
-        }
-        final int[] flat = RustDeskNative.nativeDisplays(h);
-        // The current index rides on the end of the same array, so the two
-        // cannot disagree about a display that arrived between two calls.
-        return flat == null ? List.of() : Monitor.fromFlat(Arrays.copyOf(flat, flat.length - 1));
-    }
-
-    @Override
-    public int display() {
-        final long h = handle;
-        if (h == 0 || dead || state != State.CONNECTED) {
-            return -1;
-        }
-        final int[] flat = RustDeskNative.nativeDisplays(h);
-        return flat == null || flat.length < 5 ? -1 : flat[flat.length - 1];
+        final boolean connected = h != 0 && !dead && state == State.CONNECTED;
+        final int[] flat = connected ? RustDeskNative.nativeDisplays(h) : null;
+        return new Facts(desktopWidth, desktopHeight, List.of(),
+                flat == null ? List.of()
+                        : Monitor.fromFlat(Arrays.copyOf(flat, flat.length - 1)),
+                flat == null || flat.length < 5 ? -1 : flat[flat.length - 1],
+                connected && RustDeskNative.nativeCanResize(h),
+                viewOnly(), false);
     }
 
     @Override
@@ -223,15 +219,6 @@ public final class RustDeskBackend implements Backend, RustDeskNative.Callbacks 
         if (h != 0 && !dead) {
             RustDeskNative.nativeRequestDisplay(h, index);
         }
-    }
-
-    /**
-     * Whether the peer offered a list of sizes.
-     */
-    @Override
-    public boolean canResize() {
-        final long h = handle;
-        return h != 0 && !dead && state == State.CONNECTED && RustDeskNative.nativeCanResize(h);
     }
 
     @Override

@@ -84,6 +84,22 @@ public record Connection(String id, String name, String backendId, String addres
         return name == null || name.isEmpty() ? "" : address;
     }
 
+    /** The same connection under a different user name. */
+    public Connection withUserName(String newUserName) {
+        return new Connection(id, name, backendId, address, newUserName, sealedPassword,
+                options, pinned);
+    }
+
+    /**
+     * Both halves of one answer: what a prompt was answered with, and what
+     * "forget these" clears. Together rather than one after the other because
+     * they <em>are</em> one answer — a user name kept without the password it
+     * went with is a connection that asks again and offers the wrong name.
+     */
+    public Connection withCredentials(String newUserName, String plaintext) {
+        return withUserName(newUserName).withPassword(plaintext);
+    }
+
     public Connection withOptions(Map<String, String> newOptions) {
         return new Connection(id, name, backendId, address, userName, sealedPassword,
                 newOptions, pinned);

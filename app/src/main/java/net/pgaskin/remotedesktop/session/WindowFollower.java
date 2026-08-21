@@ -64,8 +64,12 @@ public final class WindowFollower {
      * trip. Nothing is asked twice — the same window is the same question, and
      * a far end that refused it will refuse it again — so a refusal costs one
      * request rather than one a second.
+     *
+     * @param canResize from the caller's own poll ({@link Backend.Facts}),
+     *                  since asking again here would be a second crossing for
+     *                  an answer that arrived a line ago
      */
-    void tick(Activity activity) {
+    void tick(Activity activity, boolean canResize) {
         if (!enabled) {
             return;
         }
@@ -76,8 +80,7 @@ public final class WindowFollower {
         final boolean settled = size[0] == settledW && size[1] == settledH;
         settledW = size[0];
         settledH = size[1];
-        if (!settled || (size[0] == followedW && size[1] == followedH)
-                || !backend.canResize()) {
+        if (!settled || (size[0] == followedW && size[1] == followedH) || !canResize) {
             return;
         }
         followedW = size[0];

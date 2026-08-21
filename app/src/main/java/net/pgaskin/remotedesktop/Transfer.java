@@ -184,7 +184,7 @@ final class Transfer {
 
         final JSONObject backends = new JSONObject();
         for (String id : Backends.ids()) {
-            final SharedPreferences bp = Connections.backendPrefs(ctx, id);
+            final SharedPreferences bp = Options.backendPrefs(ctx, id);
             final JSONObject one = new JSONObject();
             for (BackendOption o : Backends.options(id)) {
                 if (o.scope() == BackendOption.Scope.CONNECTION) {
@@ -256,7 +256,7 @@ final class Transfer {
         AppSettings.prefs(ctx).edit().clear().apply();
         InputSettings.prefs(ctx).edit().clear().apply();
         for (String id : Backends.ids()) {
-            Connections.backendPrefs(ctx, id).edit().clear().apply();
+            Options.backendPrefs(ctx, id).edit().clear().apply();
         }
     }
 
@@ -458,7 +458,7 @@ final class Transfer {
                         schema.put(o.key(), o);
                     }
                 }
-                final SharedPreferences.Editor e = Connections.backendPrefs(ctx, id).edit();
+                final SharedPreferences.Editor e = Options.backendPrefs(ctx, id).edit();
                 for (Iterator<String> it = one.keys(); it.hasNext(); ) {
                     final String key = it.next();
                     final String v = one.optString(key, "");

@@ -5,6 +5,9 @@ package net.pgaskin.remotedesktop.backend;
 
 import android.graphics.Bitmap;
 
+import java.util.List;
+import java.util.function.Consumer;
+
 /**
  * One remote desktop connection, whatever protocol is underneath.
  *
@@ -156,7 +159,7 @@ public interface Backend {
      *                 May never be called if the session is wedged, which is why
      *                 nothing on screen may depend on it arriving.
      */
-    void connectionInfo(java.util.function.Consumer<java.util.List<ConnectionFact>> callback);
+    void connectionInfo(Consumer<List<ConnectionFact>> callback);
 
     /** Zero until the first {@link Listener#desktopSize}. */
     int desktopWidth();
@@ -164,68 +167,79 @@ public interface Backend {
     int desktopHeight();
 
     /**
-     * How the far end's desktop is divided into monitors, or empty when it has
-     * not said — which is not the same as one monitor, and is the answer for a
-     * backend whose library never exposes the layout.
+     * Everything about a live session that has to be <em>asked for</em> rather
+     * than waited for, in one answer.
      *
-     * <p>Polled rather than announced, and for the same reason
-     * {@link #canResize} is: an RFB server states its layout in a rectangle that
-     * arrives after the connection if it arrives at all, and a desktop with a
-     * monitor plugged into it says so again.
+     * <p>What these have in common is that there is nothing to hang a callback
+     * on. An RFB server states its monitor layout in a rectangle that arrives
+     * after the connection if it arrives at all; a desktop grows a screen when
+     * one is plugged into it and says so the same way; and whether the far end
+     * will take a size becomes true some time after the connection, so a
+     * one-shot that fired too early would never fire again. A caller must
+     * expect every one of these to change while a session runs, and to differ
+     * between two sessions on the same backend.
+     *
+     * <p>One record rather than an accessor each, for three reasons: a poll is
+     * one crossing into the library instead of five, "has anything moved" is
+     * one {@code equals} instead of a remembered field per caller, and a
+     * backend answers in one place — which is also what stops two of these
+     * disagreeing, since they are read from the far end's state at one instant
+     * rather than at five.
+     *
+     * @param monitors  how the far end's <em>one</em> desktop is divided, or
+     *                  empty where it has not said — which is not the same as
+     *                  one monitor, and is the answer for a library that never
+     *                  exposes the layout
+     * @param displays  the pictures the far end is <em>not</em> sending and
+     *                  will send if asked; empty for every protocol but one.
+     *                  Not {@link #monitors}, and the difference is which
+     *                  picture is on screen: a monitor is a region of the
+     *                  framebuffer everything else here serves, so a caller
+     *                  with the layout can jump the viewport between heads and
+     *                  the pixels are already there. Choosing a display is a
+     *                  message, a new size and a new framebuffer, and its
+     *                  rectangles are in the far end's own coordinates only so
+     *                  that a person can tell which screen is which.
+     * @param display   which of {@link #displays} is on screen, or -1 where
+     *                  there is no choice
+     * @param canResize whether the far end will take a new desktop size right
+     *                  now. Deliberately not a {@link BackendOption}: an option
+     *                  is a static description a backend gives of itself before
+     *                  anything is connected, and this is a fact about one live
+     *                  session.
+     * @param viewOnly  {@link #viewOnly()}, which is also its own accessor —
+     *                  that one is what a screen reacting to the panel asks,
+     *                  and this is the same answer as of this instant
+     * @param pointerRelative whether the far end owns the cursor. Pushed as
+     *                  {@link Listener#pointerMode} while a screen is attached,
+     *                  and here for the screen that attaches to a session which
+     *                  has been running for an hour
      */
-    default java.util.List<Monitor> monitors() {
-        return java.util.List.of();
+    record Facts(int desktopWidth, int desktopHeight, List<Monitor> monitors,
+                 List<Monitor> displays, int display, boolean canResize,
+                 boolean viewOnly, boolean pointerRelative) {
+
+        public Facts {
+            monitors = List.copyOf(monitors);
+            displays = List.copyOf(displays);
+        }
+
+        /** Nothing connected: what a session that is over has to say. */
+        public static final Facts NONE =
+                new Facts(0, 0, List.of(), List.of(), -1, false, false, false);
     }
 
-    /**
-     * The far end's displays, where it sends <em>one of them at a time</em> and
-     * will send another if asked — empty for every protocol that does not, which
-     * is all but one of them.
-     *
-     * <p>Not {@link #monitors}, and the difference is which picture is on
-     * screen. A monitor is a region of the one framebuffer everything else here
-     * serves, so a caller with the layout can jump the viewport between heads
-     * and the pixels are already there. A display is a picture the far end is
-     * <em>not</em> sending: choosing another is a message, a new size and a new
-     * framebuffer, and the rectangles are only in the far end's own coordinates
-     * so that a person can tell which screen is which.
-     *
-     * <p>Polled, and for {@link #canResize}'s reason: it is a fact about the
-     * live session, arrives after the connection and changes when a screen is
-     * plugged in over there.
-     */
-    default java.util.List<Monitor> displays() {
-        return java.util.List.of();
-    }
-
-    /** Which of {@link #displays} is on screen, or -1 where there is no choice. */
-    default int display() {
-        return -1;
-    }
+    /** @see Facts */
+    Facts facts();
 
     /**
      * Ask the far end to send another of its displays.
      *
      * <p>A request, like {@link #requestDesktopSize}: the far end may answer
      * with a different one or with nothing, and what actually happened arrives
-     * as {@link Listener#desktopSize} and in the next {@link #display}.
+     * as {@link Listener#desktopSize} and in the next {@link Facts#display}.
      */
     default void requestDisplay(int index) {
-    }
-
-    /**
-     * Whether the far end will take a new desktop size right now.
-     *
-     * <p>Deliberately not a {@link BackendOption}: an option is a static
-     * description a backend gives of itself before anything is connected, and
-     * this is a fact about one live session — an RFB server says it by sending
-     * an {@code ExtendedDesktopSize} rectangle, which may not arrive at all.
-     * So it is asked repeatedly rather than announced, and a caller must expect
-     * the answer to change from false to true shortly after a connection and to
-     * differ between two sessions with the same backend.
-     */
-    default boolean canResize() {
-        return false;
     }
 
     /**
@@ -248,27 +262,16 @@ public interface Backend {
      * The same event where the far end owns the cursor: how far it moved, in
      * desktop pixels, rather than where it now is.
      *
-     * <p>Only meaningful while {@link #pointerIsRelative} — every other backend
-     * ignores it, and no caller may choose between the two: which one carries
-     * the pointer is the far end's decision, announced through
+     * <p>Only meaningful while {@link Facts#pointerRelative} — every other
+     * backend ignores it, and no caller may choose between the two: which one
+     * carries the pointer is the far end's decision, announced through
      * {@link Listener#pointerMode}.
      *
-     * <p>These two have defaults where nothing else here does, and the default
-     * is the answer for every protocol but one: the cursor is ours. A backend
-     * that says nothing is absolute.
+     * <p>A default where almost nothing else here has one, because it is the
+     * answer for every protocol but one: the cursor is ours. A backend that
+     * says nothing is absolute.
      */
     default void pointerRelative(int dx, int dy, int buttonMask) {
-    }
-
-    /**
-     * Whether the far end owns the cursor. False for everything but an RFB
-     * session whose server has asked for relative motion.
-     *
-     * <p>Asked as well as announced, because a screen attaching to a session
-     * that is already running has missed the announcement.
-     */
-    default boolean pointerIsRelative() {
-        return false;
     }
 
     /**

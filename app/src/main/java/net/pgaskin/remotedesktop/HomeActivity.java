@@ -34,8 +34,10 @@ import net.pgaskin.remotedesktop.backend.Backends;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The home screen: one saved connection per item, and the two buttons that
@@ -417,21 +419,34 @@ public final class HomeActivity extends AppCompatActivity {
          */
         private final List<Plugins.Card> cards = new ArrayList<>();
         /**
-         * Decoded previews, by connection id. A preview is a sealed PNG, so
-         * binding a card costs a decryption and a decode, and a grid rebinds
-         * every time it is scrolled. Emptied here, which is the only place a
-         * preview can have changed: a session writes one on its way out and
-         * this screen reloads when it comes back.
+         * Decoded previews, by connection id, each with the
+         * {@link Connections#previewVersion} it was decoded at.
+         *
+         * <p>A preview is a sealed PNG, so one costs a keystore round trip and
+         * a decode — off the main thread, and kept, because a grid rebinds
+         * every time it is scrolled and a list survives every trip away from
+         * this screen. The version is what makes keeping it safe: returning
+         * from a session re-decodes the one card that session was of.
+         *
+         * <p>A null bitmap is an answer rather than a miss — most connections
+         * have never been opened — so this holds the pair rather than the
+         * picture.
          */
-        private final Map<String, Bitmap> previews = new HashMap<>();
+        private final Map<String, Preview> previews = new HashMap<>();
 
-        // Deliberately the blunt notification, twice: the previews are dropped
-        // above, so a diff that decided an item was unchanged would leave a card
-        // with no picture on it and never ask for one again.
+        /** @param bitmap null for a connection with no preview taken */
+        private record Preview(int version, Bitmap bitmap) {
+        }
+
+        /** What has been asked for and not come back, so it is asked once. */
+        private final Set<String> decoding = new HashSet<>();
+
+        // Deliberately the blunt notification, twice: what a card shows comes
+        // from three places that move independently — the record, the live
+        // session, and the preview — and a diff has no way to know that.
         @SuppressLint("NotifyDataSetChanged")
         void reload() {
             items.clear();
-            previews.clear();
             items.addAll(Connections.all(HomeActivity.this));
             // About the connections alone: a screen saying there are none is
             // still true with a card above it, and a plugin waiting to be set
@@ -449,6 +464,43 @@ public final class HomeActivity extends AppCompatActivity {
                 cards.addAll(found);
                 notifyDataSetChanged();
             });
+        }
+
+        /**
+         * This connection's preview if it is decoded and current, and null
+         * while it is not — which is also the answer for a connection that has
+         * never been opened, and is why the placeholder is what a card draws
+         * either way rather than a third state to design.
+         */
+        private Bitmap preview(String id) {
+            final int version = Connections.previewVersion(id);
+            final Preview have = previews.get(id);
+            if (have != null && have.version() == version) {
+                return have.bitmap();
+            }
+            if (decoding.add(id)) {
+                Connections.readThumbnail(HomeActivity.this, id, bmp -> {
+                    decoding.remove(id);
+                    previews.put(id, new Preview(version, bmp));
+                    // The one card, rather than the list: a decode that came
+                    // back while somebody was scrolling should not restart
+                    // every other card's.
+                    final int at = indexOf(id);
+                    if (at >= 0) {
+                        notifyItemChanged(cards.size() + at);
+                    }
+                });
+            }
+            return null;
+        }
+
+        private int indexOf(String id) {
+            for (int i = 0; i < items.size(); i++) {
+                if (items.get(i).id().equals(id)) {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         /**
@@ -500,8 +552,7 @@ public final class HomeActivity extends AppCompatActivity {
             h.badge.setVisibility(Backends.ids().size() > 1 && !backend.isEmpty()
                     ? View.VISIBLE : View.GONE);
 
-            final Bitmap thumb = previews.computeIfAbsent(c.id(),
-                    id -> Connections.thumbnail(HomeActivity.this, id));
+            final Bitmap thumb = preview(c.id());
             if (thumb != null) {
                 h.preview.setImageBitmap(thumb);
                 h.preview.setImageTintList(null);

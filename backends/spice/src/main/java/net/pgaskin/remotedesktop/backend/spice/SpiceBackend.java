@@ -174,31 +174,18 @@ public final class SpiceBackend implements Backend, SpiceNative.Callbacks {
         return desktopHeight;
     }
 
-    /**
-     * The heads the far end has divided this desktop into, which SPICE
-     * <em>announces</em> where every other protocol here leaves it to be
-     * inferred from a screen boundary.
-     */
     @Override
-    public List<Monitor> monitors() {
+    public Facts facts() {
         final long h = handle;
-        if (h == 0 || dead || state != State.CONNECTED) {
-            return List.of();
-        }
-        final int[] flat = SpiceNative.nativeMonitors(h);
-        return flat == null ? List.of() : Monitor.fromFlat(flat);
-    }
-
-    /**
-     * Whether the guest is running the agent and said it does monitors — so it
-     * is false for a machine that has not booted, false for a guest without the
-     * program, and true a moment after the agent announces itself, which may be
-     * long after the picture arrives.
-     */
-    @Override
-    public boolean canResize() {
-        final long h = handle;
-        return h != 0 && !dead && state == State.CONNECTED && SpiceNative.nativeCanResize(h);
+        final boolean live = h != 0 && !dead;
+        final boolean connected = live && state == State.CONNECTED;
+        final int[] flat = connected ? SpiceNative.nativeMonitors(h) : null;
+        return new Facts(desktopWidth, desktopHeight,
+                flat == null ? List.of() : Monitor.fromFlat(flat),
+                List.of(), -1,
+                connected && SpiceNative.nativeCanResize(h),
+                viewOnly(),
+                live && SpiceNative.nativePointerIsRelative(h));
     }
 
     @Override
@@ -282,12 +269,6 @@ public final class SpiceBackend implements Backend, SpiceNative.Callbacks {
         if (h != 0) {
             SpiceNative.nativePointerRelative(h, dx, dy, buttonMask);
         }
-    }
-
-    @Override
-    public boolean pointerIsRelative() {
-        final long h = handle;
-        return h != 0 && SpiceNative.nativePointerIsRelative(h);
     }
 
     @Override

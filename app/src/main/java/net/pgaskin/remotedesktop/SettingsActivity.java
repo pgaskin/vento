@@ -58,7 +58,7 @@ import java.util.function.Supplier;
  * <p>The sections keep separate preference files, which is not tidiness: a
  * backend's settings live and die with the backend, and the input tuning can be exported or reset on its
  * own. {@link AppSettings}, {@link InputSettings} and
- * {@link Connections#backendPrefs} are those three files.
+ * {@link Options#backendPrefs} are those three files.
  */
 public final class SettingsActivity extends AppCompatToolbarActivity {
 
@@ -550,7 +550,7 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
 
         private void backend(String id) {
             final OptionScreen.Store store =
-                    OptionScreen.store(Connections.backendPrefs(requireContext(), id));
+                    OptionScreen.store(Options.backendPrefs(requireContext(), id));
             getPreferenceManager().setPreferenceDataStore(store);
             final PreferenceScreen screen = newScreen();
             OptionScreen.addOptions(screen, Backends.options(id), BackendOption.Scope.GLOBAL);
@@ -881,7 +881,7 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                         AppSettings.prefs(ctx).edit().clear().apply();
                         InputSettings.prefs(ctx).edit().clear().apply();
                         for (String id : Backends.ids()) {
-                            Connections.backendPrefs(ctx, id).edit().clear().apply();
+                            Options.backendPrefs(ctx, id).edit().clear().apply();
                         }
                         Sessions.timeoutChanged();
                         said(R.string.settings_reset_all_done);
