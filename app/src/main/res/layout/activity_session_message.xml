@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    The whole of a window there is no session for: a connection with no address,
+    a backend this build does not have, a plugin whose constructor threw, or one
+    that has to be set up before it can dial. A sentence, and sometimes one
+    thing to do about it.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/header_inset"
+    android:paddingTop="48dp"
+    android:paddingEnd="@dimen/header_inset"
+    android:paddingBottom="@dimen/header_inset">
+
+    <TextView
+        android:id="@+id/message"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    <!-- No outline: a thing to tap under the words it is about, not a second
+         panel on an otherwise empty screen. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/action"
+        style="?attr/borderlessButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone" />
+</LinearLayout>

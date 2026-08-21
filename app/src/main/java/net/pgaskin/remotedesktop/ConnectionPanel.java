@@ -314,7 +314,7 @@ final class ConnectionPanel {
      */
     private String stateLine() {
         if (!connected()) {
-            return session.status();
+            return session.status().text();
         }
         final int w = session.backend().desktopWidth();
         final int h = session.backend().desktopHeight();

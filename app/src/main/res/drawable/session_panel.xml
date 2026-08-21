@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    Behind the words a session ends with. Small corners: it is a label over a
+    picture rather than a container on a page, and the 16 dp a group of rows has
+    would read as one that had come loose.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/session_panel" />
+    <corners android:radius="6dp" />
+</shape>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    The two colours in this app that are not the theme's, and are fixed for the
+    same reason the debug readout's are: they are ink over somebody else's
+    picture. What is behind them is a remote desktop of unknown brightness
+    rather than a surface of ours, so a panel that followed the phone's light
+    theme would be the one thing on screen that could not be read.
+-->
+<resources>
+    <color name="session_panel">#cc101418</color>
+    <color name="session_ink">#ffe8f0ff</color>
+</resources>

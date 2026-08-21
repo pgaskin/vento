@@ -240,7 +240,10 @@ public final class SessionService extends Service implements Sessions.Watcher {
         final Notification.Builder b = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_desktop)
                 .setContentTitle(s != null ? s.title() : getString(R.string.app_name))
-                .setContentText(s != null ? s.status() : "")
+                // What the session has to say, or — when it has nothing, which
+                // is what a connected one says — which machine this is.
+                .setContentText(s == null ? ""
+                        : s.status().text().isEmpty() ? s.subtitle() : s.status().text())
                 .setOngoing(true)
                 .setShowWhen(false)
                 // Nobody wants a connection announced with a sound every time it

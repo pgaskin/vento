@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-FileCopyrightText: 2026 Patrick Gaskin
+    SPDX-License-Identifier: GPL-3.0-or-later
+
+    What goes over the desktop. The desktop itself is added underneath all of
+    this in code: a SessionView is given its host and its backend, and there is
+    no state of either an XML attribute could carry.
+
+    Nothing here is clickable except the two buttons, and a view that does not
+    take a touch does not stop the one under it getting it — so the touch
+    surface is still the whole screen.
+-->
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:parentTag="android.widget.FrameLayout">
+
+    <!--
+        The desktop, held back while there is nothing to be doing with it.
+
+        Surface rather than the black a dialog dims with, because this is not a
+        modal over the session — it *is* the session, in a state where touching
+        it does nothing. Heavier than that scrim for the same reason: a bottom
+        sheet covers the desktop for a moment and this covers it until the
+        connection comes back, so the words over it have to win rather than
+        compete.
+    -->
+    <View
+        android:id="@+id/scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0.72"
+        android:background="?attr/colorSurface"
+        android:visibility="gone" />
+
+    <!--
+        The message a session ends with, and two things to do about it: try
+        again, and read the log the message is the last line of. Buttons rather
+        than a tap region nothing points at, since a connection that fails says
+        a sentence rather than a word, and a sentence deserves an answer with a
+        real touch target.
+    -->
+    <LinearLayout
+        android:id="@+id/status_panel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:background="@drawable/session_panel"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone">
+
+        <!-- Above the words rather than beside them, because the panel is
+             centred on a screen with nothing else on it and a sentence that
+             grew to two lines would drag a leading spinner off centre. -->
+        <com.google.android.material.loadingindicator.LoadingIndicator
+            android:id="@+id/loading"
+            style="@style/Widget.Material3.LoadingIndicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="10dp" />
+
+        <!-- dp, and lint is right that this is unusual: the same choice the
+             debug readout makes, and for the same reason. This is a label over
+             a picture whose own text this one has to stay distinguishable
+             from, so its size is a measurement rather than a preference. -->
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:textColor="@color/session_ink"
+            android:textSize="14dp"
+            tools:ignore="SpUsage" />
+
+        <!-- The panel is as wide as the sentence, which is wider than the two
+             buttons; without the gravity they sit under its first word. -->
+        <LinearLayout
+            android:id="@+id/status_actions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:orientation="horizontal">
+
+            <!-- No outline on either: they are things to tap, not two more
+                 panels inside the first. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/reconnect"
+                style="?attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/panel_reconnect" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/log"
+                style="?attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/panel_log" />
+        </LinearLayout>
+    </LinearLayout>
+</merge>

@@ -27,7 +27,6 @@ import android.view.inputmethod.InputMethodManager;
 
 import net.pgaskin.remotedesktop.AppSettings;
 import net.pgaskin.remotedesktop.InputSettings;
-import net.pgaskin.remotedesktop.R;
 import net.pgaskin.remotedesktop.backend.Backend;
 import net.pgaskin.remotedesktop.backend.Monitor;
 import net.pgaskin.remotedesktop.control.CursorController;
@@ -109,17 +108,16 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         void nothingToPaste();
 
         /**
-         * What this session has to say for itself, and whether it is over.
+         * The pair the backend reports itself with, unrendered: what a session
+         * has to say for itself is one policy and it is the app's, not this
+         * view's.
          *
          * <p>Reported rather than drawn here because it is the one thing on this
          * screen a person may need to <em>act</em> on — read a failure, try
          * again, look at the log — and an action needs a real button with a real
          * touch target, which a canvas does not have.
-         *
-         * @param text  empty while a session is running normally
-         * @param ended whether there is a connection left to act on
          */
-        void status(String text, boolean ended);
+        void status(Backend.State state, String detail);
 
         /**
          * The first frame of this session's desktop is on screen.
@@ -401,19 +399,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         }
         final boolean wasClosed = backendState == Backend.State.CLOSED;
         backendState = state;
-        // A detail is what a state says *about itself*, so it cannot outrank the
-        // state: a connected session shows its desktop and nothing over it,
-        // whatever the last message was. Without that rule a screen re-attaching
-        // to a session whose remembered detail is still "Connecting to …" — the
-        // one the backend sent on the way in — puts that over an hour-old
-        // desktop, which is what a phone coming back from a long sleep did.
-        host.status(switch (state) {
-            case IDLE, CONNECTED -> "";
-            case CONNECTING -> detail != null ? detail
-                    : getContext().getString(R.string.session_connecting);
-            case CLOSED -> detail != null ? detail
-                    : getContext().getString(R.string.session_disconnected);
-        }, state == Backend.State.CLOSED);
+        host.status(state, detail);
         if (state == Backend.State.CLOSED && !wasClosed) {
             host.disconnected();
         }

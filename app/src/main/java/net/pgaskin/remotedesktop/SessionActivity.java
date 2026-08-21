@@ -9,26 +9,16 @@ import androidx.appcompat.app.AlertDialog;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.checkbox.MaterialCheckBox;
 import com.google.android.material.color.MaterialColors;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.radiobutton.MaterialRadioButton;
-import com.google.android.material.loadingindicator.LoadingIndicator;
-import com.google.android.material.textfield.TextInputEditText;
-import com.google.android.material.textfield.TextInputLayout;
 import android.content.Context;
-import android.content.DialogInterface;
-import android.content.res.TypedArray;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.text.InputType;
-import android.util.TypedValue;
 import android.view.ContextThemeWrapper;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.window.OnBackInvokedDispatcher;
-import android.view.ViewGroup;
-import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.RadioGroup;
@@ -38,13 +28,9 @@ import android.widget.Toast;
 
 import net.pgaskin.remotedesktop.backend.Backend;
 import net.pgaskin.remotedesktop.backend.Backends;
-import net.pgaskin.remotedesktop.backend.Prompt;
 import net.pgaskin.remotedesktop.control.input.TapRegions;
 import net.pgaskin.remotedesktop.session.SessionView;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -59,12 +45,13 @@ import java.util.Map;
  *       --es address 10.0.0.1:5901 [--es user NAME] [--es password PASS]
  * </pre>
  *
- * <p>Prompts are dialogs over the session rather than screens of their own:
- * the connection is stalled behind each one, so putting it behind a navigation
- * step would be pretending otherwise.
+ * <p>What this screen owns is the window: the desktop, what the session has to
+ * say for itself over it, and the way out. The questions a connection stops to
+ * ask are {@link PromptDialogs}', and the live connection itself is
+ * {@link Session}'s — this attaches to one rather than owning it.
  */
 public final class SessionActivity extends Activity
-        implements SessionView.Host, ConnectionPanel.Host, Prompt.Handler {
+        implements SessionView.Host, ConnectionPanel.Host, PromptDialogs.Host {
 
     public static final String EXTRA_CONNECTION = "connection"; // else a bare address
 
@@ -104,6 +91,10 @@ public final class SessionActivity extends Activity
     private SessionView view;
     private Connection connection; // non-null from the store, so it can leave a preview
 
+    /** Every dialog this screen has up, and the three the connection asks. */
+    private final Dialogs.Tracker dialogs = new Dialogs.Tracker();
+    private PromptDialogs prompts;
+
     /**
      * What was stored for the input stack when the view's config was built from
      * it, so that coming back from the settings screen can tell a file somebody
@@ -131,17 +122,10 @@ public final class SessionActivity extends Activity
         final String backendId = backendId();
         final boolean haveBackend = Backends.ids().contains(backendId);
         if (address == null || address.isEmpty() || !haveBackend) {
-            final TextView tv = new TextView(this);
-            if (Backends.ids().isEmpty()) {
-                tv.setText(R.string.session_no_backend);
-            } else if (!haveBackend) {
-                tv.setText(getString(R.string.session_no_such_backend,
-                        Backends.name(backendId)));
-            } else {
-                tv.setText(R.string.session_no_address);
-            }
-            tv.setPadding(48, 96, 48, 48);
-            setContentView(tv);
+            message(Backends.ids().isEmpty() ? getString(R.string.session_no_backend)
+                    : !haveBackend ? getString(R.string.session_no_such_backend,
+                            Backends.name(backendId))
+                    : getString(R.string.session_no_address));
             return;
         }
 
@@ -184,10 +168,7 @@ public final class SessionActivity extends Activity
             // window that dies here takes the app with it. The screen says what
             // happened; the plugin it came from grows a card.
             Plugins.failed(this, backendId, t);
-            final TextView tv = new TextView(this);
-            tv.setText(t.getMessage() == null ? String.valueOf(t) : t.getMessage());
-            tv.setPadding(48, 96, 48, 48);
-            setContentView(tv);
+            message(t.getMessage() == null ? String.valueOf(t) : t.getMessage());
             return;
         }
         // Which machine this phone is actually used to connect to, which is
@@ -219,22 +200,20 @@ public final class SessionActivity extends Activity
         // setting: the default is the answer, and a session started any other
         // way gets it.
         view.setTileSize(getIntent().getIntExtra("tile", 0));
-        // The desktop, and one panel over it. Nothing in the panel is clickable
-        // except its buttons, and a view that does not take a touch does not
-        // stop the one under it getting it — so the touch surface is still the
-        // whole screen.
         // An empty window during a connection is a screen of this app, not the
         // edges of a picture, so it is the app's own surface rather than the
         // black that letterboxes a desktop once one has arrived.
         view.setEmptyColor(MaterialColors.getColor(view,
                 com.google.android.material.R.attr.colorSurface, 0xff000000));
-        final FrameLayout root = new FrameLayout(this);
-        root.addView(view, new FrameLayout.LayoutParams(
+        setContentView(R.layout.activity_session);
+        // Underneath everything the layout holds. In code because a session view
+        // is given its host and its backend, which no XML attribute can carry.
+        final FrameLayout root = findViewById(android.R.id.content);
+        root.addView(view, 0, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        root.addView(buildScrim());
-        root.addView(buildStatusPanel());
-        setContentView(root);
-        session.attach(view, this);
+        bindStatusPanel();
+        prompts = new PromptDialogs(this, dialogs, this, connection != null);
+        session.attach(view, prompts);
         // This screen is the session, so leaving it ends the connection and back
         // asks what the disconnect region asks. Registered only once there is a
         // session to lose — the no-address screen keeps a plain back.
@@ -260,19 +239,25 @@ public final class SessionActivity extends Activity
      */
     private void setUpFirst(String backendId) {
         awaitingSetup = backendId;
-        final LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(48, 96, 48, 48);
-        final TextView tv = new TextView(this);
-        tv.setText(getString(R.string.session_backend_setup, Backends.name(backendId)));
-        box.addView(tv, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        box.addView(quietButton(R.string.plugin_set_up, () -> Plugins.setup(this, backendId)),
-                new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT));
-        setContentView(box);
+        message(getString(R.string.session_backend_setup, Backends.name(backendId)),
+                R.string.plugin_set_up, () -> Plugins.setup(this, backendId));
+    }
+
+    /** A window with a sentence in it and nothing else. */
+    private void message(CharSequence text) {
+        message(text, 0, null);
+    }
+
+    /** ... and one thing to do about it. */
+    private void message(CharSequence text, int action, Runnable onAction) {
+        setContentView(R.layout.activity_session_message);
+        ((TextView) findViewById(R.id.message)).setText(text);
+        if (action != 0) {
+            final MaterialButton button = findViewById(R.id.action);
+            button.setText(action);
+            button.setOnClickListener(v -> onAction.run());
+            button.setVisibility(View.VISIBLE);
+        }
     }
 
     @Override
@@ -330,132 +315,42 @@ public final class SessionActivity extends Activity
 
     // ---- what the session has to say for itself ----------------------------
 
-    private LinearLayout statusPanel;
+    private View statusPanel;
     private TextView statusText;
     private View statusActions;
     private View scrim;
-    private LoadingIndicator loading;
+    private View loading;
 
-    /**
-     * The desktop, held back while there is nothing to be doing with it.
-     *
-     * <p>Surface rather than the black a dialog dims with, because this is not a
-     * modal over the session — it *is* the session, in a state where touching it
-     * does nothing. Heavier than that scrim for the same reason: a bottom sheet
-     * covers the desktop for a moment and this covers it until the connection
-     * comes back, so the words over it have to win rather than compete. Not
-     * clickable, so it takes no touch the desktop under it would have had.
-     */
-    private View buildScrim() {
-        scrim = new View(this);
-        scrim.setBackgroundColor(MaterialColors.compositeARGBWithAlpha(
-                MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface,
-                        0xff000000),
-                (int) (0.72f * 255)));
-        scrim.setVisibility(View.GONE);
-        scrim.setLayoutParams(new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        return scrim;
+    /** The panel's parts, and the only two things on it that do anything. */
+    private void bindStatusPanel() {
+        scrim = findViewById(R.id.scrim);
+        statusPanel = findViewById(R.id.status_panel);
+        statusText = findViewById(R.id.status_text);
+        statusActions = findViewById(R.id.status_actions);
+        loading = findViewById(R.id.loading);
+        findViewById(R.id.reconnect).setOnClickListener(v -> panelReconnect());
+        findViewById(R.id.log).setOnClickListener(v -> SessionLog.show(this));
     }
 
     /**
-     * The message a session ends with, and two things to do about it.
-     *
-     * <p>It used to be ink on the desktop, which was enough while it only ever
-     * said "Connecting…" or "Disconnected". A connection that fails says a
-     * sentence instead, and the two useful answers to a sentence — try again,
-     * and read the log the sentence is the last line of — were reachable only
-     * through a tap region that nothing pointed at. They are buttons now,
-     * quiet ones, under the words they are about.
+     * What the session has to say, rendered once ({@link Session.Status}) and
+     * read off in three places: the three states this screen has are exactly
+     * that record's three fields.
      */
-    private View buildStatusPanel() {
-        statusPanel = new LinearLayout(this);
-        statusPanel.setOrientation(LinearLayout.VERTICAL);
-        statusPanel.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
-        statusPanel.setVisibility(View.GONE);
-        final android.graphics.drawable.GradientDrawable bg =
-                new android.graphics.drawable.GradientDrawable();
-        bg.setColor(0xcc101418);
-        bg.setCornerRadius(dp(6));
-        statusPanel.setBackground(bg);
-        statusPanel.setPadding(dp(20), dp(14), dp(20), dp(8));
-
-        // Above the words rather than beside them, because the panel is centred
-        // on a screen with nothing else on it and a sentence that grows to two
-        // lines would drag a leading spinner off centre with it.
-        loading = new LoadingIndicator(new ContextThemeWrapper(this,
-                com.google.android.material.R.style.Widget_Material3_LoadingIndicator));
-        final LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        llp.gravity = android.view.Gravity.CENTER_HORIZONTAL;
-        llp.bottomMargin = dp(10);
-        statusPanel.addView(loading, llp);
-
-        statusText = new TextView(this);
-        statusText.setTextColor(0xffe8f0ff);
-        statusText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-        statusText.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
-        statusText.setMaxWidth(
-                getResources().getDisplayMetrics().widthPixels - dp(24 + 20) * 2);
-        // Both of these on purpose. A vertical LinearLayout gives a child it is
-        // not given parameters for MATCH_PARENT width, and a MATCH_PARENT child
-        // of a WRAP_CONTENT parent is measured at the space available and then
-        // laid out at whatever the other children made the parent — so the
-        // sentence wrapped into more lines than it had been measured for and
-        // lost its last one off the bottom.
-        statusPanel.addView(statusText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        final LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
-        actions.addView(quietButton(R.string.panel_reconnect, this::panelReconnect));
-        actions.addView(quietButton(R.string.panel_log, () -> SessionLog.show(this)));
-        final LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        // The panel is as wide as the sentence, which is wider than the two
-        // buttons; without this they sit under its first word.
-        alp.gravity = android.view.Gravity.CENTER_HORIZONTAL;
-        statusPanel.addView(actions, alp);
-        statusActions = actions;
-
-        final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                android.view.Gravity.CENTER);
-        lp.leftMargin = dp(24);
-        lp.rightMargin = dp(24);
-        statusPanel.setLayoutParams(lp);
-        return statusPanel;
-    }
-
-    /** No outline: it is a thing to tap, not a second panel inside the first. */
-    private MaterialButton quietButton(int text, Runnable action) {
-        final MaterialButton b = new MaterialButton(this, null,
-                androidx.appcompat.R.attr.borderlessButtonStyle);
-        b.setText(text);
-        b.setOnClickListener(v -> action.run());
-        return b;
-    }
-
     @Override
-    public void status(String text, boolean ended) {
+    public void status(Backend.State state, String detail) {
         if (statusPanel == null) {
             return;
         }
-        statusText.setText(text);
-        statusPanel.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
+        final Session.Status s = Session.Status.of(this, state, detail);
+        final int panel = s.text().isEmpty() ? View.GONE : View.VISIBLE;
+        statusText.setText(s.text());
+        statusPanel.setVisibility(panel);
+        scrim.setVisibility(panel);
         // Only where there is something to act on. A session still connecting
         // has nothing to reconnect and nothing yet to explain.
-        statusActions.setVisibility(ended ? View.VISIBLE : View.GONE);
-        // The three states this screen has are exactly what these two lines
-        // read off one string and one flag: connected says nothing and shows
-        // the desktop, working says something and turns, ended says something
-        // and stops.
-        loading.setVisibility(!ended && !text.isEmpty() ? View.VISIBLE : View.GONE);
-        scrim.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
+        statusActions.setVisibility(s.ended() ? View.VISIBLE : View.GONE);
+        loading.setVisibility(s.working() ? View.VISIBLE : View.GONE);
     }
 
     /** What a session is "of", so a second screen for it re-attaches. */
@@ -660,10 +555,7 @@ public final class SessionActivity extends Activity
             panel.dismiss();
             panel = null;
         }
-        for (AlertDialog d : new ArrayList<>(dialogs)) {
-            d.dismiss();
-        }
-        dialogs.clear();
+        dialogs.dismissAll();
         if (session != null && view != null) {
             session.detach(view);
         }
@@ -705,7 +597,7 @@ public final class SessionActivity extends Activity
             leave();
             return;
         }
-        leaving = track(new MaterialAlertDialogBuilder(this, R.style.ThemeOverlay_RemoteDesktop_Dialog)
+        leaving = dialogs.track(Dialogs.builder(this)
                 .setMessage(getString(R.string.session_disconnect_confirm))
                 .setNegativeButton(android.R.string.cancel, null)
                 // The third answer to "are you leaving": neither, another one as
@@ -751,33 +643,6 @@ public final class SessionActivity extends Activity
     }
 
     private AlertDialog leaving;
-
-    /**
-     * Every dialog this screen puts up, so that {@link #onDestroy} can take
-     * them down: one still showing when its activity goes is a leaked window.
-     */
-    private final List<AlertDialog> dialogs = new ArrayList<>();
-
-    private AlertDialog track(AlertDialog d) {
-        return track(d, null);
-    }
-
-    /**
-     * A dialog has exactly <em>one</em> dismiss listener, and this method owns
-     * it — so a caller that needs to know when its dialog goes hands the work in
-     * here rather than setting one of its own, which would silently replace this
-     * one or be replaced by it depending on the order.
-     */
-    private AlertDialog track(AlertDialog d, DialogInterface.OnDismissListener also) {
-        dialogs.add(d);
-        d.setOnDismissListener(x -> {
-            dialogs.remove(d);
-            if (also != null) {
-                also.onDismiss(x);
-            }
-        });
-        return d;
-    }
 
     /**
      * The connection panel: the session's facts and the options it can still be
@@ -872,121 +737,25 @@ public final class SessionActivity extends Activity
         disconnectRequested();
     }
 
-    // ---- Prompt.Handler -----------------------------------------------------
-
-    /**
-     * A tick box for a dialog, built against the dialog's own theme.
-     *
-     * <p>Both of those matter and neither is decoration. A plain
-     * {@code android.widget.CheckBox} built from an activity is the framework's,
-     * not Material's: different metrics, and a tint from the activity rather
-     * than from the surface it ends up on. And the box is drawn at the view's
-     * left edge with the label after it, so the padding that lines it up with
-     * the dialog's own text belongs on whatever contains it — put here, it
-     * moves the box and leaves the label where it was.
-     */
-    private MaterialCheckBox checkBox(int text) {
-        final MaterialCheckBox box = new MaterialCheckBox(
-                new ContextThemeWrapper(this, R.style.ThemeOverlay_RemoteDesktop_Dialog));
-        box.setText(text);
-        box.setPadding(0, box.getPaddingTop(), box.getPaddingRight(), box.getPaddingBottom());
-        return box;
-    }
-
-    /** What the dialog indents its title and message by, so a view can match. */
-    private int dialogPadding() {
-        final TypedArray a = new ContextThemeWrapper(this, R.style.ThemeOverlay_RemoteDesktop_Dialog)
-                .obtainStyledAttributes(new int[]{androidx.appcompat.R.attr.dialogPreferredPadding});
-        final int pad = a.getDimensionPixelSize(0, dp(24));
-        a.recycle();
-        return pad;
-    }
-
-    /**
-     * A box to type in, in the shape every other form in this app uses — the
-     * option row's own layout, so a password is asked for the way an address
-     * is. Built whether or not it is wanted, since the caller reads it either
-     * way and an unasked field answers with the empty string.
-     */
-    private EditText field(LinearLayout form, int hint, int inputType, boolean wanted) {
-        final TextInputLayout box = (TextInputLayout) getLayoutInflater()
-                .inflate(R.layout.item_option_text, form, false);
-        box.setHint(hint);
-        final TextInputEditText text = box.findViewById(R.id.value);
-        text.setInputType(inputType);
-        if (wanted) {
-            ((ViewGroup.MarginLayoutParams) box.getLayoutParams()).bottomMargin = dp(8);
-            form.addView(box);
-        }
-        return text;
-    }
-
-    @Override
-    public void credentials(Prompt.Credentials prompt) {
-        final LinearLayout form = new LinearLayout(this);
-        form.setOrientation(LinearLayout.VERTICAL);
-        final int pad = dialogPadding();
-        form.setPadding(pad, dp(8), pad, 0);
-
-        if (prompt.instructions != null && !prompt.instructions.isEmpty()) {
-            final TextView note = new TextView(this);
-            note.setText(prompt.instructions);
-            form.addView(note);
-        }
-        // Only the fields the scheme actually has. VncAuth has no user name,
-        // and a box for one is a question nobody can answer.
-        final EditText user = field(form, R.string.prompt_username,
-                InputType.TYPE_CLASS_TEXT, prompt.needsUserName);
-        user.setText(prompt.userName);
-        final EditText pass = field(form, R.string.prompt_password,
-                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD,
-                prompt.needsPassword);
-        if (prompt.catchphrase != null && !prompt.catchphrase.isEmpty()) {
-            final TextView id = new TextView(this);
-            id.setText(getString(R.string.prompt_catchphrase, prompt.catchphrase));
-            form.addView(id);
-        }
-        // Only for a saved connection: there is nowhere else to put the answer.
-        // Ours rather than the core's own credential store, which offers to save
-        // after a *failed* attempt as well as a successful one.
-        final MaterialCheckBox remember = checkBox(R.string.prompt_remember_password);
-        if (connection != null && prompt.needsPassword) {
-            form.addView(remember);
-        }
-
-        show(new MaterialAlertDialogBuilder(this, R.style.ThemeOverlay_RemoteDesktop_Dialog)
-                .setTitle(prompt.address != null && !prompt.address.isEmpty()
-                        ? prompt.address : getString(R.string.prompt_credentials_title))
-                .setView(form)
-                .setPositiveButton(R.string.prompt_connect, (d, w) -> {
-                    final String u = prompt.needsUserName ? user.getText().toString() : null;
-                    final String p = prompt.needsPassword ? pass.getText().toString() : null;
-                    if (remember.isChecked()) {
-                        // Held, not saved: what was typed is only known to be
-                        // right once the connection comes up.
-                        pendingUser = u;
-                        pendingPassword = p;
-                    }
-                    prompt.answer(u, p);
-                })
-                .setNegativeButton(android.R.string.cancel, (d, w) -> decline(prompt)), prompt);
-    }
+    // ---- PromptDialogs.Host -------------------------------------------------
 
     private String pendingUser;
     private String pendingPassword;
 
-    /**
-     * Whether the session ended because a prompt was declined. A connection that
-     * fails on its own deserves its message on screen; a cancelled prompt is an
-     * answer already given, and leaving "Disconnected" over a black screen for
-     * it means pressing back to leave a room you just left.
-     */
+    @Override
+    public void rememberCredentials(String userName, String password) {
+        pendingUser = userName;
+        pendingPassword = password;
+    }
+
+    /** @see PromptDialogs.Host#promptDeclined() */
     private boolean declined;
 
-    /**
-     * Credentials typed into a prompt with "remember" ticked, written to the
-     * connection once — and only once — the far end has accepted them.
-     */
+    @Override
+    public void promptDeclined() {
+        declined = true;
+    }
+
     @Override
     public void disconnected() {
         // Declined at a prompt, or disconnected on purpose — from the region, the
@@ -1006,7 +775,7 @@ public final class SessionActivity extends Activity
         }
         msg.append(getResources().getQuantityString(R.plurals.paste_confirm,
                 characters, characters));
-        track(new MaterialAlertDialogBuilder(this, R.style.ThemeOverlay_RemoteDesktop_Dialog)
+        dialogs.track(Dialogs.builder(this)
                 .setTitle(R.string.paste_title)
                 .setMessage(msg.toString())
                 .setNegativeButton(android.R.string.cancel, null)
@@ -1038,10 +807,10 @@ public final class SessionActivity extends Activity
         if (view == null || !AppSettings.regionHints(this)) {
             return;
         }
-        final MaterialCheckBox never = checkBox(R.string.hints_dismiss);
+        final MaterialCheckBox never = Dialogs.checkBox(this, R.string.hints_dismiss);
         final LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dialogPadding(), dp(8), dialogPadding(), 0);
+        box.setPadding(Dialogs.padding(this), Dialogs.dp(this, 8), Dialogs.padding(this), 0);
 
         // The choice, previewed live behind the dialog as it is made: this is
         // the one dialog in the app with no scrim, precisely so that the thing
@@ -1069,8 +838,7 @@ public final class SessionActivity extends Activity
         box.addView(never);
         previewControls();
 
-        final AlertDialog dialog = new MaterialAlertDialogBuilder(this,
-                R.style.ThemeOverlay_RemoteDesktop_Dialog)
+        final AlertDialog dialog = Dialogs.builder(this)
                 .setTitle(R.string.hints_title)
                 .setMessage(R.string.hints_message)
                 .setView(box)
@@ -1088,7 +856,7 @@ public final class SessionActivity extends Activity
         // The choice is saved as it is made, whether or not the box is ticked:
         // they are different questions, and the dialog has always had a checkbox
         // for one of them only.
-        track(dialog, d -> {
+        dialogs.track(dialog, d -> {
             if (never.isChecked()) {
                 AppSettings.setRegionHints(this, false);
             }
@@ -1115,6 +883,10 @@ public final class SessionActivity extends Activity
                 TapRegions.MOUSE, getString(R.string.hints_region_mouse)) : null);
     }
 
+    /**
+     * Credentials typed into a prompt with "remember" ticked, written to the
+     * connection once — and only once — the far end has accepted them.
+     */
     @Override
     public void connected() {
         if (connection == null || pendingPassword == null) {
@@ -1129,84 +901,5 @@ public final class SessionActivity extends Activity
         Connections.save(this, connection);
         pendingUser = null;
         pendingPassword = null;
-    }
-
-    @Override
-    public void trust(Prompt.Trust prompt) {
-        final StringBuilder sb = new StringBuilder();
-        // OK, PRESHARED and ARD say nothing: this prompt is up because
-        // something else about the connection is worth asking about.
-        final String why = switch (prompt.identity) {
-            case CHANGED -> getString(R.string.prompt_trust_changed);
-            case MATCHES_ANOTHER -> getString(R.string.prompt_trust_another,
-                    prompt.matchingAddress != null && !prompt.matchingAddress.isEmpty()
-                            ? prompt.matchingAddress
-                            : getString(R.string.prompt_trust_another_address));
-            case NEW -> getString(R.string.prompt_trust_new);
-            case MISSING -> getString(R.string.prompt_trust_missing);
-            case OK, PRESHARED, ARD -> "";
-        };
-        if (!why.isEmpty()) {
-            sb.append(why).append("\n\n");
-        }
-        if (prompt.encryption == Prompt.Trust.Encryption.UNENCRYPTED_WARN) {
-            sb.append(getString(R.string.prompt_unencrypted)).append("\n\n");
-        }
-        if (prompt.catchphrase != null && !prompt.catchphrase.isEmpty()) {
-            sb.append(getString(R.string.prompt_catchphrase, prompt.catchphrase)).append('\n');
-        }
-        if (prompt.signature != null && !prompt.signature.isEmpty()) {
-            sb.append(getString(R.string.prompt_signature, prompt.signature));
-        }
-
-        final MaterialCheckBox remember = checkBox(R.string.prompt_remember_server);
-        remember.setChecked(prompt.identity != Prompt.Trust.Identity.CHANGED);
-        final LinearLayout box = new LinearLayout(this);
-        box.setPadding(dialogPadding(), dp(8), dialogPadding(), 0);
-        box.addView(remember);
-
-        show(new MaterialAlertDialogBuilder(this, R.style.ThemeOverlay_RemoteDesktop_Dialog)
-                .setTitle(prompt.address != null ? prompt.address
-                        : getString(R.string.prompt_trust_title))
-                .setMessage(sb.toString())
-                .setView(box)
-                .setPositiveButton(R.string.prompt_continue,
-                        (d, w) -> prompt.answer(true, remember.isChecked()))
-                .setNegativeButton(android.R.string.cancel, (d, w) -> decline(prompt)), prompt);
-    }
-
-    @Override
-    public void message(Prompt.Message prompt) {
-        final MaterialAlertDialogBuilder b = new MaterialAlertDialogBuilder(this, R.style.ThemeOverlay_RemoteDesktop_Dialog)
-                .setMessage(prompt.text)
-                .setPositiveButton(prompt.confirmLabel != null ? prompt.confirmLabel
-                                : getString(android.R.string.ok),
-                        (d, w) -> prompt.answer(true));
-        if (prompt.question) {
-            b.setNegativeButton(android.R.string.cancel, (d, w) -> prompt.answer(false));
-        }
-        show(b, prompt);
-    }
-
-    /**
-     * A dismissed dialog still owes the core an answer — the session is
-     * blocked until it gets one — so cancelling counts as declining.
-     */
-    private void show(AlertDialog.Builder builder, Prompt prompt) {
-        final AlertDialog dialog = builder.create();
-        dialog.setOnCancelListener((DialogInterface d) -> decline(prompt));
-        track(dialog);
-        dialog.show();
-    }
-
-    /** Say no, and remember that it was us who did. */
-    private void decline(Prompt prompt) {
-        declined = true;
-        prompt.cancel();
-    }
-
-    private int dp(float v) {
-        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v,
-                getResources().getDisplayMetrics()));
     }
 }

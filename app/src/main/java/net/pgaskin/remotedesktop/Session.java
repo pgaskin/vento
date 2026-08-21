@@ -105,8 +105,56 @@ public final class Session implements Backend.Listener, Prompt.Handler {
     private final Map<String, String> openedWith;
     private final int notification = nextNotification++;
 
+    /**
+     * Where a callback goes when no screen is attached, so that "nobody is
+     * looking" is a state this class can be in rather than a condition each of
+     * nine forwarding methods has to remember to test.
+     *
+     * <p>Nothing here is owed an answer except the clipboard, which is a pull
+     * rather than a push: null is all a session with no screen has to give,
+     * since the cache the answer comes out of is the view's.
+     */
+    private static final Backend.Listener NOBODY = new Backend.Listener() {
+        @Override
+        public void state(Backend.State state, String detail) {
+        }
+
+        @Override
+        public void desktopSize(int width, int height) {
+        }
+
+        @Override
+        public void damaged(int x, int y, int width, int height) {
+        }
+
+        @Override
+        public void frameEnd() {
+        }
+
+        @Override
+        public void cursor(Bitmap shape, int hotX, int hotY) {
+        }
+
+        @Override
+        public void pointerMode(boolean relative) {
+        }
+
+        @Override
+        public void bell() {
+        }
+
+        @Override
+        public void clipboardFromRemote(String text) {
+        }
+
+        @Override
+        public String clipboardForRemote() {
+            return null;
+        }
+    };
+
     /** Written on the main thread, read on the protocol's. */
-    private volatile Backend.Listener view;
+    private volatile Backend.Listener view = NOBODY;
     private Prompt.Handler ui;
 
     private final ArrayDeque<Prompt> pending = new ArrayDeque<>();
@@ -160,14 +208,51 @@ public final class Session implements Backend.Listener, Prompt.Handler {
         return state;
     }
 
-    /** What the notification says under the name. */
-    public String status() {
-        final boolean has = detail != null && !detail.isEmpty();
-        return switch (state) {
-            case IDLE, CONNECTING -> has ? detail : context.getString(R.string.session_connecting);
-            case CONNECTED -> subtitle;
-            case CLOSED -> has ? detail : context.getString(R.string.session_disconnected);
-        };
+    /**
+     * What this session has to say for itself, in the one place that decides
+     * it. The notification, the status panel over the desktop and the
+     * connection panel's first line all show this, and three renderings of the
+     * same pair are three chances for them to disagree about what a session is
+     * doing.
+     *
+     * @param text    what to say; empty while a session is running normally,
+     *                which is the whole of "there is nothing to report"
+     * @param ended   whether there is a connection left to act on
+     * @param working whether it is on its way somewhere, so a spinner turns
+     */
+    public record Status(String text, boolean ended, boolean working) {
+
+        /**
+         * One pair, rendered.
+         *
+         * <p>A detail is what a state says <em>about itself</em>, so it cannot
+         * outrank the state: a connected session shows its desktop and nothing
+         * over it, whatever the last message was. Without that rule a screen
+         * re-attaching to a session whose remembered detail is still
+         * "Connecting to …" — the one the backend sent on the way in — puts
+         * that over an hour-old desktop, which is what a phone coming back
+         * from a long sleep did.
+         *
+         * <p>{@code IDLE} reads as {@code CONNECTING} rather than as silence:
+         * a backend that has not said anything yet is one nothing has come
+         * back from, and a blank window is a worse account of that than the
+         * word.
+         */
+        public static Status of(Context ctx, Backend.State state, String detail) {
+            final boolean has = detail != null && !detail.isEmpty();
+            return switch (state) {
+                case IDLE, CONNECTING -> new Status(
+                        has ? detail : ctx.getString(R.string.session_connecting), false, true);
+                case CONNECTED -> new Status("", false, false);
+                case CLOSED -> new Status(
+                        has ? detail : ctx.getString(R.string.session_disconnected), true, false);
+            };
+        }
+    }
+
+    /** @see Status */
+    public Status status() {
+        return Status.of(context, state, detail);
     }
 
     /** What this session is of, which is what {@link Sessions} keys it by. */
@@ -255,7 +340,7 @@ public final class Session implements Backend.Listener, Prompt.Handler {
             // handler are the live ones, and the two are set together.
             return;
         }
-        view = null;
+        view = NOBODY;
         ui = null;
     }
 
@@ -458,15 +543,12 @@ public final class Session implements Backend.Listener, Prompt.Handler {
 
     private void report(Backend.State s, String d) {
         state = s;
-        // A detail is what a state says about itself and cannot outlive it: a
-        // backend that reports its progress — RealVNC's core says it is
-        // generating a key — sends the last of those after the session is up,
-        // and a notification that kept it said so for the rest of the hour.
+        // Dropped rather than merely not shown, which Status already does:
+        // this is the detail close() reports CLOSED with, and a backend's last
+        // word before it came up — RealVNC's core says it is generating a key
+        // — is not why the session ended an hour later.
         detail = s == Backend.State.CONNECTED ? null : d;
-        final Backend.Listener v = view;
-        if (v != null) {
-            v.state(s, d);
-        }
+        view.state(s, d);
         // The service is watching the set rather than this session, and an
         // ended session is no longer in what it counts — so a last session
         // ending is what stops it. Deliberately not close(): the screen, if
@@ -479,26 +561,17 @@ public final class Session implements Backend.Listener, Prompt.Handler {
     public void desktopSize(int width, int height) {
         desktopW = width;
         desktopH = height;
-        final Backend.Listener v = view;
-        if (v != null) {
-            v.desktopSize(width, height);
-        }
+        view.desktopSize(width, height);
     }
 
     @Override
     public void damaged(int x, int y, int width, int height) {
-        final Backend.Listener v = view;
-        if (v != null) {
-            v.damaged(x, y, width, height);
-        }
+        view.damaged(x, y, width, height);
     }
 
     @Override
     public void frameEnd() {
-        final Backend.Listener v = view;
-        if (v != null) {
-            v.frameEnd();
-        }
+        view.frameEnd();
     }
 
     @Override
@@ -506,43 +579,27 @@ public final class Session implements Backend.Listener, Prompt.Handler {
         cursor = shape;
         cursorHotX = hotX;
         cursorHotY = hotY;
-        final Backend.Listener v = view;
-        if (v != null) {
-            v.cursor(shape, hotX, hotY);
-        }
+        view.cursor(shape, hotX, hotY);
     }
 
     @Override
     public void pointerMode(boolean relative) {
-        final Backend.Listener v = view;
-        if (v != null) {
-            v.pointerMode(relative);
-        }
+        view.pointerMode(relative);
     }
 
     @Override
     public void bell() {
-        final Backend.Listener v = view;
-        if (v != null) {
-            v.bell();
-        }
+        view.bell();
     }
 
     @Override
     public void clipboardFromRemote(String text) {
-        final Backend.Listener v = view;
-        if (v != null) {
-            v.clipboardFromRemote(text);
-        }
-        // With no screen attached there is nowhere to put it: the clipboard is
-        // the view's (SessionClipboard), and an app without focus may not write
-        // one anyway.
+        view.clipboardFromRemote(text);
     }
 
     @Override
     public String clipboardForRemote() {
-        final Backend.Listener v = view;
-        return v != null ? v.clipboardForRemote() : null;
+        return view.clipboardForRemote();
     }
 
     // ---- Prompt.Handler: queue, then ask -----------------------------------
