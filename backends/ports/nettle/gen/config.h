@@ -22,7 +22,7 @@
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #define HAVE_DLFCN_H 1
 
-/* Define to 1 if you have the `elf_aux_info' function. */
+/* Define to 1 if you have the 'elf_aux_info' function. */
 /* #undef HAVE_ELF_AUX_INFO */
 
 /* Define if fcntl file locking is available */
@@ -31,7 +31,7 @@
 /* Define if the compiler understands __attribute__ */
 #define HAVE_GCC_ATTRIBUTE 1
 
-/* Define to 1 if you have the `getline' function. */
+/* Define to 1 if you have the 'getline' function. */
 #define HAVE_GETLINE 1
 
 /* Define to 1 if you have the <inttypes.h> header file. */
@@ -40,7 +40,7 @@
 /* Define to 1 if you have dlopen (with -ldl). */
 #define HAVE_LIBDL 1
 
-/* Define to 1 if you have the `gmp' library (-lgmp). */
+/* Define to 1 if you have the 'gmp' library (-lgmp). */
 /* #undef HAVE_LIBGMP */
 
 /* Define if compiler and linker supports __attribute__ ifunc */
@@ -120,7 +120,7 @@
 /* Define to 1 if you have the <openssl/rsa.h> header file. */
 /* #undef HAVE_OPENSSL_RSA_H */
 
-/* Define to 1 if you have the `secure_getenv' function. */
+/* Define to 1 if you have the 'secure_getenv' function. */
 /* #undef HAVE_SECURE_GETENV */
 
 /* Define to 1 if you have the <stdint.h> header file. */
@@ -157,7 +157,7 @@
 #define PACKAGE_NAME "nettle"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "nettle 3.10.2"
+#define PACKAGE_STRING "nettle 4.0"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "nettle"
@@ -166,12 +166,12 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "3.10.2"
+#define PACKAGE_VERSION "4.0"
 
-/* The size of `long', as computed by sizeof. */
+/* The size of 'long', as computed by sizeof. */
 #define SIZEOF_LONG 8
 
-/* The size of `size_t', as computed by sizeof. */
+/* The size of 'size_t', as computed by sizeof. */
 #define SIZEOF_SIZE_T 8
 
 /* If using the C implementation of alloca, define if you know the
@@ -182,7 +182,7 @@
 	STACK_DIRECTION = 0 => direction of growth unknown */
 /* #undef STACK_DIRECTION */
 
-/* Define to 1 if all of the C90 standard headers exist (not just the ones
+/* Define to 1 if all of the C89 standard headers exist (not just the ones
    required in a freestanding environment). This macro is provided for
    backward compatibility; new code need not use it. */
 #define STDC_HEADERS 1
@@ -208,22 +208,22 @@
 # endif
 #endif
 
-/* Define to empty if `const' does not conform to ANSI C. */
+/* Define to empty if 'const' does not conform to ANSI C. */
 /* #undef const */
 
-/* Define to `int' if <sys/types.h> doesn't define. */
+/* Define as 'int' if <sys/types.h> doesn't define. */
 /* #undef gid_t */
 
-/* Define to `__inline__' or `__inline' if that's what the C compiler
+/* Define to '__inline__' or '__inline' if that's what the C compiler
    calls it, or to nothing if 'inline' is not supported under any name.  */
 #ifndef __cplusplus
 /* #undef inline */
 #endif
 
-/* Define to `unsigned int' if <sys/types.h> does not define. */
+/* Define as 'unsigned int' if <stddef.h> doesn't define. */
 /* #undef size_t */
 
-/* Define to `int' if <sys/types.h> doesn't define. */
+/* Define as 'int' if <sys/types.h> doesn't define. */
 /* #undef uid_t */
 
 /* AIX requires this to be the first thing in the file.  */

@@ -4,13 +4,9 @@
 set(NETTLE_SOURCES
         aes-decrypt-internal.c
         aes-decrypt-table.c
-        aes-decrypt.c
         aes-encrypt-internal.c
         aes-encrypt-table.c
-        aes-encrypt.c
         aes-invert-internal.c
-        aes-set-decrypt-key.c
-        aes-set-encrypt-key.c
         aes-set-key-internal.c
         aes128-decrypt.c
         aes128-encrypt.c
@@ -37,13 +33,10 @@ set(NETTLE_SOURCES
         balloon.c
         base16-decode.c
         base16-encode.c
-        base16-meta.c
         base64-decode.c
         base64-encode.c
-        base64-meta.c
         base64url-decode.c
         base64url-encode.c
-        base64url-meta.c
         blowfish-bcrypt.c
         blowfish.c
         buffer-init.c
@@ -95,7 +88,6 @@ set(NETTLE_SOURCES
         eax-aes128-meta.c
         eax-aes128.c
         eax.c
-        gcm-aes.c
         gcm-aes128-meta.c
         gcm-aes128.c
         gcm-aes192-meta.c
@@ -117,6 +109,7 @@ set(NETTLE_SOURCES
         hkdf.c
         hmac-gosthash94-meta.c
         hmac-gosthash94.c
+        hmac-internal.c
         hmac-md5-meta.c
         hmac-md5.c
         hmac-ripemd160-meta.c
@@ -135,13 +128,11 @@ set(NETTLE_SOURCES
         hmac-sm3.c
         hmac-streebog-meta.c
         hmac-streebog.c
-        hmac.c
         knuth-lfib.c
         md2-meta.c
         md2.c
         md4-meta.c
         md4.c
-        md5-compat.c
         md5-meta.c
         md5.c
         memeql-sec.c
@@ -149,7 +140,6 @@ set(NETTLE_SOURCES
         memxor3.c
         nettle-lookup-hash.c
         nettle-meta-aeads.c
-        nettle-meta-armors.c
         nettle-meta-ciphers.c
         nettle-meta-hashes.c
         nettle-meta-macs.c
@@ -215,6 +205,19 @@ set(NETTLE_SOURCES
         siv-gcm.c
         siv-ghash-set-key.c
         siv-ghash-update.c
+        slh-dsa-128f.c
+        slh-dsa-128s.c
+        slh-dsa-sha2-128f.c
+        slh-dsa-sha2-128s.c
+        slh-dsa-shake-128f.c
+        slh-dsa-shake-128s.c
+        slh-dsa.c
+        slh-fors.c
+        slh-merkle.c
+        slh-sha256.c
+        slh-shake.c
+        slh-wots.c
+        slh-xmss.c
         sm3-meta.c
         sm3.c
         sm4-meta.c
@@ -259,15 +262,9 @@ set(HOGWEED_SOURCES
         der-iterator.c
         der2dsa.c
         der2rsa.c
-        dsa-compat-keygen.c
-        dsa-compat.c
         dsa-gen-params.c
         dsa-hash.c
         dsa-keygen.c
-        dsa-sha1-sign.c
-        dsa-sha1-verify.c
-        dsa-sha256-sign.c
-        dsa-sha256-verify.c
         dsa-sign.c
         dsa-verify.c
         dsa.c
@@ -338,7 +335,6 @@ set(HOGWEED_SOURCES
         gostdsa-vko.c
         mini-gmp.c
         oaep.c
-        pgp-encode.c
         pkcs1-decrypt.c
         pkcs1-encrypt.c
         pkcs1-rsa-digest.c
@@ -350,7 +346,6 @@ set(HOGWEED_SOURCES
         pkcs1.c
         pss-mgf1.c
         pss.c
-        rsa-blind.c
         rsa-decrypt-tr.c
         rsa-decrypt.c
         rsa-encrypt.c
@@ -382,7 +377,6 @@ set(HOGWEED_SOURCES
         rsa-sign.c
         rsa-verify.c
         rsa.c
-        rsa2openpgp.c
         rsa2sexp.c
         sec-add-1.c
         sec-sub-1.c
@@ -419,7 +413,6 @@ set(NETTLE_HEADERS
         curve448.h
         des.h
         drbg-ctr.h
-        dsa-compat.h
         dsa.h
         eax.h
         ecc-curve.h
@@ -435,7 +428,6 @@ set(NETTLE_HEADERS
         macros.h
         md2.h
         md4.h
-        md5-compat.h
         md5.h
         memops.h
         memxor.h
@@ -445,7 +437,6 @@ set(NETTLE_HEADERS
         nist-keywrap.h
         ocb.h
         pbkdf2.h
-        pgp.h
         pkcs1.h
         poly1305.h
         pss-mgf1.h
@@ -456,12 +447,12 @@ set(NETTLE_HEADERS
         salsa20.h
         serpent.h
         sexp.h
-        sha.h
         sha1.h
         sha2.h
         sha3.h
         siv-cmac.h
         siv-gcm.h
+        slh-dsa.h
         sm3.h
         sm4.h
         streebog.h

@@ -5,7 +5,7 @@
 # answers already written down.
 #
 # Both libraries are built whole. What a protocol actually calls is a few
-# dozen of the 388 objects — the rest cost link time and nothing in the APK,
+# dozen of the 382 objects — the rest cost link time and nothing in the APK,
 # since a static archive contributes only the members something references.
 
 set(NETTLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/nettle")
@@ -41,6 +41,11 @@ foreach(target nettle hogweed)
     # Upstream builds with these off; they are somebody else's warnings.
     target_compile_options(${target} PRIVATE -Wno-unused-parameter -Wno-sign-compare)
 endforeach()
+
+# An answer configure writes into CFLAGS rather than config.h, so gen/ cannot
+# carry it: under --enable-mini-gmp upstream leaves out mini-gmp's conversions
+# between an mpz and a double. Nothing here calls them; this keeps it that way.
+target_compile_definitions(hogweed PRIVATE MINI_GMP_ENABLE_FLOAT=0)
 
 # Hogweed is the public-key half and is no use without the symmetric one.
 target_link_libraries(hogweed PUBLIC nettle)
