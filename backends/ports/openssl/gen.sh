@@ -16,6 +16,10 @@
 # NDK below.
 set -eu
 
+# Every list below is sorted, and what `sort` thinks of an underscore is a
+# question of locale; the answer that is the same everywhere is C's.
+export LC_ALL=C
+
 cd "$(dirname "$0")"
 port=$PWD
 root=$(cd ../../.. && pwd)
@@ -30,7 +34,18 @@ for m in FindBin IPC::Cmd Time::Piece Pod::Usage; do
         echo "error: OpenSSL's Configure needs perl's $m (fedora: perl-core)" >&2; exit 1; }
 done
 
-tmp=$(mktemp -d)
+# The build date is compiled in, as OpenSSL_version(OPENSSL_BUILT_ON), and
+# today is a diff on every rerun; the date of the commit the pin names is not.
+SOURCE_DATE_EPOCH=$(git -C "$src" log -1 --format=%ct \
+    "$(git -C "$root" rev-parse :third_party/openssl)")
+export SOURCE_DATE_EPOCH
+
+# Under the port rather than under mktemp: the Makefile writes the path it read
+# each template from into the header it generated, relative to where it ran,
+# and a build directory in a fixed place is what makes that path the same on
+# every machine. `build` is a name .gitignore already knows.
+tmp=$port/build
+rm -rf "$tmp" && mkdir -p "$tmp"
 trap 'rm -rf "$tmp"' EXIT
 
 abis="arm64-v8a x86_64"
@@ -102,7 +117,9 @@ done
 # grouped by the archive they are compiled for, because that is what the include
 # paths and the defines are per. Read out of the Makefile's own rules: the first
 # prerequisite of an object is what compiles into it, which is the only place
-# that says whether a name came from the tree or from a generator.
+# that says whether a name came from the tree or from a generator — by where
+# the path leads rather than by where the checkout is, since the Makefile
+# writes it relative to the build directory.
 #
 # The -D flags come out of the same rule, and are per group rather than a union
 # over the build: `aes_platform.h` and three provider files read these macros,
@@ -112,7 +129,7 @@ for abi in $abis; do
     cd "$tmp/$abi"
     # The archive an object goes into is the first two fields of its name, not
     # everything before the last dash: half the assembly is called aes-gcm-armv8.
-    awk -v src="$src/" '
+    awk -v src="third_party/openssl/" '
         /^[^ \t].*\.o:/ { obj = $1; sub(/:$/, "", obj); dep = $2 }
         /^\t\$\(CC\)/ && obj != "" {
             n = split(obj, path, "/"); split(path[n], name, "-")

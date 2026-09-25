@@ -38,11 +38,18 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/asn1/a_i2d_fp.c
         crypto/asn1/a_int.c
         crypto/asn1/a_mbstr.c
-        crypto/asn1/ameth_lib.c
         crypto/asn1/a_object.c
         crypto/asn1/a_octet.c
         crypto/asn1/a_print.c
         crypto/asn1/a_sign.c
+        crypto/asn1/a_strex.c
+        crypto/asn1/a_strnid.c
+        crypto/asn1/a_time.c
+        crypto/asn1/a_type.c
+        crypto/asn1/a_utctm.c
+        crypto/asn1/a_utf8.c
+        crypto/asn1/a_verify.c
+        crypto/asn1/ameth_lib.c
         crypto/asn1/asn1_err.c
         crypto/asn1/asn1_gen.c
         crypto/asn1/asn1_item_list.c
@@ -52,19 +59,11 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/asn1/asn_moid.c
         crypto/asn1/asn_mstbl.c
         crypto/asn1/asn_pack.c
-        crypto/asn1/a_strex.c
-        crypto/asn1/a_strnid.c
-        crypto/asn1/a_time.c
-        crypto/asn1/a_type.c
-        crypto/asn1/a_utctm.c
-        crypto/asn1/a_utf8.c
-        crypto/asn1/a_verify.c
         crypto/asn1/bio_asn1.c
         crypto/asn1/bio_ndef.c
         crypto/asn1/d2i_param.c
         crypto/asn1/d2i_pr.c
         crypto/asn1/d2i_pu.c
-        crypto/asn1_dsa.c
         crypto/asn1/evp_asn1.c
         crypto/asn1/f_int.c
         crypto/asn1/f_string.c
@@ -75,6 +74,9 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/asn1/p5_pbev2.c
         crypto/asn1/p5_scrypt.c
         crypto/asn1/p8_pkey.c
+        crypto/asn1/t_bitst.c
+        crypto/asn1/t_pkey.c
+        crypto/asn1/t_spki.c
         crypto/asn1/tasn_dec.c
         crypto/asn1/tasn_enc.c
         crypto/asn1/tasn_fre.c
@@ -83,9 +85,6 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/asn1/tasn_scn.c
         crypto/asn1/tasn_typ.c
         crypto/asn1/tasn_utl.c
-        crypto/asn1/t_bitst.c
-        crypto/asn1/t_pkey.c
-        crypto/asn1/t_spki.c
         crypto/asn1/x_algor.c
         crypto/asn1/x_bignum.c
         crypto/asn1/x_info.c
@@ -95,6 +94,7 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/asn1/x_sig.c
         crypto/asn1/x_spki.c
         crypto/asn1/x_val.c
+        crypto/asn1_dsa.c
         crypto/async/arch/async_null.c
         crypto/async/arch/async_posix.c
         crypto/async/arch/async_win.c
@@ -119,8 +119,8 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/bio/bio_lib.c
         crypto/bio/bio_meth.c
         crypto/bio/bio_print.c
-        crypto/bio/bio_sock2.c
         crypto/bio/bio_sock.c
+        crypto/bio/bio_sock2.c
         crypto/bio/bss_acpt.c
         crypto/bio/bss_bio.c
         crypto/bio/bss_conn.c
@@ -144,8 +144,8 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/bn/bn_dh.c
         crypto/bn/bn_div.c
         crypto/bn/bn_err.c
-        crypto/bn/bn_exp2.c
         crypto/bn/bn_exp.c
+        crypto/bn/bn_exp2.c
         crypto/bn/bn_gcd.c
         crypto/bn/bn_gf2m.c
         crypto/bn/bn_intern.c
@@ -255,8 +255,8 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/des/des_enc.c
         crypto/des/ecb3_enc.c
         crypto/des/ecb_enc.c
-        crypto/des/fcrypt_b.c
         crypto/des/fcrypt.c
+        crypto/des/fcrypt_b.c
         crypto/des/ofb64ede.c
         crypto/des/ofb64enc.c
         crypto/des/ofb_enc.c
@@ -322,24 +322,24 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/ec/ec_curve.c
         crypto/ec/ec_cvt.c
         crypto/ec/ec_deprecated.c
+        crypto/ec/ec_err.c
+        crypto/ec/ec_key.c
+        crypto/ec/ec_kmeth.c
+        crypto/ec/ec_lib.c
+        crypto/ec/ec_mult.c
+        crypto/ec/ec_oct.c
+        crypto/ec/ec_pmeth.c
+        crypto/ec/ec_print.c
         crypto/ec/ecdh_kdf.c
         crypto/ec/ecdh_ossl.c
         crypto/ec/ecdsa_ossl.c
         crypto/ec/ecdsa_sign.c
         crypto/ec/ecdsa_vrf.c
-        crypto/ec/ec_err.c
-        crypto/ec/ec_key.c
-        crypto/ec/ec_kmeth.c
         crypto/ec/eck_prn.c
-        crypto/ec/ec_lib.c
-        crypto/ec/ec_mult.c
-        crypto/ec/ec_oct.c
-        crypto/ec/ec_pmeth.c
         crypto/ec/ecp_mont.c
         crypto/ec/ecp_nist.c
         crypto/ec/ecp_nistz256.c
         crypto/ec/ecp_oct.c
-        crypto/ec/ec_print.c
         crypto/ec/ecp_sm2p256.c
         crypto/ec/ecp_sm2p256_table.c
         crypto/ec/ecp_smpl.c
@@ -354,10 +354,10 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/encode_decode/encoder_lib.c
         crypto/encode_decode/encoder_meth.c
         crypto/encode_decode/encoder_pkey.c
+        crypto/err/err.c
         crypto/err/err_all.c
         crypto/err/err_all_legacy.c
         crypto/err/err_blocks.c
-        crypto/err/err.c
         crypto/err/err_mark.c
         crypto/err/err_prn.c
         crypto/err/err_save.c
@@ -384,13 +384,10 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/evp/e_bf.c
         crypto/evp/e_camellia.c
         crypto/evp/e_cast.c
-        crypto/evp/ec_ctrl.c
         crypto/evp/e_chacha20_poly1305.c
-        crypto/evp/ec_support.c
-        crypto/evp/e_des3.c
         crypto/evp/e_des.c
+        crypto/evp/e_des3.c
         crypto/evp/e_idea.c
-        crypto/evp/encode.c
         crypto/evp/e_null.c
         crypto/evp/e_old.c
         crypto/evp/e_rc2.c
@@ -399,6 +396,10 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/evp/e_rc5.c
         crypto/evp/e_seed.c
         crypto/evp/e_sm4.c
+        crypto/evp/e_xcbc_d.c
+        crypto/evp/ec_ctrl.c
+        crypto/evp/ec_support.c
+        crypto/evp/encode.c
         crypto/evp/evp_cnf.c
         crypto/evp/evp_enc.c
         crypto/evp/evp_err.c
@@ -409,7 +410,6 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/evp/evp_pkey.c
         crypto/evp/evp_rand.c
         crypto/evp/evp_utils.c
-        crypto/evp/e_xcbc_d.c
         crypto/evp/exchange.c
         crypto/evp/kdf_lib.c
         crypto/evp/kdf_meth.c
@@ -424,28 +424,28 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/evp/legacy_ripemd.c
         crypto/evp/legacy_sha.c
         crypto/evp/legacy_wp.c
-        crypto/evp/mac_lib.c
-        crypto/evp/mac_meth.c
         crypto/evp/m_null.c
         crypto/evp/m_sigver.c
+        crypto/evp/mac_lib.c
+        crypto/evp/mac_meth.c
         crypto/evp/names.c
-        crypto/evp/p5_crpt2.c
         crypto/evp/p5_crpt.c
-        crypto/evp/pbe_scrypt.c
+        crypto/evp/p5_crpt2.c
         crypto/evp/p_dec.c
         crypto/evp/p_enc.c
         crypto/evp/p_legacy.c
         crypto/evp/p_lib.c
-        crypto/evp/pmeth_check.c
-        crypto/evp/pmeth_gn.c
-        crypto/evp/pmeth_lib.c
         crypto/evp/p_open.c
         crypto/evp/p_seal.c
         crypto/evp/p_sign.c
         crypto/evp/p_verify.c
+        crypto/evp/pbe_scrypt.c
+        crypto/evp/pmeth_check.c
+        crypto/evp/pmeth_gn.c
+        crypto/evp/pmeth_lib.c
+        crypto/evp/s_lib.c
         crypto/evp/signature.c
         crypto/evp/skeymgmt_meth.c
-        crypto/evp/s_lib.c
         crypto/ex_data.c
         crypto/ffc/ffc_backend.c
         crypto/ffc/ffc_dh.c
@@ -473,15 +473,15 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/init.c
         crypto/initthread.c
         crypto/kdf/kdf_err.c
-        crypto/lhash/lhash.c
         crypto/lhash/lh_stats.c
+        crypto/lhash/lhash.c
         crypto/md4/md4_dgst.c
         crypto/md4/md4_one.c
         crypto/md5/md5_dgst.c
         crypto/md5/md5_one.c
         crypto/md5/md5_sha1.c
-        crypto/mdc2/mdc2dgst.c
         crypto/mdc2/mdc2_one.c
+        crypto/mdc2/mdc2dgst.c
         crypto/mem.c
         crypto/mem_sec.c
         crypto/ml_dsa/ml_dsa_encoders.c
@@ -505,11 +505,16 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/modes/wrap128.c
         crypto/modes/xts128.c
         crypto/modes/xts128gb.c
+        crypto/o_dir.c
+        crypto/o_fopen.c
+        crypto/o_init.c
+        crypto/o_str.c
+        crypto/o_time.c
+        crypto/objects/o_names.c
         crypto/objects/obj_dat.c
         crypto/objects/obj_err.c
         crypto/objects/obj_lib.c
         crypto/objects/obj_xref.c
-        crypto/objects/o_names.c
         crypto/ocsp/ocsp_asn.c
         crypto/ocsp/ocsp_cl.c
         crypto/ocsp/ocsp_err.c
@@ -520,11 +525,6 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/ocsp/ocsp_srv.c
         crypto/ocsp/ocsp_vfy.c
         crypto/ocsp/v3_ocsp.c
-        crypto/o_dir.c
-        crypto/o_fopen.c
-        crypto/o_init.c
-        crypto/o_str.c
-        crypto/o_time.c
         crypto/packet.c
         crypto/param_build.c
         crypto/param_build_set.c
@@ -584,16 +584,16 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/rand/prov_seed.c
         crypto/rand/rand_deprecated.c
         crypto/rand/rand_err.c
-        crypto/rand/randfile.c
         crypto/rand/rand_lib.c
         crypto/rand/rand_meth.c
         crypto/rand/rand_pool.c
         crypto/rand/rand_uniform.c
+        crypto/rand/randfile.c
         crypto/rc2/rc2_cbc.c
-        crypto/rc2/rc2cfb64.c
         crypto/rc2/rc2_ecb.c
-        crypto/rc2/rc2ofb64.c
         crypto/rc2/rc2_skey.c
+        crypto/rc2/rc2cfb64.c
+        crypto/rc2/rc2ofb64.c
         crypto/rc4/rc4_enc.c
         crypto/rc4/rc4_skey.c
         crypto/ripemd/rmd_dgst.c
@@ -630,8 +630,8 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/seed/seed_ecb.c
         crypto/seed/seed_ofb.c
         crypto/self_test_core.c
-        crypto/sha/sha1dgst.c
         crypto/sha/sha1_one.c
+        crypto/sha/sha1dgst.c
         crypto/sha/sha256.c
         crypto/sha/sha3.c
         crypto/sha/sha512.c
@@ -688,12 +688,12 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/ts/ts_rsp_verify.c
         crypto/ts/ts_verify_ctx.c
         crypto/txt_db/txt_db.c
-        crypto/uid.c
         crypto/ui/ui_err.c
         crypto/ui/ui_lib.c
         crypto/ui/ui_null.c
         crypto/ui/ui_openssl.c
         crypto/ui/ui_util.c
+        crypto/uid.c
         crypto/whrlpool/wp_block.c
         crypto/whrlpool/wp_dgst.c
         crypto/x509/by_dir.c
@@ -727,7 +727,6 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/x509/v3_cpols.c
         crypto/x509/v3_crld.c
         crypto/x509/v3_enum.c
-        crypto/x509/v3err.c
         crypto/x509/v3_extku.c
         crypto/x509/v3_genn.c
         crypto/x509/v3_group_ac.c
@@ -741,8 +740,8 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/x509/v3_ncons.c
         crypto/x509/v3_no_ass.c
         crypto/x509/v3_no_rev_avail.c
-        crypto/x509/v3_pcia.c
         crypto/x509/v3_pci.c
+        crypto/x509/v3_pcia.c
         crypto/x509/v3_pcons.c
         crypto/x509/v3_pku.c
         crypto/x509/v3_pmaps.c
@@ -760,30 +759,31 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/x509/v3_usernotice.c
         crypto/x509/v3_utf8.c
         crypto/x509/v3_utl.c
+        crypto/x509/v3err.c
         crypto/x509/x509_acert.c
-        crypto/x509/x509aset.c
         crypto/x509/x509_att.c
         crypto/x509/x509_cmp.c
-        crypto/x509/x509cset.c
         crypto/x509/x509_d2.c
         crypto/x509/x509_def.c
         crypto/x509/x509_err.c
         crypto/x509/x509_ext.c
         crypto/x509/x509_lu.c
         crypto/x509/x509_meth.c
-        crypto/x509/x509name.c
         crypto/x509/x509_obj.c
         crypto/x509/x509_r2x.c
         crypto/x509/x509_req.c
-        crypto/x509/x509rset.c
         crypto/x509/x509_set.c
-        crypto/x509/x509spki.c
         crypto/x509/x509_trust.c
         crypto/x509/x509_txt.c
-        crypto/x509/x509type.c
         crypto/x509/x509_v3.c
         crypto/x509/x509_vfy.c
         crypto/x509/x509_vpm.c
+        crypto/x509/x509aset.c
+        crypto/x509/x509cset.c
+        crypto/x509/x509name.c
+        crypto/x509/x509rset.c
+        crypto/x509/x509spki.c
+        crypto/x509/x509type.c
         crypto/x509/x_all.c
         crypto/x509/x_attrib.c
         crypto/x509/x_crl.c
@@ -792,8 +792,8 @@ set(OPENSSL_SOURCES_libcrypto_lib
         crypto/x509/x_name.c
         crypto/x509/x_pubkey.c
         crypto/x509/x_req.c
-        crypto/x509/x_x509a.c
         crypto/x509/x_x509.c
+        crypto/x509/x_x509a.c
         providers/baseprov.c
         providers/defltprov.c
         providers/nullprov.c
@@ -806,13 +806,13 @@ set(OPENSSL_GENERATED_libcrypto_lib
         crypto/aes/vpaes-armv8.S
         crypto/arm64cpuid.S
         crypto/bn/armv8-mont.S
-        crypto/chacha/chacha-armv8.S
         crypto/chacha/chacha-armv8-sve.S
+        crypto/chacha/chacha-armv8.S
         crypto/ec/ecp_nistz256-armv8.S
         crypto/ec/ecp_sm2p256-armv8.S
         crypto/md5/md5-aarch64.S
-        crypto/modes/aes-gcm-armv8_64.S
         crypto/modes/aes-gcm-armv8-unroll8_64.S
+        crypto/modes/aes-gcm-armv8_64.S
         crypto/modes/ghashv8-armx.S
         crypto/params_idx.c
         crypto/poly1305/poly1305-armv8.S
@@ -842,8 +842,8 @@ set(OPENSSL_SOURCES_libcommon_lib
         providers/common/der/der_slh_dsa_key.c
         providers/common/provider_ctx.c
         providers/common/provider_err.c
-        providers/implementations/ciphers/ciphercommon_block.c
         providers/implementations/ciphers/ciphercommon.c
+        providers/implementations/ciphers/ciphercommon_block.c
         providers/implementations/ciphers/ciphercommon_ccm.c
         providers/implementations/ciphers/ciphercommon_ccm_hw.c
         providers/implementations/ciphers/ciphercommon_gcm.c
@@ -892,9 +892,9 @@ set(OPENSSL_SOURCES_libdefault_lib
         providers/implementations/asymciphers/rsa_enc.c
         providers/implementations/asymciphers/sm2_enc.c
         providers/implementations/ciphers/cipher_aes.c
+        providers/implementations/ciphers/cipher_aes_cbc_hmac_sha.c
         providers/implementations/ciphers/cipher_aes_cbc_hmac_sha1_hw.c
         providers/implementations/ciphers/cipher_aes_cbc_hmac_sha256_hw.c
-        providers/implementations/ciphers/cipher_aes_cbc_hmac_sha.c
         providers/implementations/ciphers/cipher_aes_ccm.c
         providers/implementations/ciphers/cipher_aes_ccm_hw.c
         providers/implementations/ciphers/cipher_aes_gcm.c
@@ -940,8 +940,8 @@ set(OPENSSL_SOURCES_libdefault_lib
         providers/implementations/ciphers/cipher_tdes_hw.c
         providers/implementations/ciphers/cipher_tdes_wrap.c
         providers/implementations/ciphers/cipher_tdes_wrap_hw.c
-        providers/implementations/digests/blake2b_prov.c
         providers/implementations/digests/blake2_prov.c
+        providers/implementations/digests/blake2b_prov.c
         providers/implementations/digests/blake2s_prov.c
         providers/implementations/digests/md5_prov.c
         providers/implementations/digests/md5_sha1_prov.c
@@ -1010,12 +1010,12 @@ set(OPENSSL_SOURCES_libdefault_lib
         providers/implementations/rands/drbg_ctr.c
         providers/implementations/rands/drbg_hash.c
         providers/implementations/rands/drbg_hmac.c
+        providers/implementations/rands/seed_src.c
+        providers/implementations/rands/seed_src_jitter.c
         providers/implementations/rands/seeding/rand_cpu_x86.c
         providers/implementations/rands/seeding/rand_tsc.c
         providers/implementations/rands/seeding/rand_unix.c
         providers/implementations/rands/seeding/rand_win.c
-        providers/implementations/rands/seed_src.c
-        providers/implementations/rands/seed_src_jitter.c
         providers/implementations/rands/test_rng.c
         providers/implementations/signature/dsa_sig.c
         providers/implementations/signature/ecdsa_sig.c
@@ -1027,8 +1027,8 @@ set(OPENSSL_SOURCES_libdefault_lib
         providers/implementations/signature/sm2_sig.c
         providers/implementations/skeymgmt/aes_skmgmt.c
         providers/implementations/skeymgmt/generic.c
-        providers/implementations/storemgmt/file_store_any2obj.c
         providers/implementations/storemgmt/file_store.c
+        providers/implementations/storemgmt/file_store_any2obj.c
         ssl/record/methods/ssl3_cbc.c
 )
 
@@ -1079,8 +1079,8 @@ set(OPENSSL_SOURCES_libssl_lib
         ssl/quic/quic_statm.c
         ssl/quic/quic_stream_map.c
         ssl/quic/quic_thread_assist.c
-        ssl/quic/quic_tls_api.c
         ssl/quic/quic_tls.c
+        ssl/quic/quic_tls_api.c
         ssl/quic/quic_trace.c
         ssl/quic/quic_tserver.c
         ssl/quic/quic_txp.c
@@ -1093,9 +1093,9 @@ set(OPENSSL_SOURCES_libssl_lib
         ssl/record/methods/ssl3_meth.c
         ssl/record/methods/tls13_meth.c
         ssl/record/methods/tls1_meth.c
-        ssl/record/methods/tlsany_meth.c
         ssl/record/methods/tls_common.c
         ssl/record/methods/tls_multib.c
+        ssl/record/methods/tlsany_meth.c
         ssl/record/rec_layer_d1.c
         ssl/record/rec_layer_s3.c
         ssl/rio/poll_builder.c
