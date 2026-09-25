@@ -39,11 +39,10 @@ include(cmake/pixman.cmake)
 
 # libjpeg-turbo, for Tight and for the JPEG rectangles TigerVNC's own encoder
 # sends. The SIMD path on x86 needs NASM, which is a host tool this build does
-# not require; on arm64, the one ABI a phone uses, the assembly is GAS.
+# not require; on arm64, the one ABI a phone uses, it is Neon intrinsics in C.
 set(ENABLE_SHARED OFF CACHE BOOL "" FORCE)
 set(ENABLE_STATIC ON CACHE BOOL "" FORCE)
 set(WITH_TURBOJPEG OFF CACHE BOOL "" FORCE)
-set(WITH_JAVA OFF CACHE BOOL "" FORCE)
 set(WITH_FUZZ OFF CACHE BOOL "" FORCE)
 if(CMAKE_ANDROID_ARCH_ABI MATCHES "^x86")
     set(WITH_SIMD OFF CACHE BOOL "" FORCE)

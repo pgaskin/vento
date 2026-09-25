@@ -98,7 +98,6 @@ third_party/freerdp/resources/
 third_party/freerdp/server/
 third_party/freerdp/winpr/libwinpr/utils/test/
 third_party/libjpeg-turbo/doc/
-third_party/libjpeg-turbo/java/
 third_party/libjpeg-turbo/testimages/
 third_party/openssl/apps/
 third_party/openssl/doc/

@@ -37,11 +37,10 @@ list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # libjpeg-turbo, for Tight — the encoding this backend exists to have. The SIMD
 # path on x86 needs NASM, which is a host tool this build does not require; on
-# arm64, the one ABI a phone uses, the assembly is GAS and builds.
+# arm64, the one ABI a phone uses, it is Neon intrinsics the compiler builds.
 set(ENABLE_SHARED OFF CACHE BOOL "" FORCE)
 set(ENABLE_STATIC ON CACHE BOOL "" FORCE)
 set(WITH_TURBOJPEG OFF CACHE BOOL "" FORCE)
-set(WITH_JAVA OFF CACHE BOOL "" FORCE)
 set(WITH_FUZZ OFF CACHE BOOL "" FORCE)
 if(CMAKE_ANDROID_ARCH_ABI MATCHES "^x86")
     set(WITH_SIMD OFF CACHE BOOL "" FORCE)

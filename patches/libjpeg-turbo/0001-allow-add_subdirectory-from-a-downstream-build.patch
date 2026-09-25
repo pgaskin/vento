@@ -1,4 +1,4 @@
-From 9de8c336bf5e79bd9a22f16ce4b380705b36309c Mon Sep 17 00:00:00 2001
+From 74ba83e22e047e31a9b63b334b0b478b5a4b3d0c Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Tue, 11 Aug 2026 22:26:15 -0400
 Subject: [PATCH 1/1] allow add_subdirectory() from a downstream build
@@ -12,7 +12,7 @@ libvncclient links against for Tight — and builds it beside libvncserver
 under the NDK toolchain the Android Gradle plugin has already configured.
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 7a43187c..a43f978c 100644
+index a1293dbb..6e0d2d5d 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -66,9 +66,7 @@ endif()
