@@ -39,9 +39,10 @@ import java.util.function.Consumer;
  *   <li><b>Buttons eight and nine reach the far end</b> where the plain RFB
  *       pointer message has no room for the ninth, because this client speaks
  *       the extended pointer message when the server offers it.
- *   <li><b>The far end's identity is the library's business.</b> It checks the
- *       certificate, keeps its own known-hosts file beside the app's, and asks
- *       in its own words; what the seam carries is the question and the answer.
+ *   <li><b>The far end's identity is TigerVNC's business.</b> The native side
+ *       checks the certificate the way their viewer does, keeps their viewer's
+ *       known-hosts file beside the app's, and asks in their viewer's words;
+ *       what the seam carries is the question and the answer.
  *       So {@code KnownHosts} is not consulted for this backend, and clearing it
  *       does not reach this store — {@link #forgetHosts} is what does.
  * </ul>
@@ -81,12 +82,12 @@ public final class TigerVncBackend implements Backend, TigerVncNative.Callbacks 
     private volatile boolean dead;
 
     /**
-     * The library's own known-hosts file, deleted.
+     * TigerVNC's known-hosts file, deleted.
      *
      * <p>Here rather than in the provider because the path is this class's
      * doing: {@link TigerVncNative#nativeSetStateDir} is told the app's files
-     * directory below, and the library puts its own directory under whatever it
-     * is given. Nothing has to be running for this to be right — the file
+     * directory below, and TigerVNC puts its own directory under whatever it is
+     * given. Nothing has to be running for this to be right — the file
      * outlives every session, which is the point of it.
      */
     static void forgetHosts(Context context) {
@@ -96,7 +97,7 @@ public final class TigerVncBackend implements Backend, TigerVncNative.Callbacks 
         }
     }
 
-    /** What the library makes under the directory it is given, and what it calls the file. */
+    /** TigerVNC's directory under the one it is given, and what it calls the file. */
     private static final String STATE_DIR = "tigervnc";
     private static final String KNOWN_HOSTS = "x509_known_hosts";
 
@@ -145,6 +146,7 @@ public final class TigerVncBackend implements Backend, TigerVncNative.Callbacks 
                 TigerVncProvider.quality(options.get(TigerVncProvider.QUALITY)),
                 TigerVncProvider.colorLevel(options.get(TigerVncProvider.COLOUR)),
                 bool(TigerVncProvider.H264),
+                bool(TigerVncProvider.AUDIO),
                 CONNECT_TIMEOUT_MS);
         if (h == 0) {
             closed("Could not start the connection");
@@ -270,8 +272,9 @@ public final class TigerVncBackend implements Backend, TigerVncNative.Callbacks 
                             TigerVncProvider.colorLevel(options.get(TigerVncProvider.COLOUR)),
                             bool(TigerVncProvider.H264));
             default -> {
-                // Shared is decided at ClientInit and the bell is read where the
-                // bell arrives; neither is a call.
+                // Shared is decided at ClientInit, audio at the first
+                // SetEncodings, and the bell is read where the bell arrives;
+                // none of them is a call.
             }
         }
     }

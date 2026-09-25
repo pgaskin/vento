@@ -41,6 +41,12 @@ public final class TigerVncProvider implements BackendProvider {
     public static final String ANONYMOUS_TLS = "AnonymousTLS";
     public static final String BELL = "AcceptBell";
     public static final String H264 = "H264";
+    /**
+     * Their viewer's own parameter. QEMU's audio extension, which only servers
+     * that speak it offer — QEMU's own, and the ones built the same way — so
+     * against anything else this row changes nothing at all.
+     */
+    public static final String AUDIO = "Audio";
 
     /** RFB encoding numbers, which is what this client's preference is. */
     private static final int ENCODING_RAW = 0;
@@ -59,7 +65,7 @@ public final class TigerVncProvider implements BackendProvider {
     static final int LEVEL_AUTO = -2;
 
     static final List<BackendOption> OPTIONS = List.of(
-            // ---- the picture: a connection's, defaulting to the backend's ----
+            // ---- the picture and the sound: a connection's, defaulting to the backend's ----
             BackendOption.choice(ENCODING, "Encoding",
                     "Preferred image encoding. The server may still choose to use a different one.",
                     "tight", Scope.LAYERED, true,
@@ -94,6 +100,9 @@ public final class TigerVncProvider implements BackendProvider {
                     new Choice("full", "Full colour (24-bit)"),
                     new Choice("rgb222", "6-bit (rgb222)"),
                     new Choice("rgb111", "3-bit (rgb111)")),
+            BackendOption.bool(AUDIO, "Sound",
+                    "Play audio sent by the server, if it offers any.",
+                    true, Scope.LAYERED, false),
 
             // ---- per connection ---------------------------------------------
             BackendOption.bool(VIEW_ONLY, "View only",

@@ -1,7 +1,7 @@
-From 3495e7fb940b4654b7f59b5e9bab815685af3af0 Mon Sep 17 00:00:00 2001
+From 522ccd6ce632a114e7200241f5a835109a90136a Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Sun, 16 Aug 2026 14:45:46 -0400
-Subject: [PATCH 6/6] rfb: anonymous TLS is the client's question, and never
+Subject: [PATCH 5/5] rfb: anonymous TLS is the client's question, and never
  its first choice
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -25,12 +25,12 @@ X509Vnc decided for the client that its identity would not be checked.
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 
 diff --git a/common/rfb/CConnection.h b/common/rfb/CConnection.h
-index 8c8a7625..b8ab869c 100644
+index 9d999f8a..2408153a 100644
 --- a/common/rfb/CConnection.h
 +++ b/common/rfb/CConnection.h
-@@ -204,6 +204,13 @@ namespace rfb {
-     virtual bool showMsgBox(MsgBoxFlags flags, const char *title,
-                             const char *text) = 0;
+@@ -200,6 +200,13 @@ namespace rfb {
+     virtual bool verifyHostKey(const uint8_t* key, size_t length,
+                                const char* fingerprint) = 0;
  
 +    // confirmAnonymousTLS() is called once a TLS* security type has brought
 +    // up a tunnel with no certificate in it, before anything is authenticated
@@ -43,12 +43,12 @@ index 8c8a7625..b8ab869c 100644
  
      // Methods overridden from CMsgHandler
 diff --git a/common/rfb/CSecurityTLS.cxx b/common/rfb/CSecurityTLS.cxx
-index 6eefe73b..7134e1ac 100644
+index b9bdb3af..9faa918f 100644
 --- a/common/rfb/CSecurityTLS.cxx
 +++ b/common/rfb/CSecurityTLS.cxx
-@@ -293,8 +293,14 @@ void CSecurityTLS::checkSession()
-   gnutls_datum_t info;
-   size_t len;
+@@ -299,8 +299,14 @@ void CSecurityTLS::checkSession()
+   unsigned int cert_list_size = 0;
+   int err;
  
 -  if (anon)
 +  /* An anonymous key exchange leaves nothing to check: no certificate, no
@@ -63,10 +63,10 @@ index 6eefe73b..7134e1ac 100644
    if (gnutls_certificate_type_get(session) != GNUTLS_CRT_X509) {
      gnutls_alert_send(session, GNUTLS_AL_FATAL,
 diff --git a/common/rfb/CSecurityVeNCrypt.cxx b/common/rfb/CSecurityVeNCrypt.cxx
-index a6e30947..a5b05c20 100644
+index 9fbdde88..7e2876eb 100644
 --- a/common/rfb/CSecurityVeNCrypt.cxx
 +++ b/common/rfb/CSecurityVeNCrypt.cxx
-@@ -162,12 +162,23 @@ bool CSecurityVeNCrypt::processMsg()
+@@ -165,12 +165,23 @@ bool CSecurityVeNCrypt::processMsg()
  
        secTypes = security->GetEnabledExtSecTypes();
  

@@ -1,7 +1,7 @@
-From c78554c1cc5138a0a9c67f4ef9cae2d89e7ad0fa Mon Sep 17 00:00:00 2001
+From 3a59e83ed018f29fe645b17702d64f29e3f2ffd1 Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Wed, 12 Aug 2026 12:51:35 -0400
-Subject: [PATCH 3/6] rfb: H.264 is offered only when asked for
+Subject: [PATCH 2/5] rfb: H.264 is offered only when asked for
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -13,18 +13,18 @@ caller's decision — the same shape as supportsLocalCursor and the three
 beside it.
 
 diff --git a/common/rfb/CConnection.cxx b/common/rfb/CConnection.cxx
-index b7e49399..042e0d83 100644
+index f85e8569..b16d0df4 100644
 --- a/common/rfb/CConnection.cxx
 +++ b/common/rfb/CConnection.cxx
-@@ -64,6 +64,7 @@ CConnection::CConnection()
-   : csecurity(nullptr),
+@@ -74,6 +74,7 @@ CConnection::CConnection()
      supportsLocalCursor(false), supportsCursorPosition(false),
      supportsDesktopResize(false), supportsLEDState(false),
+     supportsAudio(false),
 +    supportsH264(false),
      is(nullptr), os(nullptr), reader_(nullptr), writer_(nullptr),
      shared(false),
      state_(RFBSTATE_UNINITIALISED),
-@@ -888,6 +889,15 @@ void CConnection::refreshFramebuffer()
+@@ -971,6 +972,15 @@ void CConnection::refreshFramebuffer()
      requestNewUpdate();
  }
  
@@ -40,7 +40,7 @@ index b7e49399..042e0d83 100644
  void CConnection::setPreferredEncoding(int encoding)
  {
    if (preferredEncoding == encoding)
-@@ -994,6 +1004,13 @@ void CConnection::requestNewUpdate()
+@@ -1077,6 +1087,13 @@ void CConnection::requestNewUpdate()
  // Ask for encodings based on which decoders are supported.  Assumes higher
  // encoding numbers are more desirable.
  
@@ -54,7 +54,7 @@ index b7e49399..042e0d83 100644
  void CConnection::updateEncodings()
  {
    std::list<uint32_t> encodings;
-@@ -1024,7 +1041,7 @@ void CConnection::updateEncodings()
+@@ -1109,7 +1126,7 @@ void CConnection::updateEncodings()
    encodings.push_back(pseudoEncodingQEMUKeyEvent);
    encodings.push_back(pseudoEncodingExtendedMouseButtons);
  
@@ -63,7 +63,7 @@ index b7e49399..042e0d83 100644
      if (!noJpeg || preferredEncoding != encodingJPEG)
        encodings.push_back(preferredEncoding);
    }
-@@ -1032,7 +1049,7 @@ void CConnection::updateEncodings()
+@@ -1117,7 +1134,7 @@ void CConnection::updateEncodings()
    encodings.push_back(encodingCopyRect);
  
    for (int i = encodingMax; i >= 0; i--) {
@@ -73,13 +73,13 @@ index b7e49399..042e0d83 100644
          continue;
        encodings.push_back(i);
 diff --git a/common/rfb/CConnection.h b/common/rfb/CConnection.h
-index c6c12e19..e3f1ce0b 100644
+index 5d16cb5d..fe7feaa5 100644
 --- a/common/rfb/CConnection.h
 +++ b/common/rfb/CConnection.h
-@@ -301,6 +301,14 @@ namespace rfb {
-     bool supportsCursorPosition;
+@@ -316,6 +316,14 @@ namespace rfb {
      bool supportsDesktopResize;
      bool supportsLEDState;
+     bool supportsAudio;
 +    // H.264 is a decoder the client has to be *asked* for: it is lossy at every
 +    // setting and it costs a whole frame's decode however little changed, so
 +    // offering it because the build can decode it is not the same decision as
@@ -91,8 +91,8 @@ index c6c12e19..e3f1ce0b 100644
  
    private:
      bool processVersionMsg();
-@@ -314,6 +322,7 @@ namespace rfb {
- 
+@@ -330,6 +338,7 @@ namespace rfb {
+     void requestAudio();
      void requestNewUpdate();
      void updateEncodings();
 +    bool offerEncoding(int encoding);

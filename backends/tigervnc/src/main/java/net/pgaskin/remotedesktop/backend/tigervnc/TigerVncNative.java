@@ -23,9 +23,10 @@ import android.graphics.Bitmap;
  *       libvncclient: QEMU's {@code PointerTypeChange} is not among the
  *       encodings this client asks for, so this backend is always absolute.
  *   <li><b>{@code nativeAnswerQuestion} rather than {@code nativeAnswerTrust}.</b>
- *       This client checks the certificate itself and remembers what was
- *       accepted, so what crosses the JNI surface is the question it decided to
- *       ask and the yes or no it gets back.
+ *       The certificate is checked on the native side, the way TigerVNC's own
+ *       viewer checks it and against the same known-hosts file, so what crosses
+ *       the JNI surface is the question it decided to ask and the yes or no it
+ *       gets back.
  * </ul>
  *
  * <h2>Threads</h2>
@@ -81,9 +82,9 @@ final class TigerVncNative {
         void onCredentialsNeeded(boolean needsUserName);
 
         /**
-         * The library wants a yes or a no before the handshake goes on — which
-         * for this client is always about the far end's identity, since that is
-         * the one thing it cannot check on its own. The session is stopped
+         * The client wants a yes or a no before the handshake goes on — which
+         * is always about the far end's identity, since that is the one thing
+         * it cannot check on its own. The session is stopped
          * until {@link #nativeAnswerQuestion}, and a no ends it.
          */
         void onQuestion(String title, String text);
@@ -106,10 +107,11 @@ final class TigerVncNative {
     static native String nativeVersion();
 
     /**
-     * Where the client may keep the certificates a person has accepted. It has
-     * a known-hosts file of its own and finds it through the environment, which
-     * on Android points nowhere writable — so this is said once, before any
-     * session, and names the directory the library's own goes under.
+     * Where the client may keep the certificates a person has accepted. It keeps
+     * the known-hosts file TigerVNC's viewer keeps and finds it the way the
+     * viewer does, through the environment, which on Android points nowhere
+     * writable — so this is said once, before any session, and names the
+     * directory TigerVNC's own goes under.
      */
     static native void nativeSetStateDir(String path);
 
@@ -136,11 +138,16 @@ final class TigerVncNative {
      *                      this one is not, because the server picks from the
      *                      list and this one is lossy and costs a whole frame
      *                      however little changed
+     * @param audio         whether to ask for the server's sound, which only a
+     *                      server speaking QEMU's audio extension has to send.
+     *                      For the whole session: the library asks once, after
+     *                      the first update, and has no way to take it back
      */
     static native long nativeCreate(Callbacks listener, String address, String userName,
                                     String password, boolean shared, boolean anonymousTls,
                                     int encoding, int compressLevel, int qualityLevel,
-                                    int colorLevel, boolean h264, int connectTimeoutMs);
+                                    int colorLevel, boolean h264, boolean audio,
+                                    int connectTimeoutMs);
 
     /** A {@code null} password cancels, which ends the session. */
     static native void nativeAnswerCredentials(long handle, String userName, String password);
