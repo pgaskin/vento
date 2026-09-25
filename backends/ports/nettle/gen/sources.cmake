@@ -2,6 +2,16 @@
 # nettle's own build produced them, and the headers it installed.
 
 set(NETTLE_SOURCES
+        aes-decrypt-internal.c
+        aes-decrypt-table.c
+        aes-decrypt.c
+        aes-encrypt-internal.c
+        aes-encrypt-table.c
+        aes-encrypt.c
+        aes-invert-internal.c
+        aes-set-decrypt-key.c
+        aes-set-encrypt-key.c
+        aes-set-key-internal.c
         aes128-decrypt.c
         aes128-encrypt.c
         aes128-meta.c
@@ -17,24 +27,14 @@ set(NETTLE_SOURCES
         aes256-meta.c
         aes256-set-decrypt-key.c
         aes256-set-encrypt-key.c
-        aes-decrypt.c
-        aes-decrypt-internal.c
-        aes-decrypt-table.c
-        aes-encrypt.c
-        aes-encrypt-internal.c
-        aes-encrypt-table.c
-        aes-invert-internal.c
-        aes-set-decrypt-key.c
-        aes-set-encrypt-key.c
-        aes-set-key-internal.c
         arcfour.c
-        arctwo.c
         arctwo-meta.c
-        balloon.c
+        arctwo.c
         balloon-sha1.c
         balloon-sha256.c
         balloon-sha384.c
         balloon-sha512.c
+        balloon.c
         base16-decode.c
         base16-encode.c
         base16-meta.c
@@ -46,8 +46,12 @@ set(NETTLE_SOURCES
         base64url-meta.c
         blowfish-bcrypt.c
         blowfish.c
-        buffer.c
         buffer-init.c
+        buffer.c
+        camellia-absorb.c
+        camellia-crypt-internal.c
+        camellia-invert-key.c
+        camellia-table.c
         camellia128-crypt.c
         camellia128-meta.c
         camellia128-set-decrypt-key.c
@@ -57,12 +61,8 @@ set(NETTLE_SOURCES
         camellia256-meta.c
         camellia256-set-decrypt-key.c
         camellia256-set-encrypt-key.c
-        camellia-absorb.c
-        camellia-crypt-internal.c
-        camellia-invert-key.c
-        camellia-table.c
-        cast128.c
         cast128-meta.c
+        cast128.c
         cbc-aes128-encrypt.c
         cbc-aes192-encrypt.c
         cbc-aes256-encrypt.c
@@ -74,79 +74,79 @@ set(NETTLE_SOURCES
         cfb.c
         chacha-core-internal.c
         chacha-crypt.c
-        chacha-poly1305.c
         chacha-poly1305-meta.c
+        chacha-poly1305.c
         chacha-set-key.c
         chacha-set-nonce.c
-        cmac64.c
-        cmac-aes128.c
         cmac-aes128-meta.c
-        cmac-aes256.c
+        cmac-aes128.c
         cmac-aes256-meta.c
-        cmac.c
-        cmac-des3.c
+        cmac-aes256.c
         cmac-des3-meta.c
+        cmac-des3.c
+        cmac.c
+        cmac64.c
         cnd-memcpy.c
-        ctr16.c
         ctr.c
-        des3.c
+        ctr16.c
         des.c
+        des3.c
         drbg-ctr-aes256.c
-        eax-aes128.c
         eax-aes128-meta.c
+        eax-aes128.c
         eax.c
-        gcm-aes128.c
-        gcm-aes128-meta.c
-        gcm-aes192.c
-        gcm-aes192-meta.c
-        gcm-aes256.c
-        gcm-aes256-meta.c
         gcm-aes.c
-        gcm.c
-        gcm-camellia128.c
+        gcm-aes128-meta.c
+        gcm-aes128.c
+        gcm-aes192-meta.c
+        gcm-aes192.c
+        gcm-aes256-meta.c
+        gcm-aes256.c
         gcm-camellia128-meta.c
-        gcm-camellia256.c
+        gcm-camellia128.c
         gcm-camellia256-meta.c
-        gcm-sm4.c
+        gcm-camellia256.c
         gcm-sm4-meta.c
+        gcm-sm4.c
+        gcm.c
         ghash-set-key.c
         ghash-update.c
         gost28147.c
-        gosthash94.c
         gosthash94-meta.c
+        gosthash94.c
         hkdf.c
-        hmac.c
-        hmac-gosthash94.c
         hmac-gosthash94-meta.c
-        hmac-md5.c
+        hmac-gosthash94.c
         hmac-md5-meta.c
-        hmac-ripemd160.c
+        hmac-md5.c
         hmac-ripemd160-meta.c
-        hmac-sha1.c
+        hmac-ripemd160.c
         hmac-sha1-meta.c
-        hmac-sha224.c
+        hmac-sha1.c
         hmac-sha224-meta.c
-        hmac-sha256.c
+        hmac-sha224.c
         hmac-sha256-meta.c
-        hmac-sha384.c
+        hmac-sha256.c
         hmac-sha384-meta.c
-        hmac-sha512.c
+        hmac-sha384.c
         hmac-sha512-meta.c
-        hmac-sm3.c
+        hmac-sha512.c
         hmac-sm3-meta.c
-        hmac-streebog.c
+        hmac-sm3.c
         hmac-streebog-meta.c
+        hmac-streebog.c
+        hmac.c
         knuth-lfib.c
-        md2.c
         md2-meta.c
-        md4.c
+        md2.c
         md4-meta.c
-        md5.c
+        md4.c
         md5-compat.c
         md5-meta.c
+        md5.c
         memeql-sec.c
-        memxor3.c
         memxor.c
+        memxor3.c
         nettle-lookup-hash.c
         nettle-meta-aeads.c
         nettle-meta-armors.c
@@ -156,55 +156,55 @@ set(NETTLE_SOURCES
         nist-keywrap.c
         ocb-aes128.c
         ocb.c
-        pbkdf2.c
         pbkdf2-hmac-gosthash94.c
         pbkdf2-hmac-sha1.c
         pbkdf2-hmac-sha256.c
         pbkdf2-hmac-sha384.c
         pbkdf2-hmac-sha512.c
+        pbkdf2.c
         poly1305-aes.c
         poly1305-internal.c
         poly1305-update.c
         realloc.c
-        ripemd160.c
         ripemd160-compress.c
         ripemd160-meta.c
+        ripemd160.c
         salsa20-128-set-key.c
         salsa20-256-set-key.c
         salsa20-core-internal.c
-        salsa20-crypt.c
         salsa20-crypt-internal.c
-        salsa20r12-crypt.c
+        salsa20-crypt.c
         salsa20-set-key.c
         salsa20-set-nonce.c
+        salsa20r12-crypt.c
         serpent-decrypt.c
         serpent-encrypt.c
         serpent-meta.c
         serpent-set-key.c
-        sha1.c
         sha1-compress.c
         sha1-meta.c
+        sha1.c
         sha224-meta.c
-        sha256.c
         sha256-compress-n.c
         sha256-meta.c
-        sha3-224.c
+        sha256.c
         sha3-224-meta.c
-        sha3-256.c
+        sha3-224.c
         sha3-256-meta.c
-        sha3-384.c
+        sha3-256.c
         sha3-384-meta.c
-        sha3-512.c
+        sha3-384.c
         sha3-512-meta.c
-        sha384-meta.c
-        sha3.c
+        sha3-512.c
         sha3-permute.c
         sha3-shake.c
+        sha3.c
+        sha384-meta.c
         sha512-224-meta.c
         sha512-256-meta.c
-        sha512.c
         sha512-compress.c
         sha512-meta.c
+        sha512.c
         shake128.c
         shake256.c
         siv-cmac-aes128.c
@@ -215,25 +215,25 @@ set(NETTLE_SOURCES
         siv-gcm.c
         siv-ghash-set-key.c
         siv-ghash-update.c
-        sm3.c
         sm3-meta.c
-        sm4.c
+        sm3.c
         sm4-meta.c
-        streebog.c
+        sm4.c
         streebog-meta.c
-        twofish.c
+        streebog.c
         twofish-meta.c
+        twofish.c
+        umac-l2.c
+        umac-l3.c
+        umac-nh-n.c
+        umac-nh.c
+        umac-poly128.c
+        umac-poly64.c
+        umac-set-key.c
         umac128.c
         umac32.c
         umac64.c
         umac96.c
-        umac-l2.c
-        umac-l3.c
-        umac-nh.c
-        umac-nh-n.c
-        umac-poly128.c
-        umac-poly64.c
-        umac-set-key.c
         version.c
         write-be32.c
         write-le32.c
@@ -246,23 +246,21 @@ set(NETTLE_SOURCES
 )
 
 set(HOGWEED_SOURCES
-        bignum.c
-        bignum-random.c
         bignum-random-prime.c
+        bignum-random.c
+        bignum.c
         cnd-copy.c
         curve25519-eh-to-x.c
-        curve25519-mul.c
         curve25519-mul-g.c
+        curve25519-mul.c
         curve448-eh-to-x.c
-        curve448-mul.c
         curve448-mul-g.c
+        curve448-mul.c
+        der-iterator.c
         der2dsa.c
         der2rsa.c
-        der-iterator.c
-        dsa2sexp.c
-        dsa.c
-        dsa-compat.c
         dsa-compat-keygen.c
+        dsa-compat.c
         dsa-gen-params.c
         dsa-hash.c
         dsa-keygen.c
@@ -272,13 +270,15 @@ set(HOGWEED_SOURCES
         dsa-sha256-verify.c
         dsa-sign.c
         dsa-verify.c
+        dsa.c
+        dsa2sexp.c
+        ecc-a-to-j.c
         ecc-add-eh.c
         ecc-add-ehh.c
         ecc-add-jja.c
         ecc-add-jjj.c
         ecc-add-th.c
         ecc-add-thh.c
-        ecc-a-to-j.c
         ecc-curve25519.c
         ecc-curve448.c
         ecc-dup-eh.c
@@ -287,24 +287,24 @@ set(HOGWEED_SOURCES
         ecc-ecdsa-sign.c
         ecc-ecdsa-verify.c
         ecc-eh-to-a.c
-        ecc-gostdsa-sign.c
-        ecc-gostdsa-verify.c
         ecc-gost-gc256b.c
         ecc-gost-gc512a.c
+        ecc-gostdsa-sign.c
+        ecc-gostdsa-verify.c
         ecc-j-to-a.c
         ecc-mod-arith.c
-        ecc-mod.c
         ecc-mod-inv.c
-        ecc-mul-a.c
+        ecc-mod.c
         ecc-mul-a-eh.c
-        ecc-mul-g.c
+        ecc-mul-a.c
         ecc-mul-g-eh.c
+        ecc-mul-g.c
         ecc-mul-m.c
         ecc-nonsec-add-jjj.c
         ecc-pm1-redc.c
-        ecc-point.c
-        ecc-point-mul.c
         ecc-point-mul-g.c
+        ecc-point-mul.c
+        ecc-point.c
         ecc-pp1-redc.c
         ecc-random.c
         ecc-scalar.c
@@ -317,14 +317,14 @@ set(HOGWEED_SOURCES
         ecdsa-keygen.c
         ecdsa-sign.c
         ecdsa-verify.c
-        ed25519-sha512.c
         ed25519-sha512-pubkey.c
         ed25519-sha512-sign.c
         ed25519-sha512-verify.c
-        ed448-shake256.c
+        ed25519-sha512.c
         ed448-shake256-pubkey.c
         ed448-shake256-sign.c
         ed448-shake256-verify.c
+        ed448-shake256.c
         eddsa-compress.c
         eddsa-decompress.c
         eddsa-expand.c
@@ -339,7 +339,6 @@ set(HOGWEED_SOURCES
         mini-gmp.c
         oaep.c
         pgp-encode.c
-        pkcs1.c
         pkcs1-decrypt.c
         pkcs1-encrypt.c
         pkcs1-rsa-digest.c
@@ -348,23 +347,21 @@ set(HOGWEED_SOURCES
         pkcs1-rsa-sha256.c
         pkcs1-rsa-sha512.c
         pkcs1-sec-decrypt.c
-        pss.c
+        pkcs1.c
         pss-mgf1.c
-        rsa2openpgp.c
-        rsa2sexp.c
+        pss.c
         rsa-blind.c
-        rsa.c
-        rsa-decrypt.c
         rsa-decrypt-tr.c
+        rsa-decrypt.c
         rsa-encrypt.c
         rsa-keygen.c
-        rsa-md5-sign.c
         rsa-md5-sign-tr.c
+        rsa-md5-sign.c
         rsa-md5-verify.c
         rsa-oaep-decrypt.c
         rsa-oaep-encrypt.c
-        rsa-pkcs1-sign.c
         rsa-pkcs1-sign-tr.c
+        rsa-pkcs1-sign.c
         rsa-pkcs1-verify.c
         rsa-pss-sha256-sign-tr.c
         rsa-pss-sha256-verify.c
@@ -372,27 +369,30 @@ set(HOGWEED_SOURCES
         rsa-pss-sha512-verify.c
         rsa-sec-compute-root.c
         rsa-sec-decrypt.c
-        rsa-sha1-sign.c
         rsa-sha1-sign-tr.c
+        rsa-sha1-sign.c
         rsa-sha1-verify.c
-        rsa-sha256-sign.c
         rsa-sha256-sign-tr.c
+        rsa-sha256-sign.c
         rsa-sha256-verify.c
-        rsa-sha512-sign.c
         rsa-sha512-sign-tr.c
+        rsa-sha512-sign.c
         rsa-sha512-verify.c
-        rsa-sign.c
         rsa-sign-tr.c
+        rsa-sign.c
         rsa-verify.c
+        rsa.c
+        rsa2openpgp.c
+        rsa2sexp.c
         sec-add-1.c
         sec-sub-1.c
+        sexp-format.c
+        sexp-transport-format.c
+        sexp-transport.c
+        sexp.c
         sexp2bignum.c
         sexp2dsa.c
         sexp2rsa.c
-        sexp.c
-        sexp-format.c
-        sexp-transport.c
-        sexp-transport-format.c
 )
 
 set(NETTLE_HEADERS
@@ -411,8 +411,8 @@ set(NETTLE_HEADERS
         cbc.h
         ccm.h
         cfb.h
-        chacha.h
         chacha-poly1305.h
+        chacha.h
         cmac.h
         ctr.h
         curve25519.h
@@ -448,18 +448,18 @@ set(NETTLE_HEADERS
         pgp.h
         pkcs1.h
         poly1305.h
-        pss.h
         pss-mgf1.h
+        pss.h
         realloc.h
         ripemd160.h
         rsa.h
         salsa20.h
         serpent.h
         sexp.h
+        sha.h
         sha1.h
         sha2.h
         sha3.h
-        sha.h
         siv-cmac.h
         siv-gcm.h
         sm3.h

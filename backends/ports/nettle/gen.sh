@@ -15,6 +15,11 @@
 # Host prereqs: cc (for eccdata), make, and the NDK below.
 set -eu
 
+# The archive member lists and the header list are sorted, and what `sort`
+# thinks of an underscore is a question of locale; the answer that is the same
+# everywhere is C's.
+export LC_ALL=C
+
 cd "$(dirname "$0")"
 port=$PWD
 # The path built rather than cd'd into, so that the check below is what reports

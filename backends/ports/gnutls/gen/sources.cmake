@@ -5,6 +5,9 @@ set(GNUTLS_SOURCES_gl
         gl/arpa_inet.c
         gl/asnprintf.c
         gl/basename-lgpl.c
+        gl/c-ctype.c
+        gl/c-strcasecmp.c
+        gl/c-strncasecmp.c
         gl/c32isalnum.c
         gl/c32isalpha.c
         gl/c32isblank.c
@@ -20,10 +23,7 @@ set(GNUTLS_SOURCES_gl
         gl/c32tolower.c
         gl/c32width.c
         gl/canonicalize-lgpl.c
-        gl/c-ctype.c
         gl/cloexec.c
-        gl/c-strcasecmp.c
-        gl/c-strncasecmp.c
         gl/dirname-lgpl.c
         gl/dup2.c
         gl/explicit_bzero.c
@@ -49,10 +49,10 @@ set(GNUTLS_SOURCES_gl
         gl/iswxdigit.c
         gl/localcharset.c
         gl/localeconv.c
-        gl/malloca.c
         gl/malloc/scratch_buffer_grow.c
         gl/malloc/scratch_buffer_grow_preserve.c
         gl/malloc/scratch_buffer_set_array_size.c
+        gl/malloca.c
         gl/mbchar.c
         gl/mbiterf.c
         gl/mbrtoc32.c
@@ -69,8 +69,8 @@ set(GNUTLS_SOURCES_gl
         gl/realloc.c
         gl/secure_getenv.c
         gl/setlocale-lock.c
-        gl/setlocale_null.c
         gl/setlocale_null-unlocked.c
+        gl/setlocale_null.c
         gl/stat-time.c
         gl/stdlib.c
         gl/streq.c
@@ -100,11 +100,121 @@ set(GNUTLS_SOURCES_gl
         gl/xsize.c
 )
 
+set(GNUTLS_SOURCES_lib
+        lib/alert.c
+        lib/anon_cred.c
+        lib/atfork.c
+        lib/audit.c
+        lib/auth.c
+        lib/auto-verify.c
+        lib/buffers.c
+        lib/cert-cred-rawpk.c
+        lib/cert-cred-x509.c
+        lib/cert-cred.c
+        lib/cert-session.c
+        lib/cipher-cbc.c
+        lib/cipher.c
+        lib/cipher_int.c
+        lib/compress.c
+        lib/constate.c
+        lib/crypto-api.c
+        lib/crypto-backend.c
+        lib/crypto-selftests-pk.c
+        lib/crypto-selftests.c
+        lib/datum.c
+        lib/db.c
+        lib/debug.c
+        lib/dh-primes.c
+        lib/dh-session.c
+        lib/dh.c
+        lib/dtls-sw.c
+        lib/dtls.c
+        lib/ecc.c
+        lib/errors.c
+        lib/extv.c
+        lib/file.c
+        lib/fingerprint.c
+        lib/fips.c
+        lib/global.c
+        lib/gnutls_asn1_tab.c
+        lib/handshake-checks.c
+        lib/handshake-tls13.c
+        lib/handshake.c
+        lib/hash_int.c
+        lib/hello_ext.c
+        lib/hello_ext_lib.c
+        lib/inih/ini.c
+        lib/iov.c
+        lib/kx.c
+        lib/locks.c
+        lib/mbuffers.c
+        lib/mem.c
+        lib/mpi.c
+        lib/ocsp-api.c
+        lib/openpgp_compat.c
+        lib/pathbuf.c
+        lib/pcert.c
+        lib/pin.c
+        lib/pk.c
+        lib/pkix_asn1_tab.c
+        lib/prf.c
+        lib/priority.c
+        lib/privkey.c
+        lib/privkey_raw.c
+        lib/profiles.c
+        lib/psk.c
+        lib/pubkey.c
+        lib/random.c
+        lib/randomart.c
+        lib/range.c
+        lib/record.c
+        lib/safe-memfuncs.c
+        lib/secrets.c
+        lib/session.c
+        lib/session_pack.c
+        lib/srp.c
+        lib/sslv2_compat.c
+        lib/state.c
+        lib/stek.c
+        lib/str-iconv.c
+        lib/str-idna.c
+        lib/str-unicode.c
+        lib/str.c
+        lib/supplemental.c
+        lib/system.c
+        lib/system/certs.c
+        lib/system/fastopen.c
+        lib/system/keys-dummy.c
+        lib/system/ktls.c
+        lib/system/sockets.c
+        lib/system/threads.c
+        lib/system_override.c
+        lib/tls-sig.c
+        lib/tls13-sig.c
+        lib/tls13/anti_replay.c
+        lib/tls13/certificate.c
+        lib/tls13/certificate_request.c
+        lib/tls13/certificate_verify.c
+        lib/tls13/early_data.c
+        lib/tls13/encrypted_extensions.c
+        lib/tls13/finished.c
+        lib/tls13/hello_retry.c
+        lib/tls13/key_update.c
+        lib/tls13/post_handshake.c
+        lib/tls13/psk_ext_parser.c
+        lib/tls13/session_ticket.c
+        lib/tpm.c
+        lib/urls.c
+        lib/verify-tofu.c
+        lib/vko.c
+        lib/x509_b64.c
+)
+
 set(GNUTLS_SOURCES_lib_accelerated
         lib/accelerated/accelerated.c
         lib/accelerated/afalg.c
-        lib/accelerated/cryptodev.c
         lib/accelerated/cryptodev-gcm.c
+        lib/accelerated/cryptodev.c
 )
 
 set(GNUTLS_SOURCES_lib_algorithms
@@ -178,116 +288,6 @@ set(GNUTLS_SOURCES_lib_hpke
         lib/hpke/hpke-api.c
 )
 
-set(GNUTLS_SOURCES_lib
-        lib/alert.c
-        lib/anon_cred.c
-        lib/atfork.c
-        lib/audit.c
-        lib/auth.c
-        lib/auto-verify.c
-        lib/buffers.c
-        lib/cert-cred.c
-        lib/cert-cred-rawpk.c
-        lib/cert-cred-x509.c
-        lib/cert-session.c
-        lib/cipher.c
-        lib/cipher-cbc.c
-        lib/cipher_int.c
-        lib/compress.c
-        lib/constate.c
-        lib/crypto-api.c
-        lib/crypto-backend.c
-        lib/crypto-selftests.c
-        lib/crypto-selftests-pk.c
-        lib/datum.c
-        lib/db.c
-        lib/debug.c
-        lib/dh.c
-        lib/dh-primes.c
-        lib/dh-session.c
-        lib/dtls.c
-        lib/dtls-sw.c
-        lib/ecc.c
-        lib/errors.c
-        lib/extv.c
-        lib/file.c
-        lib/fingerprint.c
-        lib/fips.c
-        lib/global.c
-        lib/gnutls_asn1_tab.c
-        lib/handshake.c
-        lib/handshake-checks.c
-        lib/handshake-tls13.c
-        lib/hash_int.c
-        lib/hello_ext.c
-        lib/hello_ext_lib.c
-        lib/inih/ini.c
-        lib/iov.c
-        lib/kx.c
-        lib/locks.c
-        lib/mbuffers.c
-        lib/mem.c
-        lib/mpi.c
-        lib/ocsp-api.c
-        lib/openpgp_compat.c
-        lib/pathbuf.c
-        lib/pcert.c
-        lib/pin.c
-        lib/pk.c
-        lib/pkix_asn1_tab.c
-        lib/prf.c
-        lib/priority.c
-        lib/privkey.c
-        lib/privkey_raw.c
-        lib/profiles.c
-        lib/psk.c
-        lib/pubkey.c
-        lib/randomart.c
-        lib/random.c
-        lib/range.c
-        lib/record.c
-        lib/safe-memfuncs.c
-        lib/secrets.c
-        lib/session.c
-        lib/session_pack.c
-        lib/srp.c
-        lib/sslv2_compat.c
-        lib/state.c
-        lib/stek.c
-        lib/str.c
-        lib/str-iconv.c
-        lib/str-idna.c
-        lib/str-unicode.c
-        lib/supplemental.c
-        lib/system.c
-        lib/system/certs.c
-        lib/system/fastopen.c
-        lib/system/keys-dummy.c
-        lib/system/ktls.c
-        lib/system_override.c
-        lib/system/sockets.c
-        lib/system/threads.c
-        lib/tls13/anti_replay.c
-        lib/tls13/certificate.c
-        lib/tls13/certificate_request.c
-        lib/tls13/certificate_verify.c
-        lib/tls13/early_data.c
-        lib/tls13/encrypted_extensions.c
-        lib/tls13/finished.c
-        lib/tls13/hello_retry.c
-        lib/tls13/key_update.c
-        lib/tls13/post_handshake.c
-        lib/tls13/psk_ext_parser.c
-        lib/tls13/session_ticket.c
-        lib/tls13-sig.c
-        lib/tls-sig.c
-        lib/tpm.c
-        lib/urls.c
-        lib/verify-tofu.c
-        lib/vko.c
-        lib/x509_b64.c
-)
-
 set(GNUTLS_SOURCES_lib_minitasn1
         lib/minitasn1/coding.c
         lib/minitasn1/decoding.c
@@ -305,13 +305,13 @@ set(GNUTLS_SOURCES_lib_nettle
         lib/nettle/gost/bignum-le.c
         lib/nettle/gost/cmac-kuznyechik.c
         lib/nettle/gost/cmac-magma.c
+        lib/nettle/gost/gost-wrap.c
         lib/nettle/gost/gost28147.c
         lib/nettle/gost/gostdsa-mask.c
-        lib/nettle/gost/gost-wrap.c
-        lib/nettle/gost_keywrap.c
         lib/nettle/gost/kuznyechik.c
         lib/nettle/gost/magma.c
         lib/nettle/gost/write-le32.c
+        lib/nettle/gost_keywrap.c
         lib/nettle/init.c
         lib/nettle/int/dsa-compute-k.c
         lib/nettle/int/dsa-keygen-fips186.c
@@ -326,15 +326,12 @@ set(GNUTLS_SOURCES_lib_nettle
         lib/nettle/mpi.c
         lib/nettle/pk.c
         lib/nettle/prf.c
-        lib/nettle/rnd.c
         lib/nettle/rnd-fuzzer.c
+        lib/nettle/rnd.c
         lib/nettle/sysrng-linux.c
 )
 
 set(GNUTLS_SOURCES_lib_unistring
-        lib/unistring/unictype/categ_and.c
-        lib/unistring/unictype/categ_and_not.c
-        lib/unistring/unictype/categ_byname.c
         lib/unistring/unictype/categ_C.c
         lib/unistring/unictype/categ_Cc.c
         lib/unistring/unictype/categ_Cf.c
@@ -346,21 +343,16 @@ set(GNUTLS_SOURCES_lib_unistring
         lib/unistring/unictype/categ_Ll.c
         lib/unistring/unictype/categ_Lm.c
         lib/unistring/unictype/categ_Lo.c
-        lib/unistring/unictype/categ_longname.c
         lib/unistring/unictype/categ_Lt.c
         lib/unistring/unictype/categ_Lu.c
         lib/unistring/unictype/categ_M.c
         lib/unistring/unictype/categ_Mc.c
         lib/unistring/unictype/categ_Me.c
         lib/unistring/unictype/categ_Mn.c
-        lib/unistring/unictype/categ_name.c
         lib/unistring/unictype/categ_N.c
         lib/unistring/unictype/categ_Nd.c
         lib/unistring/unictype/categ_Nl.c
         lib/unistring/unictype/categ_No.c
-        lib/unistring/unictype/categ_none.c
-        lib/unistring/unictype/categ_of.c
-        lib/unistring/unictype/categ_or.c
         lib/unistring/unictype/categ_P.c
         lib/unistring/unictype/categ_Pc.c
         lib/unistring/unictype/categ_Pd.c
@@ -374,11 +366,19 @@ set(GNUTLS_SOURCES_lib_unistring
         lib/unistring/unictype/categ_Sk.c
         lib/unistring/unictype/categ_Sm.c
         lib/unistring/unictype/categ_So.c
-        lib/unistring/unictype/categ_test.c
         lib/unistring/unictype/categ_Z.c
         lib/unistring/unictype/categ_Zl.c
         lib/unistring/unictype/categ_Zp.c
         lib/unistring/unictype/categ_Zs.c
+        lib/unistring/unictype/categ_and.c
+        lib/unistring/unictype/categ_and_not.c
+        lib/unistring/unictype/categ_byname.c
+        lib/unistring/unictype/categ_longname.c
+        lib/unistring/unictype/categ_name.c
+        lib/unistring/unictype/categ_none.c
+        lib/unistring/unictype/categ_of.c
+        lib/unistring/unictype/categ_or.c
+        lib/unistring/unictype/categ_test.c
         lib/unistring/unictype/combiningclass.c
         lib/unistring/unictype/pr_default_ignorable_code_point.c
         lib/unistring/unictype/pr_join_control.c
@@ -387,8 +387,8 @@ set(GNUTLS_SOURCES_lib_unistring
         lib/unistring/uninorm/compat-decomposition.c
         lib/unistring/uninorm/composition.c
         lib/unistring/uninorm/decompose-internal.c
-        lib/unistring/uninorm/decomposition.c
         lib/unistring/uninorm/decomposition-table.c
+        lib/unistring/uninorm/decomposition.c
         lib/unistring/uninorm/nfc.c
         lib/unistring/uninorm/nfd.c
         lib/unistring/uninorm/nfkc.c
@@ -397,9 +397,9 @@ set(GNUTLS_SOURCES_lib_unistring
         lib/unistring/uninorm/u32-normalize.c
         lib/unistring/uninorm/u8-normalize.c
         lib/unistring/unistr/u16-cpy.c
-        lib/unistring/unistr/u16-mbtoucr.c
         lib/unistring/unistr/u16-mbtouc-unsafe-aux.c
         lib/unistring/unistr/u16-mbtouc-unsafe.c
+        lib/unistring/unistr/u16-mbtoucr.c
         lib/unistring/unistr/u16-to-u8.c
         lib/unistring/unistr/u16-uctomb-aux.c
         lib/unistring/unistr/u16-uctomb.c
@@ -409,9 +409,9 @@ set(GNUTLS_SOURCES_lib_unistring
         lib/unistring/unistr/u32-uctomb.c
         lib/unistring/unistr/u8-check.c
         lib/unistring/unistr/u8-cpy.c
-        lib/unistring/unistr/u8-mbtoucr.c
         lib/unistring/unistr/u8-mbtouc-unsafe-aux.c
         lib/unistring/unistr/u8-mbtouc-unsafe.c
+        lib/unistring/unistr/u8-mbtoucr.c
         lib/unistring/unistr/u8-to-u16.c
         lib/unistring/unistr/u8-to-u32.c
         lib/unistring/unistr/u8-uctomb-aux.c
@@ -437,13 +437,13 @@ set(GNUTLS_SOURCES_lib_x509
         lib/x509/ocsp.c
         lib/x509/ocsp_output.c
         lib/x509/output.c
-        lib/x509/pkcs12_bag.c
         lib/x509/pkcs12.c
+        lib/x509/pkcs12_bag.c
         lib/x509/pkcs12_encr.c
         lib/x509/pkcs7-attrs.c
-        lib/x509/pkcs7.c
         lib/x509/pkcs7-crypt.c
         lib/x509/pkcs7-output.c
+        lib/x509/pkcs7.c
         lib/x509/privkey.c
         lib/x509/privkey_openssl.c
         lib/x509/privkey_pkcs8.c
@@ -453,9 +453,9 @@ set(GNUTLS_SOURCES_lib_x509
         lib/x509/spki.c
         lib/x509/time.c
         lib/x509/tls_features.c
-        lib/x509/verify.c
-        lib/x509/verify-high2.c
         lib/x509/verify-high.c
+        lib/x509/verify-high2.c
+        lib/x509/verify.c
         lib/x509/virt-san.c
         lib/x509/x509.c
         lib/x509/x509_dn.c
