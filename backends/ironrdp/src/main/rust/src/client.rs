@@ -1144,17 +1144,23 @@ impl Client {
                 desktop_size,
                 share_id,
                 enable_server_pointer,
+                static_channel_chunk_size,
                 ..
             } = *ironrdp_connector::state_downcast::<ConnectionActivationState>(sequence.state())
                 .ok_or_else(|| Error::Protocol("reactivation lost its state".into()))?
             {
-                stage.reactivate(
+                if !stage.reactivate(
                     io_channel_id,
                     user_channel_id,
                     share_id,
                     enable_server_pointer,
                     false,
-                );
+                    static_channel_chunk_size,
+                ) {
+                    return Err(Error::Protocol(
+                        "the server offered an invalid virtual channel chunk size".into(),
+                    ));
+                }
                 return Ok(desktop_size);
             }
         }
@@ -1176,7 +1182,7 @@ fn step<S: Read + Write>(
     let written = match sequence.next_pdu_hint() {
         Some(hint) => {
             let pdu = framed.read_by_hint(hint)?;
-            sequence.step(&pdu, buf).map_err(protocol)?
+            sequence.step(&pdu, framed.last_read_at(), buf).map_err(protocol)?
         }
         None => sequence.step_no_input(buf).map_err(protocol)?,
     };
@@ -1327,7 +1333,7 @@ fn connector_config(
 ) -> ironrdp_connector::Config {
     use ironrdp_connector::{BitmapConfig, Credentials as ConnectorCredentials};
     use ironrdp_pdu::gcc::{ConnectionType, KeyboardType};
-    use ironrdp_pdu::rdp::capability_sets::MajorPlatformType;
+    use ironrdp_pdu::rdp::capability_sets::{MajorPlatformType, RailSupportLevel};
     use ironrdp_pdu::rdp::client_info::{PerformanceFlags, TimezoneInfo};
 
     // The one codec worth choosing about. Everything else the list can hold is
@@ -1359,7 +1365,7 @@ fn connector_config(
         // than downgraded — the same position the RFB client takes on
         // anonymous VeNCrypt.
         enable_standard_rdp_security: false,
-        keyboard_type: KeyboardType::IbmEnhanced,
+        keyboard_type: KeyboardType::IBM_ENHANCED,
         keyboard_subtype: 0,
         keyboard_layout: config.keyboard_layout,
         keyboard_functional_keys_count: 12,
@@ -1376,6 +1382,9 @@ fn connector_config(
             width: config.desktop_size.0,
             height: config.desktop_size.1,
         },
+        // One monitor here, always: more are asked for over display control
+        // once the session is up (`send_layout`), which is also how they change.
+        monitor_layout: None,
         bitmap: Some(BitmapConfig {
             // Both halves of "how does the picture arrive". 32 bits because
             // the framebuffer is, and anything less would be a conversion on
@@ -1398,9 +1407,12 @@ fn connector_config(
         // login screen over the session it has just opened.
         autologon: true,
         enable_audio_playback: false,
+        enable_audio_capture: false,
         compression_type: config.compression,
         pointer_software_rendering: false,
         multitransport_flags: None,
+        // The graphics pipeline is deliberately not offered; see IronRdpProvider.
+        support_dyn_vc_gfx_protocol: false,
         performance_flags: match config.experience {
             Experience::Full => {
                 PerformanceFlags::ENABLE_FONT_SMOOTHING | PerformanceFlags::ENABLE_DESKTOP_COMPOSITION
@@ -1421,6 +1433,9 @@ fn connector_config(
         timezone_info: TimezoneInfo::default(),
         alternate_shell: String::new(),
         work_dir: String::new(),
+        // A desktop, not a RemoteApp.
+        remote_application_mode: false,
+        rail_support_level: RailSupportLevel::empty(),
     }
 }
 

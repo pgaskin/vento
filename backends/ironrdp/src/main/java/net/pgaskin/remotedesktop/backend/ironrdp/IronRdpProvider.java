@@ -52,17 +52,22 @@ import java.util.Map;
  *       framebuffer that is 32 bits either way.
  *   <li><b>The graphics pipeline (MS-RDPEGFX)</b>, which is how a machine since
  *       Windows 8 would rather send a desktop and the only path that carries
- *       H.264. It was built, driven against both servers and taken out again:
- *       IronRDP's implementation is incomplete and, where it is complete, wrong.
- *       Nothing in the library sets the capability flag a server needs before it
- *       will open the channel; the client receives RFX Progressive and discards
- *       it, though a finished decoder for it sits unused one crate away; and the
- *       ClearCodec that Windows sends for most of an interface is rejected
- *       outright — fifteen ClearCodec and twelve progressive failures in one
- *       short session, which is a desktop with solid rectangles of the wrong
- *       colour through it. Patched, all of that gets as far as working against
- *       xrdp and no further, so what would ship is a choice that is right on one
- *       server and corrupt on the one the protocol belongs to.
+ *       H.264. It was built, driven against both servers and taken out again,
+ *       because IronRDP's implementation was then incomplete and, where it was
+ *       complete, wrong. Nothing in the library set the capability flag a server
+ *       needs before it will open the channel; the client received RFX
+ *       Progressive and discarded it, though a finished decoder for it sat
+ *       unused one crate away; and the ClearCodec that Windows sends for most of
+ *       an interface was rejected outright — fifteen ClearCodec and twelve
+ *       progressive failures in one short session, which is a desktop with
+ *       solid rectangles of the wrong colour through it. Patched, all of that
+ *       got as far as working against xrdp and no further. The library has
+ *       since grown all three missing pieces — the flag and both decoders, and
+ *       a session that composites what the pipeline draws — but upstream's own
+ *       client still ships with the flag off, and none of it has been driven
+ *       against a Windows host from here since. Until it has, offering it would
+ *       be the same bet as before: a choice known to be right on one server and
+ *       not known to be right on the one the protocol belongs to.
  * </ul>
  */
 public final class IronRdpProvider implements BackendProvider {
