@@ -1,4 +1,4 @@
-From 4dd70c0a661f48141236a7df7294e1a9fb5272a0 Mon Sep 17 00:00:00 2001
+From 849aae094abe1861ba056867d555592275137ec0 Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Sun, 16 Aug 2026 15:55:45 -0400
 Subject: [PATCH 1/4] protocol: the crypto provider and the root store are the
@@ -14,10 +14,10 @@ webpki-roots goes behind a feature for the same reason it is unused by
 anyone verifying a server some other way: a private CA, or a pinned key.
 
 diff --git a/shakenfist-spice-protocol/Cargo.toml b/shakenfist-spice-protocol/Cargo.toml
-index daf2bf6..fa17bbe 100644
+index 823f189..c3eccd4 100644
 --- a/shakenfist-spice-protocol/Cargo.toml
 +++ b/shakenfist-spice-protocol/Cargo.toml
-@@ -11,6 +11,13 @@ readme = "README.md"
+@@ -12,6 +12,13 @@ readme = "README.md"
  [lints]
  workspace = true
  
@@ -31,7 +31,7 @@ index daf2bf6..fa17bbe 100644
  [dependencies]
  anyhow = "1"
  serde = { version = "1", features = ["derive"] }
-@@ -19,12 +26,20 @@ rand = "0.8"
+@@ -20,12 +27,20 @@ rand = "0.8"
  rsa = "0.9"
  sha1 = "0.10"
  tokio = { version = "1", features = ["io-util", "net"] }
@@ -55,14 +55,26 @@ index daf2bf6..fa17bbe 100644
  # workspace lockfile transitively (rcgen pulls it), so no new registry entry.
  x509-parser = "0.18"
 diff --git a/shakenfist-spice-protocol/src/client.rs b/shakenfist-spice-protocol/src/client.rs
-index 3fbede8..3efc63b 100644
+index 52cb01b..7402d12 100644
 --- a/shakenfist-spice-protocol/src/client.rs
 +++ b/shakenfist-spice-protocol/src/client.rs
-@@ -197,6 +197,7 @@ impl SpiceClient {
-         let mut root_store = RootCertStore::empty();
+@@ -209,6 +209,7 @@ fn build_root_store(ca_cert: Option<&str>) -> Result<TrustAnchors> {
+     let mut store = RootCertStore::empty();
  
-         // Add system roots
+     let Some(ca_cert) = ca_cert else {
 +        #[cfg(feature = "webpki-roots")]
-         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+         store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+         return Ok(TrustAnchors {
+             store,
+@@ -616,7 +617,11 @@ mod tests {
+         let anchors = build_root_store(Some(&ca.vv_ca_field)).unwrap();
+         assert_eq!(anchors.store.roots.len(), 1);
+         assert!(anchors.private_pki);
++    }
  
-         let has_custom_ca = config.ca_cert.is_some();
++    #[cfg(feature = "webpki-roots")]
++    #[test]
++    fn the_public_roots_apply_without_a_custom_ca() {
+         // Without one there is nothing else to trust, so the public
+         // roots still apply there — `--direct HOST:PORT:TLS_PORT` and a
+         // `.vv` with `tls-port` and no `ca=` both reach this branch.

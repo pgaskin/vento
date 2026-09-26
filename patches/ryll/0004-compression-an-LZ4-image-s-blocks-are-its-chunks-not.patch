@@ -1,4 +1,4 @@
-From decb59d2df2a040de666882f334852ae8f44af1a Mon Sep 17 00:00:00 2001
+From ac42c32b79ec542d0a0bf338126cbe33c0f737d0 Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Sun, 16 Aug 2026 18:43:09 -0400
 Subject: [PATCH 4/4] compression: an LZ4 image's blocks are its chunks, not
@@ -14,25 +14,30 @@ chunk — which a 1024x768 desktop is — arrives as a single block holding
 all 768 rows.
 
 Decoding a block per row therefore fails on the first one: lz4_flex is
-given a row's worth of output space for a whole image's worth of data,
-returns "provided output is too small", and the loop breaks with the
-RGBA buffer still zeroed. The image decodes to a black rectangle, and
-the decoder returns Some, so nothing above it can tell.
+given a row's worth of output space for a whole image's worth of data
+and returns "provided output is too small". The decoder used to break
+out of the loop there with the RGBA buffer still zeroed and return Some,
+a black rectangle nothing above it could tell apart; now that it is all
+or nothing it refuses the image instead, and every such image decodes
+to None.
 
 Decoding block by block until the bitmap is full covers both shapes,
 since a chunk boundary is always a row boundary. The cap handed to
 lz4_flex is what is left of the image rather than a whole one, so a
-block that claims more than the bitmap holds is still refused.
+block that claims more than the bitmap holds is still refused. A
+payload that runs out before the bitmap is full, a block past its end
+or an LZ4 error fail the whole image, as upstream's decoder does: a
+short image is refused rather than returned with its missing rows black.
 
 Checked against qemu 10.1 with `-spice image-compression=lz4`: the
 desktop is now identical, pixel for pixel, to the same desktop under
 GLZ, where before it was blank.
 
 diff --git a/shakenfist-spice-compression/src/lz4.rs b/shakenfist-spice-compression/src/lz4.rs
-index 72a2f54..3879386 100644
+index 75ee99e..296fbf8 100644
 --- a/shakenfist-spice-compression/src/lz4.rs
 +++ b/shakenfist-spice-compression/src/lz4.rs
-@@ -1,8 +1,9 @@
+@@ -1,16 +1,17 @@
  /// SPICE LZ4 image decompression.
  ///
 -/// Format: 1 byte top_down, 1 byte spice_format, then per-row blocks
@@ -45,8 +50,26 @@ index 72a2f54..3879386 100644
  use tracing::{debug, warn};
  
  use crate::DecompressedImage;
-@@ -41,12 +42,23 @@ pub fn decompress_spice_lz4(data: &[u8], width: usize, height: usize) -> Option<
-     let row_bytes = width * bpp;
+ 
+ /// Decompress a SPICE LZ4 image.
+ ///
+-/// All or nothing: any row that cannot be decoded — a truncated
+-/// payload, a row whose declared compressed size runs past the end
++/// All or nothing: any block that cannot be decoded — a truncated
++/// payload, a block whose declared compressed size runs past the end
+ /// of the buffer, an LZ4 error, or an unimplemented pixel format —
+ /// fails the whole image and returns `None`. Returning the partial
+ /// image instead would hand the caller attacker-chosen pixels with
+@@ -45,19 +46,30 @@ pub fn decompress_spice_lz4(data: &[u8], width: usize, height: usize) -> Option<
+         }
+     };
+ 
+-    // All three of these are checked. `width` and `bpp` both reach
++    // All four of these are checked. `width` and `bpp` both reach
+     // here from the wire, and leaving one unchecked multiply among
+     // three checked ones invites the next reader to assume it was
+     // considered and rejected.
+     let row_bytes = width.checked_mul(bpp)?;
      let total_pixels = width.checked_mul(height)?;
      let rgba_size = total_pixels.checked_mul(4)?;
 +    let raw_size = row_bytes.checked_mul(height)?;
@@ -68,10 +91,10 @@ index 72a2f54..3879386 100644
 +                raw.len() / row_bytes,
 +                height
 +            );
-             break;
+             return None;
          }
  
-@@ -60,24 +72,27 @@ pub fn decompress_spice_lz4(data: &[u8], width: usize, height: usize) -> Option<
+@@ -71,24 +83,27 @@ pub fn decompress_spice_lz4(data: &[u8], width: usize, height: usize) -> Option<
  
          if offset + enc_size > data.len() {
              warn!(
@@ -81,7 +104,7 @@ index 72a2f54..3879386 100644
                  enc_size,
                  data.len() - offset
              );
-             break;
+             return None;
          }
  
 -        let row_data = match lz4_flex::decompress(&data[offset..offset + enc_size], row_bytes) {
@@ -93,7 +116,7 @@ index 72a2f54..3879386 100644
              Err(e) => {
 -                warn!("display: LZ4 row {} decompression failed: {}", row, e);
 +                warn!("display: LZ4 block decompression failed: {}", e);
-                 break;
+                 return None;
              }
 -        };
 +        }
@@ -101,7 +124,7 @@ index 72a2f54..3879386 100644
 +    }
  
 -        // Convert decoded row to RGBA
-+    for row in 0..raw.len() / row_bytes {
++    for row in 0..height {
 +        let row_data = &raw[row * row_bytes..(row + 1) * row_bytes];
          let dst_row = if top_down { row } else { height - 1 - row };
          let dst_row_start = dst_row * width * 4;
