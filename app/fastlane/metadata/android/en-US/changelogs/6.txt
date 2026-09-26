@@ -1,0 +1,14 @@
+* TigerVNC: Update to dd416cbf.
+* FreeRDP: Update to 3.32.0.
+* FreeRDP: Update OpenSSL to 3.5.8.
+* LibVNC/TigerVNC: Update libjpeg-turbo to 3.2.0.
+* LibVNC/TigerVNC: Update nettle to 4.0.
+* IronRDP: Update to 9b151c4c.
+* SPICE: Update ryll to 3ba0f24.
+* TigerVNC: Fix Tight decoding with older servers.
+* TigerVNC: Support the QEMU audio extension.
+* FreeRDP: Require TLS 1.2 and 2048-bit keys by default.
+* FreeRDP: Add option to allow legacy TLS.
+* FreeRDP: Show negotiated security layer and graphics pipeline version in the info panel.
+* IronRDP: Improve compatibility with third-party servers.
+* IronRDP: Improve disconnect messages.

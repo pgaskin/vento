@@ -140,7 +140,7 @@ public final class TigerVncProvider implements BackendProvider {
 
     @Override
     public String description() {
-        return "Fastest implementation, dropping the fewest frames, but using 2-5x the CPU usage. This the only VNC backend which supports H.264 encoding, which is the most bandwidth-efficient for large screen updates, where supported by the server.";
+        return "Fastest implementation, dropping the fewest frames, but using 2-5x the CPU usage. This the only VNC backend which supports H.264 encoding, which is the most bandwidth-efficient for large screen updates, where supported by the server. It also supports QEMU audio.";
     }
 
     /** After libvncclient, which came first. */
