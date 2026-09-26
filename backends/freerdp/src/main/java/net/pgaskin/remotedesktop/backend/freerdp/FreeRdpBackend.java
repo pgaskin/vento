@@ -126,7 +126,9 @@ public final class FreeRdpBackend implements Backend, FreeRdpNative.Callbacks {
 
     /**
      * The library's own certificate store, emptied: one PEM per server it has
-     * connected to, under {@code server/}, and the older single file beside it.
+     * connected to, under {@code server/}. The {@code certs/} directory beside
+     * it is left alone, since the library only reads it — it is where a
+     * certificate authority would go, and nothing here puts one there.
      *
      * <p>Whether a connection is refused is the app's pin store's answer rather
      * than this one's (see {@code onVerifyChangedCertificate} in the JNI), so
@@ -136,7 +138,6 @@ public final class FreeRdpBackend implements Backend, FreeRdpNative.Callbacks {
      */
     static void forgetHosts(Context context) {
         final File store = store(context);
-        delete(new File(store, "known_hosts"));
         final File[] servers = new File(store, "server").listFiles();
         if (servers != null) {
             for (File f : servers) {
@@ -180,7 +181,8 @@ public final class FreeRdpBackend implements Backend, FreeRdpNative.Callbacks {
         //noinspection ResultOfMethodCallIgnored
         store.mkdirs();
         final long h = FreeRdpNative.nativeCreate(this, address, userName, domain, password,
-                options.get(FreeRdpProvider.NLA), bool(FreeRdpProvider.COMPRESSION),
+                options.get(FreeRdpProvider.NLA), bool(FreeRdpProvider.LEGACY_TLS),
+                bool(FreeRdpProvider.COMPRESSION),
                 options.get(FreeRdpProvider.GRAPHICS), options.get(FreeRdpProvider.EXPERIENCE),
                 options.get(FreeRdpProvider.SOUND), scale(),
                 size[0], size[1], monitorCount(), KEYBOARD_LAYOUT,

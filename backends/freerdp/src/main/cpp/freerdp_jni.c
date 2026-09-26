@@ -14,14 +14,17 @@
 //
 //   1. **This file must not define `JNI_OnLoad`.** WinPR exports one of its own
 //      and takes its `JavaVM` from it, because it reads the timezone through
-//      Java; without it, the first `freerdp_settings_new` asserts. A shim that
-//      defines one silently replaces WinPR's and the library stops working in a
-//      way that looks nothing like the cause.
-//   2. **`freerdp_client_start` replaces the callbacks you set.** With
-//      `UseCommonStdioCallbacks` on, which is the default, it installs the
-//      command-line prompts over the certificate and credential ones — and on a
-//      phone there is no terminal, so they refuse, and the refusal is reported
-//      as a TLS failure over a handshake that in fact succeeded.
+//      Java. It is in the same object as the `JavaVM` the timezone code reads,
+//      so a second one here does not replace it: the link fails on a duplicate
+//      symbol, and anything a shim wants done at load time belongs somewhere
+//      else.
+//   2. **The library installs command-line prompts over the callbacks you
+//      set.** Creating the context puts them in unconditionally, and
+//      `freerdp_client_start` does it again when `UseCommonStdioCallbacks` is
+//      on — so ours go in after the context exists, and the flag is stated
+//      off. On a phone there is no terminal, so those prompts refuse, and the
+//      refusal is reported as a TLS failure over a handshake that in fact
+//      succeeded.
 //   3. **`update->DesktopResize` is not optional.** `gdi_ResetGraphics` asserts
 //      on it, so no callback is `abort()` rather than a missing feature.
 //   4. **The graphics pipeline paints nothing unless it is joined to the GDI**
@@ -62,6 +65,7 @@
 #include <freerdp/autodetect.h>
 #include <freerdp/settings.h>
 #include <winpr/synch.h>
+#include <openssl/tls1.h>
 
 #define TAG "FreeRdp"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -92,10 +96,11 @@ typedef struct {
 typedef struct Session Session;
 
 /* The context FreeRDP allocates for us: its own, and a pointer back to ours.
-   `rdpClientContext` is what the client layer writes into the allocation, so
-   `ContextSize` has to name a struct that starts with one — leave it zero and
-   everything above `rdpContext` lands off the end of the allocation, which
-   nothing asserts on. */
+   `rdpClientContext` is what the client layer keeps in the allocation, so
+   `ContextSize` has to name a struct that starts with one. The library
+   allocates exactly what it is told; a size short of that is refused by the
+   client layer call by call, each one failing with an "application bug" in
+   the log. */
 typedef struct {
     rdpClientContext client;
     Session *session;
@@ -142,6 +147,10 @@ struct Session {
     CliprdrClientContext *cliprdr;
     DispClientContext *disp;
     _Atomic int gfxOpen; /* the graphics pipeline's channel is up */
+    /* What the server confirmed of the capability sets the pipeline offered:
+       the version, and whether that version with its flags carries H.264. */
+    _Atomic UINT32 gfxVersion;
+    _Atomic int gfxH264;
 
     /* The codec of the last surface the server sent, and the library's own
        handler it is read on the way to. Asking the settings instead answers
@@ -177,6 +186,7 @@ struct Session {
     char addressError[160];
     char *user, *domain, *password;
     char *nla;
+    int legacyTls;
     char *experience;
     char *graphics;
     char *sound;
@@ -821,6 +831,31 @@ static void wireCliprdr(Session *s, CliprdrClientContext *cliprdr) {
 
 /* ---- the channels ------------------------------------------------------- */
 
+/* The server's pick from the capability sets the pipeline advertised, which is
+   the only place the answer is published: the library keeps it private and
+   leaves the settings saying what was asked. 8.1 carries H.264 only with the
+   AVC420 flag set, 10 and later unless the AVC-disabled one is, and 8.0 never.
+   The GDI does not use this hook, so there is nothing of its to chain. */
+static UINT onGfxCapsConfirm(RdpgfxClientContext *gfx, const RDPGFX_CAPS_CONFIRM_PDU *confirm) {
+    const rdpGdi *gdi = (const rdpGdi *) gfx->custom;
+    if (!gdi || !confirm || !confirm->capsSet) {
+        return CHANNEL_RC_OK;
+    }
+    Session *s = sessionOf(gdi->context);
+    const UINT32 version = confirm->capsSet->version;
+    const UINT32 flags = confirm->capsSet->flags;
+    int h264 = 0;
+    if (version == RDPGFX_CAPVERSION_81) {
+        h264 = (flags & RDPGFX_CAPS_FLAG_AVC420_ENABLED) != 0;
+    } else if (version >= RDPGFX_CAPVERSION_10) {
+        h264 = (flags & RDPGFX_CAPS_FLAG_AVC_DISABLED) == 0;
+    }
+    s->gfxH264 = h264;
+    s->gfxVersion = version;
+    LOGI("graphics pipeline: server confirmed caps 0x%08x, flags 0x%08x", version, flags);
+    return CHANNEL_RC_OK;
+}
+
 /* A channel's interface arrives on an event rather than from a call, so the
    pointer has to be kept: this is the only place either of them is handed
    over. */
@@ -830,7 +865,9 @@ static void onChannelConnected(void *context, const ChannelConnectedEventArgs *e
     if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
         /* Without this the pipeline negotiates, the channel opens and nothing
            is ever painted. */
-        gdi_graphics_pipeline_init(ctx->gdi, (RdpgfxClientContext *) e->pInterface);
+        RdpgfxClientContext *gfx = (RdpgfxClientContext *) e->pInterface;
+        gdi_graphics_pipeline_init(ctx->gdi, gfx);
+        gfx->CapsConfirm = onGfxCapsConfirm;
         s->gfxOpen = 1;
     } else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
         wireCliprdr(s, (CliprdrClientContext *) e->pInterface);
@@ -849,6 +886,8 @@ static void onChannelDisconnected(void *context, const ChannelDisconnectedEventA
     if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
         gdi_graphics_pipeline_uninit(ctx->gdi, (RdpgfxClientContext *) e->pInterface);
         s->gfxOpen = 0;
+        s->gfxVersion = 0;
+        s->gfxH264 = 0;
     } else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
         s->cliprdr = NULL;
     } else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0) {
@@ -864,12 +903,13 @@ static void onChannelDisconnected(void *context, const ChannelDisconnectedEventA
 static BOOL onAuthenticate(freerdp *instance, char **username, char **password, char **domain,
                            rdp_auth_reason reason) {
     Session *s = sessionOf(instance->context);
-    /* Asked *unconditionally* on the TLS and RDP paths — the library's own
-       prompt there is "confirm what you are about to send", and only the NLA one
-       is asked because something is missing. So a shim that forwards every ask
-       to a person turns a saved password into a dialog on every connect, which
-       is what this answers instead: what the record already holds is the
-       answer, and the prompt is for when there is nothing to give. */
+    /* The library itself now asks only when something is missing: the TLS and
+       RDP paths skip the question when a user name and a password are both
+       set, and NLA asks only for an empty user name or no password at all. So
+       arriving here with both is one of the other reasons, and the answer is
+       the library's own — what the record already holds is the answer, and the
+       prompt is for when there is nothing to give. Forwarding it to a person
+       would turn a saved password into a dialog. */
     if (*username && **username && *password && **password) {
         return TRUE;
     }
@@ -1473,8 +1513,10 @@ static void applySettings(Session *s, rdpSettings *settings) {
     if (s->configPath) {
         freerdp_settings_set_string(settings, FreeRDP_ConfigPath, s->configPath);
     }
-    /* Or freerdp_client_start replaces every callback with a command-line one,
-       and there is no terminal on a phone for them to prompt at. */
+    /* Off already, since nothing in the library turns it on, and stated
+       because on it makes freerdp_client_start put a command-line prompt back
+       over every callback — and there is no terminal on a phone for them to
+       prompt at. */
     freerdp_settings_set_bool(settings, FreeRDP_UseCommonStdioCallbacks, FALSE);
     freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, FALSE);
     freerdp_settings_set_bool(settings, FreeRDP_AutoAcceptCertificate, FALSE);
@@ -1482,13 +1524,34 @@ static void applySettings(Session *s, rdpSettings *settings) {
     /* Network Level Authentication: prefer it, insist on it, or refuse it.
        Nothing here turns off TLS — a server that offers only the RDP security
        layer is one whose password crosses in something a 1990s cipher calls
-       encryption, and the connection is worth failing. */
+       encryption, and the connection is worth failing.
+
+       NLA is two switches since the library turned ExtSecurity on by default
+       in 3.32.0. That is HYBRID_EX: the same CredSSP, plus the Early User
+       Authorization Result PDU, which turns "this account may not log in here"
+       into an error rather than a login screen that says it. It is negotiated
+       on its own switch and ahead of plain NLA, so "Never" has to refuse both
+       or CredSSP happens anyway; "If supported" gets HYBRID_EX first, as every
+       client of this library now does. */
     const int nlaOff = s->nla && strcmp(s->nla, "off") == 0;
     const int nlaRequired = s->nla && strcmp(s->nla, "require") == 0;
     freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, !nlaOff);
+    freerdp_settings_set_bool(settings, FreeRDP_ExtSecurity, !nlaOff);
     freerdp_settings_set_bool(settings, FreeRDP_TlsSecurity, !nlaRequired);
     freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, FALSE);
     freerdp_settings_set_bool(settings, FreeRDP_UseRdpSecurityLayer, FALSE);
+
+    /* The floor under TLS. 3.27.0 raised it to TLS 1.2 at OpenSSL's security
+       level 2, from the TLS 1.0 at level 1 that 3.19.1 set — but level 1
+       already refuses TLS 1.0 and 1.1 in OpenSSL 3, and the SHA-1 signatures
+       that come with them, so what the raise took from this app is keys under
+       2048 bits, and what this row gives back is more than it took. Level 0,
+       because it is the only one at which the lower version is a version a
+       handshake can use. Unset, both are the library's. */
+    if (s->legacyTls) {
+        freerdp_settings_set_uint16(settings, FreeRDP_TLSMinVersion, TLS1_VERSION);
+        freerdp_settings_set_uint32(settings, FreeRDP_TlsSecLevel, FREERDP_TLS_SECLEVEL_0);
+    }
 
     freerdp_settings_set_bool(settings, FreeRDP_CompressionEnabled, s->compression != 0);
     freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, TRUE);
@@ -1521,29 +1584,22 @@ static void applySettings(Session *s, rdpSettings *settings) {
        time and costs 0.97 MiB against 0.77. */
     freerdp_settings_set_bool(settings, FreeRDP_BitmapCacheEnabled, FALSE);
 
-    /* Sound, which is a channel rather than a flag: the two settings decide
-       what the client info tells the server to do — play it here, play it over
-       there, or play nothing — and the channel that carries it has to be asked
-       for separately.
+    /* Sound: the two settings decide what the client info tells the server to
+       do — play it here, play it over there, or play nothing — and the library
+       loads the channel that carries it from the first of them, as a static
+       and a dynamic channel both, which is its own design. On Android the
+       channel tries OpenSL ES and then a device that accepts every format and
+       discards every sample.
 
-       Asked for here rather than left to the library, because the library's own
-       "load the channels the settings ask for" is guarded on
-       CHANNEL_RPDSND_CLIENT, which is a misspelling of a macro nothing else
-       uses: rdpsnd is never loaded for AudioPlayback in 3.19.1. What loads
-       instead is the fallback further down that function, which adds rdpsnd
-       against a device that accepts every format and discards every sample —
-       so an app that never asked for sound gets the channel, and one that does
-       gets the same silent device. Only the command line escapes it, by adding
-       the channel itself, which is what this does. */
+       That silent device is also what "off" and "over there" get: autodetect,
+       which is on below, makes the library register device redirection, and
+       device redirection without rdpsnd asked for adds rdpsnd against the
+       silent device anyway — a channel the client info has already told the
+       server not to play anything on. */
     const int soundHere = s->sound && strcmp(s->sound, "local") == 0;
     const int soundThere = s->sound && strcmp(s->sound, "remote") == 0;
     freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, soundHere);
     freerdp_settings_set_bool(settings, FreeRDP_RemoteConsoleAudio, soundThere);
-    if (soundHere) {
-        const char *const rdpsnd[] = {"rdpsnd"};
-        freerdp_client_add_dynamic_channel(settings, 1, rdpsnd);
-        freerdp_client_add_static_channel(settings, 1, rdpsnd);
-    }
 
     /* How big the far end draws its own interface. The protocol allows 100–500
        for the desktop factor and exactly 100, 140 or 180 for the device one,
@@ -1728,9 +1784,10 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeVersion(JNIEn
 JNIEXPORT jlong JNICALL
 Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
         JNIEnv *env, jclass cls, jobject listener, jstring address, jstring userName,
-        jstring domain, jstring password, jstring nla, jboolean compression, jstring graphics,
-        jstring experience, jstring sound, jint scale, jint width, jint height, jint monitors,
-        jint keyboardLayout, jstring clientName, jstring configPath, jint connectTimeoutMs) {
+        jstring domain, jstring password, jstring nla, jboolean legacyTls, jboolean compression,
+        jstring graphics, jstring experience, jstring sound, jint scale, jint width, jint height,
+        jint monitors, jint keyboardLayout, jstring clientName, jstring configPath,
+        jint connectTimeoutMs) {
     (void) cls;
     if (!gCallbacksClass) {
         jclass k = (*env)->GetObjectClass(env, listener);
@@ -1775,6 +1832,7 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
     s->domain = dup_jstring(env, domain);
     s->password = dup_jstring(env, password);
     s->nla = dup_jstring(env, nla);
+    s->legacyTls = legacyTls != JNI_FALSE;
     s->graphics = dup_jstring(env, graphics);
     s->experience = dup_jstring(env, experience);
     s->sound = dup_jstring(env, sound);
@@ -1799,9 +1857,9 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
         setenv("HOME", s->configPath, 1);
     }
 
-    /* ContextSize is what the client layer allocates and then writes
-       rdpClientContext into; zero means everything above rdpContext lands off
-       the end of it, and nothing asserts. */
+    /* ContextSize is what the library allocates and the client layer keeps
+       rdpClientContext in; short of that, the client layer refuses the context
+       at every call that needs its half. */
     RDP_CLIENT_ENTRY_POINTS entry = {0};
     entry.Size = sizeof(RDP_CLIENT_ENTRY_POINTS_V1);
     entry.Version = RDP_CLIENT_INTERFACE_VERSION;
@@ -2145,8 +2203,15 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeInfo(
     } else {
         snprintf(connection, sizeof(connection), "%s:%d", host, s->port);
     }
-    const UINT32 selected = freerdp_settings_get_uint32(settings, FreeRDP_SelectedProtocol);
-    const char *layer = selected == 0 ? "RDP" : selected == 1 ? "TLS" : "NLA (CredSSP)";
+    const char *layer;
+    switch (freerdp_settings_get_uint32(settings, FreeRDP_SelectedProtocol)) {
+        case 0: layer = "RDP"; break;
+        case 1: layer = "TLS"; break;
+        case 2: layer = "NLA (CredSSP)"; break;
+        case 4: layer = "RDSTLS"; break;
+        case 8: layer = "NLA (CredSSP, extended)"; break;
+        default: layer = "?"; break;
+    }
     snprintf(security, sizeof(security), "%s", layer);
 
     /* The autodetect exchange's own number, in kilobits, and empty until the
@@ -2169,14 +2234,20 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeInfo(
     snprintf(viewer, sizeof(viewer), "%u×%u, 32 bpp", w, h);
 
     /* What the picture is arriving as rather than what was asked for: the
-       pipeline's channel opening is the server agreeing to it, and the library
-       rewrites its own H.264 flags from the capability set the server
-       confirmed. The codec below it is read off the surfaces themselves, since
-       a declined RemoteFX leaves the setting that asked for it standing. */
+       pipeline's channel opening is the server agreeing to it, and the version
+       and H.264 are what the server confirmed, since the settings that asked
+       for them are left standing whatever it says. The codec below it is read
+       off the surfaces themselves, for the same reason: a declined RemoteFX
+       leaves the setting that asked for it standing too. */
     char encoding[64];
     if (s->gfxOpen) {
-        snprintf(encoding, sizeof(encoding), "EGFX%s",
-                 freerdp_settings_get_bool(settings, FreeRDP_GfxH264) ? ", H.264" : "");
+        const UINT32 version = s->gfxVersion;
+        if (version) {
+            snprintf(encoding, sizeof(encoding), "EGFX %u.%u%s", (version >> 16) & 0xFFFFu,
+                     (version >> 8) & 0xFFu, s->gfxH264 ? ", H.264" : "");
+        } else {
+            snprintf(encoding, sizeof(encoding), "EGFX");
+        }
     } else if (s->lastCodec == RDP_CODEC_ID_REMOTEFX) {
         snprintf(encoding, sizeof(encoding), "RemoteFX");
     } else if (s->lastCodec == RDP_CODEC_ID_NSCODEC) {

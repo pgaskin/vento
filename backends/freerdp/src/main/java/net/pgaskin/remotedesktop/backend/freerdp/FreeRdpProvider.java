@@ -61,6 +61,7 @@ import java.util.Map;
 public final class FreeRdpProvider implements BackendProvider {
 
     public static final String NLA = "Nla";
+    public static final String LEGACY_TLS = "LegacyTls";
     public static final String DESKTOP_SIZE = "DesktopSize";
     public static final String SCALE = "Scale";
     public static final String MONITORS = "Monitors";
@@ -87,6 +88,9 @@ public final class FreeRdpProvider implements BackendProvider {
                     new Choice("prefer", "If supported by the server"),
                     new Choice("require", "Required"),
                     new Choice("off", "Never")),
+            BackendOption.bool(LEGACY_TLS, "Old TLS",
+                    "Allow TLS 1.0 and 1.1 and their weaker keys, for a server that has nothing newer, such as Windows 7 or Server 2008 R2 without updates.",
+                    false, Scope.CONNECTION, false),
             BackendOption.choice(DESKTOP_SIZE, "Desktop size",
                     "Preferred screen resolution.",
                     "1920x1200", Scope.CONNECTION, false,

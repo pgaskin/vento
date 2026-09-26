@@ -41,22 +41,41 @@ macro(find_package name)
     endif()
 endmacro()
 
-# Upstream's own scripts/android-build-freerdp.sh is where this list comes from,
-# less everything a phone has no use for. Three of them are load-bearing rather
-# than taste: a current OpenSSL keeps RC4, MD4 and MD5 in the legacy provider,
-# which this build does not compile, and RDP needs all three on the wire.
-foreach(off WITHOUT_FREERDP_3x_DEPRECATED WITH_INTERNAL_RC4 WITH_INTERNAL_MD4
-        WITH_INTERNAL_MD5 WITH_SMARTCARD_EMULATE)
+# Upstream's own Android build (client/Android/cmake/ExternalFreeRDP.cmake) is
+# where this list comes from, less everything a phone has no use for. Three of
+# them are load-bearing rather than taste: a current OpenSSL keeps RC4, MD4 and
+# MD5 in the legacy provider, which this build does not compile, and RDP needs
+# all three on the wire. The last is ours: JSON is read for Azure sign-in and
+# for keyboard layouts and timezones from files, none of which this build has,
+# and saying so is what stops their configure looking for a parser at all.
+foreach(off WITHOUT_FREERDP_3x_DEPRECATED WITHOUT_WINPR_3x_DEPRECATED WITH_INTERNAL_RC4
+        WITH_INTERNAL_MD4 WITH_INTERNAL_MD5 WITH_SMARTCARD_EMULATE WITH_JSON_DISABLED)
     set(${off} ON CACHE BOOL "" FORCE)
 endforeach()
+# Opus and uriparser each fall back to pkg-config when the package search comes
+# up empty, and that can find the host's copy; off by name is the only answer
+# that does not depend on what the build machine has installed.
 foreach(off WITH_CLIENT_SDL WITH_CLIENT WITH_SERVER WITH_SAMPLE WITH_SHADOW WITH_PROXY
         WITH_MANPAGES WITH_OPENH264 WITH_FFMPEG WITH_AAD WITH_SWSCALE WITH_CUPS
-        WITH_PCSC WITH_ALSA WITH_PULSE WITH_OSS WITH_WEBVIEW WITH_KRB5 WITH_LIBUSB
-        WITH_WINPR_TOOLS WITH_X11 WITH_WAYLAND WITH_DSP_FFMPEG WITH_FUSE)
+        WITH_PCSC WITH_ALSA WITH_PULSE WITH_OSS WITH_KRB5 WITH_WINPR_TOOLS WITH_X11
+        WITH_WAYLAND WITH_DSP_FFMPEG WITH_FUSE WITH_OPUS WITH_URIPARSER)
     set(${off} OFF CACHE BOOL "" FORCE)
 endforeach()
 set(WITH_CLIENT_COMMON ON CACHE BOOL "" FORCE)
 set(WITH_CLIENT_CHANNELS ON CACHE BOOL "" FORCE)
+
+# The device behind Sound = "This phone": rdpsnd tries OpenSL ES first on
+# Android, and without it the only device left is one that discards every
+# sample. It is upstream's default here already; saying so makes the
+# libOpenSLES.so it links a decision rather than an accident.
+set(WITH_OPENSLES ON CACHE BOOL "" FORCE)
+
+# The version from the hard-coded string in their cmake/GetProjectVersion.cmake
+# rather than from `git describe`, which also stamps the build with a short
+# commit hash whose length is whatever the clone it ran in decided. The string
+# is the release's own, so the version the library reports is the same either
+# way; only the revision becomes "n/a".
+set(USE_VERSION_FROM_GIT_TAG OFF CACHE BOOL "" FORCE)
 
 # H.264 on the phone's own decoder, through the NDK's MediaCodec — which is a
 # build switch here and was eighteen hand-written NDK declarations the last time
@@ -73,24 +92,29 @@ else()
     set(WITH_VERBOSE_WINPR_ASSERT OFF CACHE BOOL "" FORCE)
 endif()
 
-# Six libraries their configure looks for and warns about not finding, each one
-# behind an option this build has already answered or a feature a viewer has no
-# use for. The search is what is switched off rather than the warning: the answer
-# is then the same on a machine that happens to have them installed, which is
-# what the NDK toolchain's find-root rules only mostly guarantee.
-foreach(pkg PulseAudio Opus uriparser cJSON jansson json-c)
+# Two libraries their configure looks for and warns about not finding, both
+# behind an option this build has already answered. The search is what is
+# switched off rather than the warning: the answer is then the same on a machine
+# that happens to have them installed, which is what the NDK toolchain's
+# find-root rules only mostly guarantee. The JSON libraries need no such line,
+# since WITH_JSON_DISABLED skips their detection altogether.
+foreach(pkg Opus uriparser)
     set(CMAKE_DISABLE_FIND_PACKAGE_${pkg} ON)
 endforeach()
 
 add_subdirectory("${THIRD_PARTY}/freerdp" freerdp EXCLUDE_FROM_ALL)
+remotedesktop_vendored_warnings("${THIRD_PARTY}/freerdp")
 
 add_library(remotedesktop_freerdp SHARED freerdp_jni.c)
 remotedesktop_warnings(remotedesktop_freerdp)
 # Their targets carry no usable include directories under add_subdirectory —
 # their own build puts them on the path globally — so the four are named here:
-# the tree's and, beside each, the one their configure wrote.
+# the tree's and, beside each, the one their configure wrote. OpenSSL's are
+# borrowed from the port for the TLS version constants, and as SYSTEM like the
+# rest, because linking the port would put them on the path as ours.
 target_include_directories(remotedesktop_freerdp SYSTEM PRIVATE
         "${THIRD_PARTY}/freerdp/include" "${CMAKE_CURRENT_BINARY_DIR}/freerdp/include"
-        "${THIRD_PARTY}/freerdp/winpr/include" "${CMAKE_CURRENT_BINARY_DIR}/freerdp/winpr/include")
+        "${THIRD_PARTY}/freerdp/winpr/include" "${CMAKE_CURRENT_BINARY_DIR}/freerdp/winpr/include"
+        "$<TARGET_PROPERTY:openssl,INTERFACE_INCLUDE_DIRECTORIES>")
 target_link_libraries(remotedesktop_freerdp PRIVATE
         freerdp-client freerdp winpr jnigraphics log)

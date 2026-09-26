@@ -13,7 +13,7 @@
 #
 # 1. Silence at the *target*, never globally, and never on a target of ours.
 #    `-w` on a directory reaches ours too; the vendored trees are separate
-#    targets and the flags below never touch them.
+#    targets, and `remotedesktop_warnings` never touches them.
 # 2. Their headers are ours to include and theirs to fix. `-Wall` on our target
 #    diagnoses everything it compiles, which includes several thousand lines of
 #    somebody else's templates — so a vendored include directory goes on the
@@ -33,4 +33,23 @@ function(remotedesktop_warnings target)
     if(STRICT_WARNINGS)
         target_compile_options(${target} PRIVATE -Werror)
     endif()
+endfunction()
+
+# Every compiled target a vendored tree defines under `dir`, subdirectories and
+# all — which is rule 1 for a project too big to name its targets one by one.
+# `-w` on each of them rather than on the directory, so that it cannot reach a
+# target of ours however the scopes are nested; and a compile option rather than
+# CMAKE_C_FLAGS, which FreeRDP writes into a string in the library.
+function(remotedesktop_vendored_warnings dir)
+    get_property(targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(target IN LISTS targets)
+        get_target_property(type ${target} TYPE)
+        if(type MATCHES "^(STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY|EXECUTABLE)$")
+            target_compile_options(${target} PRIVATE -w)
+        endif()
+    endforeach()
+    get_property(subdirs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
+    foreach(sub IN LISTS subdirs)
+        remotedesktop_vendored_warnings("${sub}")
+    endforeach()
 endfunction()

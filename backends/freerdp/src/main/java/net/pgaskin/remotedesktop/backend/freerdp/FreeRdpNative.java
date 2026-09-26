@@ -15,7 +15,8 @@ import android.graphics.Bitmap;
  * {@link #nativeCreate}'s arguments are where they diverge, and every divergence
  * is something the other client cannot do at all — the graphics pipeline, sound,
  * the interface size the far end draws at, and a directory for the store FreeRDP
- * keeps whether or not anything reads it.
+ * keeps whether or not anything reads it. The one that is not is the TLS floor,
+ * which is here because this library raised its own.
  *
  * <h2>Threads</h2>
  * <ul>
@@ -61,7 +62,7 @@ final class FreeRdpNative {
          */
         void onCursor(int[] argb, int width, int height, int hotX, int hotY, long hash);
 
-        /** Never called: RDP has no relative pointer. */
+        /** Never called: this shim never asks the server for a relative pointer. */
         void onPointerMode(boolean relative);
 
         /** Never called: nothing in this client rings one. */
@@ -96,6 +97,9 @@ final class FreeRdpNative {
      * arrives through {@code listener}.
      *
      * @param nla        {@code prefer}, {@code require} or {@code off}
+     * @param legacyTls  let TLS go down to 1.0 at OpenSSL's security level 0,
+     *                   for a server too old for the library's own floor of
+     *                   TLS 1.2 at level 2
      * @param graphics   {@code gfx}, {@code gfx-novideo}, {@code rfx} or
      *                   {@code bitmap}
      * @param experience {@code full}, {@code balanced} or {@code plain}
@@ -109,10 +113,10 @@ final class FreeRdpNative {
      */
     static native long nativeCreate(Callbacks listener, String address, String userName,
                                     String domain, String password, String nla,
-                                    boolean compression, String graphics, String experience,
-                                    String sound, int scale, int width, int height, int monitors,
-                                    int keyboardLayout, String clientName, String configPath,
-                                    int connectTimeoutMs);
+                                    boolean legacyTls, boolean compression, String graphics,
+                                    String experience, String sound, int scale, int width,
+                                    int height, int monitors, int keyboardLayout,
+                                    String clientName, String configPath, int connectTimeoutMs);
 
     /**
      * Whether the display control channel is open, which is the only way an RDP
