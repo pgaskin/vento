@@ -5,9 +5,15 @@
 //!
 //! The protocol *is* those files: there is no specification and no second
 //! implementation to read a disagreement against, so a hand-typed copy would be
-//! a derivative work with worse provenance and 985 lines of message definitions
-//! to keep in step by eye. They are a submodule at `third_party/hbb_common`,
-//! pinned to the commit the reading was done against.
+//! a derivative work with worse provenance and 1032 lines of message definitions
+//! to keep in step by eye. They are a submodule at `third_party/hbb_common`.
+//!
+//! It is pinned at the last upstream commit that still has both. On 2026-09-07
+//! `message.proto` moved out of hbb_common, which they share with their server,
+//! and into rustdesk's own tree as `libs/base/protos/message.proto` (rustdesk
+//! b50fde6); what stayed is what the server names. So this cannot follow
+//! hbb_common's main branch past 3d6fb2c without a second source for that
+//! file, and a `message.proto` missing below is what trying looks like.
 
 use std::path::PathBuf;
 
