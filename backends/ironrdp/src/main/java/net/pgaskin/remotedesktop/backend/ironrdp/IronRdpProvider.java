@@ -116,7 +116,7 @@ public final class IronRdpProvider implements BackendProvider {
                     new Choice("2", "Two"),
                     new Choice("3", "Three")),
             BackendOption.choice(GRAPHICS, "Graphics",
-                    "EGFX is not supported, RemoteFX is older, and Bitmap sends raw images.",
+                    "EGFX is the newest codec and what most servers send, RemoteFX is older, and Bitmap sends raw images.",
                     "rfx", Scope.LAYERED, false,
                     new Choice("rfx", "RemoteFX"),
                     new Choice("bitmap", "Bitmaps")),
