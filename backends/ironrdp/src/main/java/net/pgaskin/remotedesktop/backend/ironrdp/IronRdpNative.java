@@ -75,6 +75,12 @@ final class IronRdpNative {
          */
         void onBell();
 
+        /**
+         * A block of the remote machine's sound: 16-bit stereo PCM at
+         * {@code sampleRate}, interleaved. Only sent when sound was asked for.
+         */
+        void onAudio(int sampleRate, int channels, byte[] pcm);
+
         void onClipboard(String text);
 
         /**
@@ -130,7 +136,8 @@ final class IronRdpNative {
     static native long nativeCreate(Callbacks listener, String address, String userName,
                                     String domain, String password, String nla,
                                     String compression, boolean remoteFx, String experience,
-                                    int width, int height, int monitors, int keyboardLayout,
+                                    boolean sound, int width, int height, int monitors,
+                                    int keyboardLayout,
                                     String clientName, int connectTimeoutMs);
 
     /**

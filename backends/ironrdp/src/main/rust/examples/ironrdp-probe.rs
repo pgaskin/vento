@@ -61,6 +61,10 @@ impl Handler for Probe {
         println!("bell");
     }
 
+    fn audio(&mut self, sample_rate: u32, channels: u16, pcm: &[u8]) {
+        println!("audio: {} bytes at {sample_rate} Hz, {channels} channels", pcm.len());
+    }
+
     fn clipboard(&mut self, text: &str) {
         println!("clipboard: {} chars: {text:?}", text.chars().count());
     }

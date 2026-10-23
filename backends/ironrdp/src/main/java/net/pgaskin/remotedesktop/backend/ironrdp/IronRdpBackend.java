@@ -155,6 +155,7 @@ public final class IronRdpBackend implements Backend, IronRdpNative.Callbacks {
                 bool(IronRdpProvider.COMPRESSION) ? "rdp61" : null,
                 !"bitmap".equals(options.get(IronRdpProvider.GRAPHICS)),
                 options.get(IronRdpProvider.EXPERIENCE),
+                bool(IronRdpProvider.SOUND),
                 size[0], size[1], monitorCount(), KEYBOARD_LAYOUT,
                 android.os.Build.MODEL, CONNECT_TIMEOUT_MS);
         if (h == 0) {
@@ -463,6 +464,17 @@ public final class IronRdpBackend implements Backend, IronRdpNative.Callbacks {
         // Never called; see IronRdpNative.Callbacks.
     }
 
+    /** The player, made on the first block; only the protocol thread touches it. */
+    private AudioOut audio;
+
+    @Override
+    public void onAudio(int sampleRate, int channels, byte[] pcm) {
+        if (audio == null) {
+            audio = new AudioOut();
+        }
+        audio.write(sampleRate, channels, pcm);
+    }
+
     @Override
     public void onBell() {
         // Never called; see IronRdpNative.Callbacks. The three VNC backends gate
@@ -541,6 +553,10 @@ public final class IronRdpBackend implements Backend, IronRdpNative.Callbacks {
     @Override
     public void onClosed(String detail) {
         Log.i(TAG, "closed: " + (detail == null || detail.isEmpty() ? "disconnected" : detail));
+        if (audio != null) {
+            audio.close();
+            audio = null;
+        }
         closed(detail == null || detail.isEmpty() ? null : detail);
     }
 

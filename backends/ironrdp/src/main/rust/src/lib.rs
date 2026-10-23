@@ -33,6 +33,7 @@ pub const PROTOCOL_VERSION: &str = "RDP 5.x (IronRDP)";
 // The JNI half: the entry points the Java in this module declares, and the
 // session behind them. Android only — everything above is the protocol, and it
 // builds, tests and runs an example on the host with none of this compiled.
+mod audio;
 #[cfg(target_os = "android")]
 mod bindings;
 

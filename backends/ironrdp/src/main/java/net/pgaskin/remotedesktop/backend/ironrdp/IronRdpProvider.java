@@ -77,6 +77,7 @@ public final class IronRdpProvider implements BackendProvider {
     public static final String MONITORS = "Monitors";
     public static final String GRAPHICS = "Graphics";
     public static final String EXPERIENCE = "Experience";
+    public static final String SOUND = "Sound";
     public static final String COMPRESSION = "Compression";
     public static final String VIEW_ONLY = "ViewOnly";
 
@@ -126,6 +127,9 @@ public final class IronRdpProvider implements BackendProvider {
                     new Choice("full", "Everything"),
                     new Choice("balanced", "No animation"),
                     new Choice("plain", "As little as possible")),
+            BackendOption.bool(SOUND, "Sound",
+                    "Play the remote machine's sound on this phone, where the server sends it.",
+                    false, Scope.LAYERED, false),
             BackendOption.bool(COMPRESSION, "Compression",
                     "Enable connection-level compression. Uses less bandwidth, but more CPU.",
                     true, Scope.LAYERED, false),
