@@ -85,6 +85,12 @@ final class FreeRdpNative {
          */
         void onTrustNeeded(String fingerprint);
 
+        /**
+         * The connection dropped and is being retried. Comes once per attempt,
+         * before the wait for it; {@code onConnected} comes again if it works.
+         */
+        void onReconnecting(int attempt, int max);
+
         /** Terminal. Empty {@code detail} for an ordinary disconnect. */
         void onClosed(String detail);
     }

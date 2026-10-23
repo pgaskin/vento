@@ -557,6 +557,19 @@ public final class FreeRdpBackend implements Backend, FreeRdpNative.Callbacks {
     }
 
     @Override
+    public void onReconnecting(int attempt, int max) {
+        Log.i(TAG, "reconnecting: attempt " + attempt + " of " + max);
+        main.post(() -> {
+            if (dead || state == State.CLOSED) {
+                return;
+            }
+            // Not CONNECTED, so input and resizing stop until the session is back.
+            state = State.CONNECTING;
+            fireState(State.CONNECTING, "Reconnecting (attempt " + attempt + " of " + max + ")");
+        });
+    }
+
+    @Override
     public void onClosed(String detail) {
         Log.i(TAG, "closed: " + (detail == null || detail.isEmpty() ? "disconnected" : detail));
         closed(detail == null || detail.isEmpty() ? null : detail);
