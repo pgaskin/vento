@@ -51,6 +51,9 @@
     <!-- Inside a row, and inside a heading over a group of them. -->
     <dimen name="row_padding">16dp</dimen>
     <dimen name="row_min_height">56dp</dimen>
+    <!-- The most of a row an option's name takes before it wraps. Wide enough for
+         the longest single word at the body size, so a wrap falls between words. -->
+    <dimen name="row_name_max_width">140dp</dimen>
     <dimen name="heading_inset">24dp</dimen>
     <dimen name="heading_padding_top">24dp</dimen>
     <dimen name="heading_padding_bottom">12dp</dimen>
