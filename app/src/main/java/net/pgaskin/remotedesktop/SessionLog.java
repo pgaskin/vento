@@ -63,12 +63,17 @@ final class SessionLog {
         tall.addView(wide);
 
         final String[] text = {""};
-        new MaterialAlertDialogBuilder(ctx, R.style.ThemeOverlay_RemoteDesktop_Dialog)
+        final var dialog = new MaterialAlertDialogBuilder(ctx, R.style.ThemeOverlay_RemoteDesktop_Dialog)
                 .setTitle(R.string.log_title)
                 .setView(tall)
                 .setPositiveButton(android.R.string.ok, null)
                 .setNeutralButton(R.string.log_copy, (d, w) -> copy(ctx, text[0]))
                 .show();
+        // Copy has nothing to copy until the log is read, and copying the empty
+        // text it has until then said it had copied something. So it waits.
+        final android.widget.Button copyButton =
+                dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL);
+        copyButton.setEnabled(false);
 
         // Forking logcat and draining a whole log buffer is tens to hundreds of
         // milliseconds, and both places this is reachable from are moments the
@@ -79,6 +84,7 @@ final class SessionLog {
             main.post(() -> {
                 text[0] = read;
                 view.setText(read);
+                copyButton.setEnabled(true);
                 // Showing the top of a log is showing the oldest thing in it;
                 // what somebody opening this wants is what just happened.
                 tall.post(() -> tall.fullScroll(ScrollView.FOCUS_DOWN));
@@ -88,7 +94,7 @@ final class SessionLog {
 
     private static void copy(Context ctx, String text) {
         final ClipboardManager cm = ctx.getSystemService(ClipboardManager.class);
-        if (cm == null) {
+        if (cm == null || text == null || text.isEmpty()) {
             return;
         }
         cm.setPrimaryClip(ClipData.newPlainText("log", text));
