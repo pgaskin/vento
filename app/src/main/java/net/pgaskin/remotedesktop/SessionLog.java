@@ -3,7 +3,6 @@
 
 package net.pgaskin.remotedesktop;
 
-import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -41,18 +40,14 @@ final class SessionLog {
 
     /** Called from the log screen while it is in front, which is what lets the clipboard take it. */
     static void copy(Context ctx, String text) {
-        final boolean focused = !(ctx instanceof Activity a) || a.hasWindowFocus();
-        Log.i(TAG, "copy: " + (text == null ? -1 : text.length()) + " chars, focused " + focused);
         final ClipboardManager cm = ctx.getSystemService(ClipboardManager.class);
         if (cm == null || text == null || text.isEmpty()) {
-            Log.w(TAG, "copy: nothing to copy (clipboard " + (cm != null) + ")");
             return;
         }
         try {
             cm.setPrimaryClip(ClipData.newPlainText("log", text));
-            Log.i(TAG, "copy: clipboard now has " + cm.hasPrimaryClip());
         } catch (RuntimeException e) {
-            Log.w(TAG, "copy: the clipboard refused", e);
+            Log.w(TAG, "the clipboard refused the log", e);
             return;
         }
         Toast.makeText(ctx, R.string.log_copied, Toast.LENGTH_SHORT).show();
