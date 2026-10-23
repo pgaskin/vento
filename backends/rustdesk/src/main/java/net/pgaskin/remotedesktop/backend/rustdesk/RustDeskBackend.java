@@ -339,38 +339,19 @@ public final class RustDeskBackend implements Backend, RustDeskNative.Callbacks 
 
     // ---- pixels ------------------------------------------------------------
 
+    /**
+     * Nothing here keeps a copy of the picture to read: the phone draws the desktop
+     * on its GPU, and the session paints that video over whatever the mirror reads.
+     */
     @Override
     public boolean readRegion(int x, int y, int width, int height,
                               Bitmap dst, int dstX, int dstY) {
-        if (dst == null || dst.getConfig() != Bitmap.Config.ARGB_8888) {
-            return false;
-        }
-        synchronized (pixels) {
-            return handle != 0
-                    && RustDeskNative.nativeReadRegion(handle, x, y, width, height, dst, dstX, dstY);
-        }
+        return false;
     }
 
     @Override
     public Bitmap thumbnail(int maxWidth, int maxHeight) {
-        final int w = desktopWidth, h = desktopHeight;
-        if (w <= 0 || h <= 0 || maxWidth <= 0 || maxHeight <= 0) {
-            return null;
-        }
-        final int step = Math.max(1, Math.max(
-                (w + maxWidth - 1) / maxWidth, (h + maxHeight - 1) / maxHeight));
-        final int tw = Math.max(1, (w + step - 1) / step);
-        final int th = Math.max(1, (h + step - 1) / step);
-        final Bitmap out = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888);
-        final boolean ok;
-        synchronized (pixels) {
-            ok = handle != 0 && RustDeskNative.nativeReadThumbnail(handle, step, out);
-        }
-        if (!ok) {
-            out.recycle();
-            return null;
-        }
-        return out;
+        return null;
     }
 
     // ---- Callbacks (protocol thread) ---------------------------------------
@@ -426,6 +407,14 @@ public final class RustDeskBackend implements Backend, RustDeskNative.Callbacks 
         final Listener l = listener;
         if (l != null) {
             l.frameEnd();
+        }
+    }
+
+    @Override
+    public void onVideo(int x, int y, int w, int h, int frameW, int frameH, int colorMode, byte[] nv12) {
+        final Listener l = listener;
+        if (l != null) {
+            l.videoFrame(x, y, w, h, frameW, frameH, colorMode, nv12);
         }
     }
 

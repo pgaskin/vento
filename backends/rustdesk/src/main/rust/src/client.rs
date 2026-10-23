@@ -30,14 +30,13 @@ use std::collections::HashMap;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::mpsc::{Sender, channel};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use protobuf::{Message as _, MessageField};
 use sha2::{Digest, Sha256};
 
 use crate::error::{Error, Result};
-use crate::framebuffer::{Back, Framebuffer};
 use crate::keymap::{self, Key};
 use crate::crypto;
 use crate::protos::message::{
@@ -235,6 +234,12 @@ pub trait Handler {
 
     fn frame_end(&mut self);
 
+    /// A decoded frame as NV12 for the top-left `w` by `h` of a destination
+    /// rectangle at (`x`, `y`) of the desktop. The frame is `frame_w` by `frame_h`.
+    fn video(&mut self, x: usize, y: usize, w: usize, h: usize, frame_w: usize, frame_h: usize, color_mode: i32, nv12: &[u8]) {
+        let _ = (x, y, w, h, frame_w, frame_h, color_mode, nv12);
+    }
+
     fn cursor(&mut self, pixels: &[u32], width: usize, height: usize, hot_x: i32, hot_y: i32);
 
     fn clipboard(&mut self, text: &str);
@@ -302,7 +307,6 @@ const BUTTONS: [(i32, i32); 5] = [
 const WHEEL_NOTCH: i32 = 1;
 
 pub struct Client {
-    framebuffer: RwLock<Framebuffer>,
     traffic: Arc<Traffic>,
     /// Serialized messages on their way to the writer thread. Input is encoded
     /// on whichever thread produced it and written on a thread of its own, so a
@@ -362,7 +366,6 @@ pub struct Client {
 impl Client {
     pub fn new() -> Client {
         Client {
-            framebuffer: RwLock::new(Framebuffer::new()),
             traffic: Arc::new(Traffic::default()),
             out: Mutex::new(None),
             closer: Mutex::new(None),
@@ -386,10 +389,6 @@ impl Client {
             codec_sent: AtomicI32::new(-1),
             round_trip: AtomicU64::new(0),
         }
-    }
-
-    pub fn framebuffer(&self) -> &RwLock<Framebuffer> {
-        &self.framebuffer
     }
 
     /// Received and sent, in bytes, since the socket was opened.
@@ -763,7 +762,6 @@ impl Client {
         reader.set_timeout(Some(IDLE_TIMEOUT))?;
 
         let mut decoder: Option<(Codec, (usize, usize), Box<dyn video::Decoder>)> = None;
-        let mut back = Back::new();
         let mut rate = Rate::new();
         let mut cursors: HashMap<u64, Cursor> = HashMap::new();
         let mut connected = false;
@@ -778,7 +776,7 @@ impl Client {
             match union {
                 message::Union::LoginResponse(response) => match response.union {
                     Some(login_response::Union::PeerInfo(peer)) => {
-                        self.arrived(&peer, handler, &mut back)?;
+                        self.arrived(&peer, handler)?;
                         connected = true;
                     }
                     // Both password errors are answered on the same connection:
@@ -803,8 +801,8 @@ impl Client {
                 message::Union::VideoFrame(frame) => {
                     if connected {
                         let started = Instant::now();
-                        self.picture(frame, &mut decoder, &mut back, handler);
-                        rate.frame(started.elapsed(), back.converted());
+                        self.picture(frame, &mut decoder, handler);
+                        rate.frame(started.elapsed());
                         // Every frame, drawn or not: this is what the peer is
                         // waiting for before it captures the next one, so a
                         // frame that changed nothing still has to be answered.
@@ -858,7 +856,7 @@ impl Client {
                 message::Union::Misc(misc) => match misc.union {
                     Some(misc::Union::CloseReason(why)) => return Err(Error::Refused(why)),
                     Some(misc::Union::SwitchDisplay(display)) => {
-                        self.switched(&display, handler, &mut back);
+                        self.switched(&display, handler);
                     }
                     _ => {}
                 },
@@ -872,7 +870,6 @@ impl Client {
         &self,
         peer: &PeerInfo,
         handler: &mut impl Handler,
-        back: &mut Back,
     ) -> Result<()> {
         let current = peer.current_display.max(0) as usize;
         let Some(display) = peer.displays.get(current) else {
@@ -936,7 +933,6 @@ impl Client {
         // does next.
         self.ask_for(current as i32);
 
-        self.resize(display.width, display.height, back);
         self.width.store(display.width, Ordering::Relaxed);
         self.height.store(display.height, Ordering::Relaxed);
         handler.connected(display.width.max(0) as usize, display.height.max(0) as usize);
@@ -953,7 +949,6 @@ impl Client {
         &self,
         switch: &SwitchDisplay,
         handler: &mut impl Handler,
-        back: &mut Back,
     ) {
         let (width, height) = (switch.width, switch.height);
         // Ahead of the size checks below, both of which return early: where the
@@ -980,15 +975,14 @@ impl Client {
             return;
         }
         // Both swapped before either is compared: `&&` would leave the height
-        // alone whenever the width had changed, which is a framebuffer sized
-        // 1024×1440 for a 1024×768 display and a picture that never arrives.
+        // alone whenever the width had changed, which is a 1024×1440 picture
+        // for a 1024×768 display that never arrives.
         let was_width = self.width.swap(width, Ordering::Relaxed);
         let was_height = self.height.swap(height, Ordering::Relaxed);
         if was_width == width && was_height == height {
             return;
         }
         log::info!("the desktop is now {width}x{height}");
-        self.resize(width, height, back);
         handler.desktop_size(width as usize, height as usize);
     }
 
@@ -1004,12 +998,6 @@ impl Client {
         };
     }
 
-    fn resize(&self, width: i32, height: i32, back: &mut Back) {
-        let (w, h) = (width.max(0) as usize, height.max(0) as usize);
-        self.framebuffer.write().unwrap().resize(w, h);
-        back.resize(w, h);
-    }
-
     /// One update, which in this protocol is always a whole picture: there are
     /// no damage rectangles anywhere in it, so what moved is found here rather
     /// than read off the wire.
@@ -1017,7 +1005,6 @@ impl Client {
         &self,
         frame: VideoFrame,
         decoder: &mut Option<(Codec, (usize, usize), Box<dyn video::Decoder>)>,
-        back: &mut Back,
         handler: &mut impl Handler,
     ) {
         let Some(union) = frame.union else { return };
@@ -1038,7 +1025,7 @@ impl Client {
             self.width.load(Ordering::Relaxed).max(0) as usize,
             self.height.load(Ordering::Relaxed).max(0) as usize,
         );
-        if w == 0 || h == 0 || back.pixels.len() != w * h {
+        if w == 0 || h == 0 {
             return;
         }
         // The size as well as the codec: a decoder is configured for one
@@ -1062,33 +1049,28 @@ impl Client {
         let Some((_, _, decoder)) = decoder.as_mut() else {
             return;
         };
-        back.begin(w, h);
-        let mut drew = false;
+        // Every frame in the batch is decoded, since each may be the reference the
+        // next one needs, and the last picture out is the one on screen. Each frame
+        // is a whole desktop, so the phone draws the whole of it.
+        let mut picture = None;
         for frame in frames {
-            drew |= decoder.decode(&frame.data, &mut back.pixels, w, h, &mut back.changed);
+            if let Some(planes) = decoder.decode_planes(&frame.data, w, h) {
+                picture = Some(planes);
+            }
         }
-        if !drew {
-            return;
-        }
-        // A frame that repeats the last one — which is what a peer sends to a
-        // client whose desktop nobody is touching — costs nothing from here on,
-        // and a frame that moved a caret costs the rows the caret is on.
-        let Some((dx, dy, dw, dh)) = back.changed.bounds(w) else {
+        let Some(planes) = picture else {
             return;
         };
-        // Under a read lock and before the swap takes the picture away: the
-        // rows this frame did not convert are still the frame before last.
-        if !back.carry(&self.framebuffer.read().unwrap()) {
-            return;
-        }
-        // The write lock is held for a `Vec` swap rather than for a conversion,
-        // which is what keeps the drawing thread out of the decoder's way.
-        if !self.framebuffer.write().unwrap().swap(&mut back.pixels) {
-            back.lost();
-            return;
-        }
-        back.swapped();
-        handler.damaged(dx, dy, dw, dh);
+        handler.video(
+            0,
+            0,
+            planes.width,
+            planes.height,
+            planes.width,
+            planes.height,
+            planes.color_mode,
+            &planes.data,
+        );
         handler.frame_end();
     }
 
@@ -1522,7 +1504,6 @@ struct Rate {
     frames: u64,
     since: Instant,
     working: Duration,
-    rows: u64,
 }
 
 impl Rate {
@@ -1533,30 +1514,26 @@ impl Rate {
             frames: 0,
             since: Instant::now(),
             working: Duration::ZERO,
-            rows: 0,
         }
     }
 
-    fn frame(&mut self, took: Duration, rows: usize) {
+    fn frame(&mut self, took: Duration) {
         self.frames += 1;
         self.working += took;
-        self.rows += rows as u64;
         if self.frames < Rate::EVERY {
             return;
         }
         let elapsed = self.since.elapsed().as_secs_f64().max(0.001);
         log::info!(
-            "{} frames in {:.1}s — {:.1} a second, {:.1} ms of decode and conversion each, {:.0} rows converted each, {:.0}% of this thread",
+            "{} frames in {:.1}s — {:.1} a second, {:.1} ms of decode each, {:.0}% of this thread",
             self.frames,
             elapsed,
             self.frames as f64 / elapsed,
             self.working.as_secs_f64() * 1000.0 / self.frames as f64,
-            self.rows as f64 / self.frames as f64,
             self.working.as_secs_f64() * 100.0 / elapsed,
         );
         self.frames = 0;
         self.working = Duration::ZERO;
-        self.rows = 0;
         self.since = Instant::now();
     }
 }
@@ -1728,7 +1705,7 @@ mod tests {
         switch.y = 665;
         switch.width = 1024;
         switch.height = 768;
-        client.switched(&switch, &mut Nothing, &mut Back::new());
+        client.switched(&switch, &mut Nothing);
 
         client.pointer(512, 384, 0x01);
         let moved_and_pressed = events();

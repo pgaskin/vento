@@ -14,18 +14,10 @@
 //! above it is host-testable; the picture is not, and pretending otherwise
 //! would mean carrying a software VP9 decoder for the sake of a test.
 
-// Off Android nothing in either is called — the decoder that calls them is the
-// phone's — and the tests that check the arithmetic are the reason they are
-// compiled on the host at all.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
-pub mod convert;
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
-pub mod diff;
-
 #[cfg(target_os = "android")]
 mod mediacodec;
 
-pub use diff::Changes;
+use common::video::VideoPlanes;
 
 /// Which of their codecs a frame arrived in. The client asks for VP9 and their
 /// server obeys unconditionally, but the arm a `VideoFrame` carries is the far
@@ -74,28 +66,11 @@ impl Codec {
 
 /// One decoder, for one codec at one size.
 ///
-/// A frame goes in and what moved in it comes out into `out`, which is the
-/// caller's back buffer rather than the framebuffer: every frame in this
-/// protocol is a whole one, so the picture is swapped in afterwards rather than
-/// converted in place under a lock the drawing thread wants.
+/// A frame goes in and the picture it leaves comes out as NV12 planes, for the
+/// display to convert on the GPU. Nothing here converts pixels.
 pub trait Decoder {
-    /// True when a frame arrived, with the rows and columns it changed added to
-    /// `changed`. `out` is `width * height` words, row-major, `R, G, B, A` in
-    /// memory, and **only the rows `changed` names are written**: the rest are
-    /// left as they were, since converting a row nothing moved in is the bulk
-    /// of what a frame costs here.
-    ///
-    /// Rows already marked in `changed` on the way in are converted whether
-    /// they moved or not, which is how a caller whose buffer is out of step
-    /// with the picture on screen asks for a whole frame.
-    fn decode(
-        &mut self,
-        data: &[u8],
-        out: &mut [u32],
-        width: usize,
-        height: usize,
-        changed: &mut Changes,
-    ) -> bool;
+    /// The picture that `data` leaves, as NV12 planes, or `None` where no picture came out.
+    fn decode_planes(&mut self, data: &[u8], width: usize, height: usize) -> Option<VideoPlanes>;
 }
 
 /// Whether this device can decode this codec at all.

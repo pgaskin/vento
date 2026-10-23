@@ -40,7 +40,6 @@ mod bindings;
 mod client;
 pub mod crypto;
 mod error;
-mod framebuffer;
 mod keymap;
 pub mod protos;
 pub mod rendezvous;
@@ -49,5 +48,4 @@ pub mod wire;
 
 pub use client::{Client, Config, Handler, Info, Quality, Reach, VERSION};
 pub use error::{Error, Result};
-pub use framebuffer::Framebuffer;
 pub use video::Codec;

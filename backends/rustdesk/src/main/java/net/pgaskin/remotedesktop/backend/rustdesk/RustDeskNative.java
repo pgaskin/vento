@@ -3,7 +3,6 @@
 
 package net.pgaskin.remotedesktop.backend.rustdesk;
 
-import android.graphics.Bitmap;
 
 /**
  * The JNI surface of {@code libremotedesktop_rustdesk.so} — the RustDesk client
@@ -18,10 +17,7 @@ import android.graphics.Bitmap;
  * <ul>
  *   <li>Every {@link Callbacks} method arrives on the protocol thread, which is
  *       the Rust side's own and never the main one.
- *   <li>{@link #nativeReadRegion} and {@link #nativeReadThumbnail} are called
- *       from whichever thread is drawing, concurrently with everything else.
- *       They take the framebuffer's read lock, which is only ever held against
- *       them for a buffer swap.
+
  *   <li>Everything else may be called from anywhere; input is encoded on the
  *       calling thread and written on a thread of the binding's own, so a
  *       stalled socket cannot reach the main thread.
@@ -64,6 +60,16 @@ final class RustDeskNative {
         void onDamage(int x, int y, int width, int height);
 
         void onFrameEnd();
+
+        /**
+         * A decoded frame as NV12 (a Y plane, then interleaved UV), for the top-left
+         * {@code w} by {@code h} at ({@code x}, {@code y}) of the desktop. The frame is
+         * {@code frameW} by {@code frameH}.
+         *
+         * @param colorMode bit 0 set for BT.709 rather than BT.601, bit 1 set for full
+         *                  range rather than limited
+         */
+        void onVideo(int x, int y, int w, int h, int frameW, int frameH, int colorMode, byte[] nv12);
 
         /**
          * @param argb {@code width * height} pixels, {@code Color}-packed
@@ -208,16 +214,4 @@ final class RustDeskNative {
     /** Received and sent since the socket was opened, or null if it has gone. */
     static native long[] nativeTraffic(long handle);
 
-    /**
-     * Copy the desktop rectangle into {@code dst} at {@code (dstX, dstY)}, 1:1,
-     * with no intermediate buffer.
-     */
-    static native boolean nativeReadRegion(long handle, int x, int y, int width, int height,
-                                           Bitmap dst, int dstX, int dstY);
-
-    /**
-     * The whole desktop at {@code 1/step}, nearest neighbour, into a bitmap the
-     * caller has already sized to {@code ceil(w/step) × ceil(h/step)}.
-     */
-    static native boolean nativeReadThumbnail(long handle, int step, Bitmap dst);
 }

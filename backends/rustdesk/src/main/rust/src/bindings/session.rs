@@ -45,6 +45,19 @@ impl Handler for Bridge {
         self.callbacks.frame_end();
     }
 
+    fn video(&mut self, x: usize, y: usize, w: usize, h: usize, frame_w: usize, frame_h: usize, color_mode: i32, nv12: &[u8]) {
+        self.callbacks.video(
+            x as i32,
+            y as i32,
+            w as i32,
+            h as i32,
+            frame_w as i32,
+            frame_h as i32,
+            color_mode,
+            nv12,
+        );
+    }
+
     fn cursor(&mut self, pixels: &[u32], width: usize, height: usize, hot_x: i32, hot_y: i32) {
         self.callbacks
             .cursor(pixels, width as i32, height as i32, hot_x, hot_y);

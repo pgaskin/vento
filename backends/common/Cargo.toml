@@ -17,3 +17,4 @@ log.workspace = true
 # The `android` module is not compiled off Android, and this is all it needs.
 [target.'cfg(target_os = "android")'.dependencies]
 jni.workspace = true
+ndk = { version = "0.9", default-features = false, features = ["media"] }

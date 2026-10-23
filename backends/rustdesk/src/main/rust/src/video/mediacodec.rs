@@ -12,8 +12,8 @@
 //! them in [49](../../../../../notes/49-h264.md)'s H.264 path before this
 //! existed:
 //!
-//! - **No surface.** The pixels have to come back to the CPU, because what the
-//!   seam promises is a region read out of a framebuffer.
+//! - **No surface.** The pixels come out as planes for the display to convert on
+//!   the GPU, which is the only place this picture is drawn.
 //! - **`low-latency`, because a held frame is a desktop that lags the finger on
 //!   it.** A decoder is free to hold frames back to reorder them, and a remote
 //!   desktop has nothing to reorder.
@@ -24,9 +24,19 @@
 
 use std::ffi::{CString, c_char, c_void};
 
-use super::convert::{Layout, Plane};
-use super::diff::{Changes, Previous};
-use super::{Codec, convert};
+use common::video::VideoPlanes;
+
+/// Where a decoder put one of the three planes of an output buffer, out of its
+/// `image-data` descriptor.
+#[derive(Clone, Copy, Debug, Default)]
+struct Plane {
+    offset: usize,
+    col_inc: usize,
+    row_inc: usize,
+    horiz_subsampling: usize,
+    vert_subsampling: usize,
+}
+use super::Codec;
 
 #[repr(C)]
 struct AMediaCodec {
@@ -169,15 +179,6 @@ pub struct Decoder {
     frame_height: i32,
     bt709: bool,
     full_range: bool,
-    /// The layout the vectorised conversion was last checked against, and what
-    /// it said. Checked once per layout rather than per frame.
-    checked: Option<(Layout, bool)>,
-    /// The last frame's planes, which is what says how much of this one is
-    /// worth converting.
-    previous: Previous,
-    /// Buffers released without being converted, because a newer whole picture
-    /// was already waiting behind them.
-    pub skipped: u64,
 }
 
 impl Decoder {
@@ -222,9 +223,6 @@ impl Decoder {
             frame_height: height as i32,
             bt709: true,
             full_range: false,
-            checked: None,
-            previous: Previous::new(),
-            skipped: 0,
         })
     }
 
@@ -279,14 +277,7 @@ impl Decoder {
     /// next one overwrites before anybody sees it. The earlier buffers are
     /// released unread, which is what lets a session that fell behind catch up
     /// inside one update instead of over the next several.
-    fn draw_next(
-        &mut self,
-        out: &mut [u32],
-        width: usize,
-        height: usize,
-        timeout: i64,
-        changed: &mut Changes,
-    ) -> bool {
+    fn draw_next(&mut self, timeout: i64, mut sink: impl FnMut(&mut Self, &[u8])) -> bool {
         let mut info = BufferInfo::default();
         let mut index = self.next_buffer(&mut info, timeout);
         if index < 0 {
@@ -301,7 +292,6 @@ impl Decoder {
             unsafe { AMediaCodec_releaseOutputBuffer(self.codec, index as usize, false) };
             index = next;
             info = newer;
-            self.skipped += 1;
         }
         let index = index as usize;
 
@@ -326,7 +316,7 @@ impl Decoder {
                     size.saturating_sub(info.offset.max(0) as usize),
                 )
             };
-            self.convert(bytes, out, width, height, changed);
+            sink(self, bytes);
         }
         unsafe { AMediaCodec_releaseOutputBuffer(self.codec, index, false) };
         true
@@ -398,107 +388,78 @@ impl Decoder {
         }
     }
 
-    /// The buffer's planes into `out`, and what moved in them into `changed` —
-    /// which is also what decides how much of the buffer is converted at all.
-    fn convert(
-        &mut self,
-        base: &[u8],
-        out: &mut [u32],
-        width: usize,
-        height: usize,
-        changed: &mut Changes,
-    ) {
+}
+
+impl Decoder {
+    /// The buffer's pictures as NV12 planes, for the display to convert on the GPU.
+    /// The layout is the one the buffer reported, as in [`Decoder::convert`].
+    fn planes_out(&self, base: &[u8], width: usize, height: usize) -> Option<VideoPlanes> {
         let w = width.min(self.frame_width.max(0) as usize);
         let h = height.min(self.frame_height.max(0) as usize);
         if !self.have_layout || w == 0 || h == 0 {
-            return;
+            return None;
         }
-        // Every read below is inside the buffer if the last one of each plane
-        // is, and a decoder that has just changed resolution is where that
-        // matters.
-        for plane in &self.planes {
-            let last = plane.offset
-                + ((h - 1) / plane.vert_subsampling) * plane.row_inc
-                + ((w - 1) / plane.horiz_subsampling) * plane.col_inc;
-            if last >= base.len() {
-                log::warn!("a {w}x{h} frame does not fit {} bytes", base.len());
-                return;
-            }
+        let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
+        let (y, u, v) = (self.planes[0], self.planes[1], self.planes[2]);
+        // The same bounds check as the RGBA path: the last sample of each plane
+        // has to be inside the buffer, or the picture is not read at all.
+        let fits = |p: &Plane, cols: usize, rows: usize| {
+            cols == 0 || rows == 0
+                || p.offset + (rows - 1) * p.row_inc + (cols - 1) * p.col_inc < base.len()
+        };
+        if !(fits(&y, w, h) && fits(&u, cw, ch) && fits(&v, cw, ch)) {
+            log::warn!("a {w}x{h} frame does not fit {} bytes", base.len());
+            return None;
         }
-
-        let c = convert::coefficients(self.bt709, self.full_range);
-        let layout = Layout {
-            y_col_inc: self.planes[0].col_inc,
-            uv_col_inc: self.planes[1].col_inc,
-            horiz_subsampling: self.planes[1].horiz_subsampling,
-        };
-        let vectorise = match self.checked {
-            Some((checked, ok)) if checked == layout => ok,
-            _ => {
-                let ok = convert::vectorised_agrees(
-                    base,
-                    self.planes[0].offset,
-                    self.planes[1].offset,
-                    self.planes[2].offset,
-                    &layout,
-                    w,
-                    &c,
-                );
-                log::info!(
-                    "the vectorised conversion is {} for this decoder's layout",
-                    if ok { "in use" } else { "off" }
-                );
-                self.checked = Some((layout, ok));
-                ok
-            }
-        };
-
-        self.previous.compare(base, &self.planes, w, h, changed);
-
+        let mut data = Vec::with_capacity(w * h + 2 * cw * ch);
         for row in 0..h {
-            if !changed.row(row) {
-                continue;
-            }
-            let y_at = self.planes[0].offset + row * self.planes[0].row_inc;
-            let u_at = self.planes[1].offset
-                + (row / self.planes[1].vert_subsampling) * self.planes[1].row_inc;
-            let v_at = self.planes[2].offset
-                + (row / self.planes[2].vert_subsampling) * self.planes[2].row_inc;
-            let line = &mut out[row * width..row * width + w];
-            let mut col = 0;
-            if vectorise {
-                col = convert::row_vectorised(base, y_at, u_at, v_at, &layout, line, w, &c);
-            }
-            convert::row_scalar(base, y_at, u_at, v_at, &layout, line, col, w, &c);
+            let at = y.offset + row * y.row_inc;
+            data.extend((0..w).map(|x| base[at + x * y.col_inc]));
         }
+        // The chroma planes are interleaved into one UV plane, which is what NV12
+        // is, whichever way the decoder laid them out.
+        for row in 0..ch {
+            let (ua, va) = (u.offset + row * u.row_inc, v.offset + row * v.row_inc);
+            for x in 0..cw {
+                data.push(base[ua + x * u.col_inc]);
+                data.push(base[va + x * v.col_inc]);
+            }
+        }
+        Some(VideoPlanes {
+            width: w,
+            height: h,
+            data,
+            color_mode: i32::from(self.bt709) | (i32::from(self.full_range) << 1),
+        })
     }
 }
 
 impl super::Decoder for Decoder {
-    fn decode(
-        &mut self,
-        data: &[u8],
-        out: &mut [u32],
-        width: usize,
-        height: usize,
-        changed: &mut Changes,
-    ) -> bool {
-        if self.failed || data.is_empty() || out.len() < width * height {
-            return false;
+    fn decode_planes(&mut self, data: &[u8], width: usize, height: usize) -> Option<VideoPlanes> {
+        self.decode_planes_inner(data, width, height)
+    }
+
+}
+
+impl Decoder {
+    fn decode_planes_inner(&mut self, data: &[u8], width: usize, height: usize) -> Option<VideoPlanes> {
+        if self.failed || data.is_empty() {
+            return None;
         }
         if !self.feed(data) {
-            return false;
+            return None;
         }
         let timeout = if self.saw_frame {
             FRAME_TIMEOUT_US
         } else {
             FIRST_FRAME_TIMEOUT_US
         };
-        if !self.draw_next(out, width, height, timeout, changed) {
-            return false;
+        let mut picture = None;
+        if !self.draw_next(timeout, |me, bytes| picture = me.planes_out(bytes, width, height)) {
+            return None;
         }
         self.saw_frame = true;
-        true
+        picture
     }
 }
 
