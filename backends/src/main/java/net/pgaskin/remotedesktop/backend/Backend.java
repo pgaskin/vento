@@ -283,6 +283,13 @@ public interface Backend {
     /** A touch contact was taken away, by the phone or by a call. */
     int TOUCH_CANCEL = 3;
 
+    /** The per-connection option that says how touch is sent. A backend that has it offers it. */
+    String TOUCH_OPTION = "Touch";
+    /** The option's value for the touchpad, which is the default. */
+    String TOUCH_PAD = "pad";
+    /** The option's value for direct touch, sent to the point touched. */
+    String TOUCH_DIRECT = "direct";
+
     /**
      * Whether {@link #touch} reaches the far end. The direct-touch mode is only
      * offered when it does. A backend that says yes may still find the far end

@@ -195,6 +195,10 @@ public final class SessionActivity extends Activity
         inputPrefs = InputSettings.prefs(this).getAll();
         view = new SessionView(this, session.backend(), this,
                 InputSettings.config(this, getResources().getDisplayMetrics().density));
+        // The touchpad unless this connection asks for direct touch; setDirectTouch
+        // ignores the ask for a backend that cannot take it.
+        view.setDirectTouch(Backend.TOUCH_DIRECT.equals(
+                sessionOptions().get(Backend.TOUCH_OPTION)));
         // The connection's own map rather than what the backend was created
         // with: an app option is not part of a backend's schema and never
         // reaches one, so `Options.forConnection` has already dropped it. A session
