@@ -184,7 +184,9 @@ public final class FreeRdpBackend implements Backend, FreeRdpNative.Callbacks {
                 options.get(FreeRdpProvider.NLA), bool(FreeRdpProvider.LEGACY_TLS),
                 bool(FreeRdpProvider.COMPRESSION),
                 options.get(FreeRdpProvider.GRAPHICS), options.get(FreeRdpProvider.EXPERIENCE),
-                options.get(FreeRdpProvider.SOUND), scale(),
+                options.get(FreeRdpProvider.SOUND), bool(FreeRdpProvider.MICROPHONE),
+                bool(FreeRdpProvider.CAMERA),
+                options.getOrDefault(FreeRdpProvider.GATEWAY, ""), scale(),
                 size[0], size[1], monitorCount(), KEYBOARD_LAYOUT,
                 android.os.Build.MODEL, store.getAbsolutePath(), CONNECT_TIMEOUT_MS);
         if (h == 0) {
@@ -336,6 +338,19 @@ public final class FreeRdpBackend implements Backend, FreeRdpNative.Callbacks {
         final long h = handle;
         if (h != 0) {
             FreeRdpNative.nativePointer(h, x, y, buttonMask);
+        }
+    }
+
+    @Override
+    public boolean supportsTouch() {
+        return true;
+    }
+
+    @Override
+    public void touch(int contact, int phase, int x, int y) {
+        final long h = handle;
+        if (h != 0 && !dead) {
+            FreeRdpNative.nativeTouch(h, contact, phase, x, y);
         }
     }
 
@@ -540,13 +555,16 @@ public final class FreeRdpBackend implements Backend, FreeRdpNative.Callbacks {
      * what is identified is the machine, not what reaches it.
      */
     @Override
-    public void onTrustNeeded(String fingerprint) {
-        if (KnownHosts.matches(context, address, fingerprint)) {
-            Log.i(TAG, "certificate matches the pin for " + address);
+    public void onTrustNeeded(String fingerprint, boolean gateway, String hostPort) {
+        // The gateway is a different machine with its own certificate, so it is
+        // pinned under its own name; the target keeps the address it was saved under.
+        final String key = gateway ? "RD Gateway " + hostPort : address;
+        if (KnownHosts.matches(context, key, fingerprint)) {
+            Log.i(TAG, "certificate matches the pin for " + key);
             answerTrust(true);
             return;
         }
-        main.post(() -> KnownHosts.ask(context, address, fingerprint, prompts, this::answerTrust));
+        main.post(() -> KnownHosts.ask(context, key, fingerprint, prompts, this::answerTrust));
     }
 
     private void answerTrust(boolean accept) {

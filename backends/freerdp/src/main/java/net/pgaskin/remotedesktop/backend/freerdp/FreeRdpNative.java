@@ -82,8 +82,10 @@ final class FreeRdpNative {
          * secret is sent.
          *
          * @param fingerprint SHA-256, as {@code openssl x509 -fingerprint} prints it
+         * @param gateway    the certificate is the RD Gateway's, not the machine's
+         * @param hostPort   the host and port the certificate was presented for
          */
-        void onTrustNeeded(String fingerprint);
+        void onTrustNeeded(String fingerprint, boolean gateway, String hostPort);
 
         /** Terminal. Empty {@code detail} for an ordinary disconnect. */
         void onClosed(String detail);
@@ -104,6 +106,11 @@ final class FreeRdpNative {
      *                   {@code bitmap}
      * @param experience {@code full}, {@code balanced} or {@code plain}
      * @param sound      {@code off}, {@code local} or {@code remote}
+     * @param microphone send this phone's microphone; the caller only passes
+     *                   true once RECORD_AUDIO is granted
+     * @param camera     send this phone's camera; the caller only passes true
+     *                   once CAMERA is granted
+     * @param gateway    an RD Gateway as host or host:port; empty for none
      * @param scale      the percentage the far end is asked to draw its own
      *                   interface at; 100, 140 and 180 are the only values the
      *                   protocol allows, and anything else is taken as 100
@@ -114,7 +121,8 @@ final class FreeRdpNative {
     static native long nativeCreate(Callbacks listener, String address, String userName,
                                     String domain, String password, String nla,
                                     boolean legacyTls, boolean compression, String graphics,
-                                    String experience, String sound, int scale, int width,
+                                    String experience, String sound, boolean microphone,
+                                    boolean camera, String gateway, int scale, int width,
                                     int height, int monitors, int keyboardLayout,
                                     String clientName, String configPath, int connectTimeoutMs);
 
@@ -162,6 +170,9 @@ final class FreeRdpNative {
      * sends what it likes until it is told not to.
      */
     static native void nativeFocus(long handle, boolean focused);
+
+    /** A touch contact; {@code phase} is one of the {@code Backend.TOUCH_} values. */
+    static native void nativeTouch(long handle, int contact, int phase, int x, int y);
 
     static native void nativeViewOnly(long handle, boolean viewOnly);
 

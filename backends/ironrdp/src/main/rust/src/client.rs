@@ -16,6 +16,9 @@ use crate::tls;
 
 use ironrdp_blocking::{Framed, connect_begin, connect_finalize, mark_as_upgraded};
 use ironrdp_cliprdr::CliprdrClient;
+use ironrdp_rdpei::RdpeiClient;
+use ironrdp_rdpei::pdu::{TouchContact, TouchContactFlags, TouchEventPdu, TouchFrame};
+use ironrdp_rdpsnd::client::Rdpsnd;
 use ironrdp_cliprdr::pdu::OwnedFormatDataResponse;
 use ironrdp_connector::connection_activation::{ConnectionActivationSequence, ConnectionActivationState};
 use ironrdp_connector::sspi::network_client::NetworkClient;
@@ -24,6 +27,7 @@ use ironrdp_connector::{
 };
 use ironrdp_core::WriteBuf;
 use ironrdp_displaycontrol::client::DisplayControlClient;
+use crate::audio::PhoneAudio;
 use ironrdp_displaycontrol::pdu::{DisplayControlMonitorLayout, DisplayControlPdu, MonitorLayoutEntry};
 use ironrdp_dvc::{DrdynvcClient, encode_dvc_messages};
 use ironrdp_svc::ChannelFlags;
@@ -94,6 +98,8 @@ pub struct Config {
     /// `keymap`).
     pub keyboard_layout: u32,
     pub connect_timeout: Duration,
+    /// Whether the remote machine's sound is played on this phone.
+    pub audio: bool,
 }
 
 impl Default for Config {
@@ -114,6 +120,7 @@ impl Default for Config {
             // The same twenty seconds both other backends wait: a mistyped
             // address must not be a spinner that never stops.
             connect_timeout: Duration::from_secs(20),
+            audio: false,
         }
     }
 }
@@ -204,6 +211,9 @@ pub trait Handler {
     fn cursor(&mut self, pixels: &[u32], width: usize, height: usize, hot_x: i32, hot_y: i32);
     fn bell(&mut self);
     fn clipboard(&mut self, text: &str);
+    /// A block of the remote machine's sound, as 16-bit interleaved PCM. Only
+    /// sent when [`Config::audio`] is set.
+    fn audio(&mut self, sample_rate: u32, channels: u16, pcm: &[u8]);
     /// The connection needs credentials and the config had none. `None` gives
     /// up on the connection.
     ///
@@ -240,11 +250,28 @@ enum Out {
 /// Something only the active stage can encode, so it waits for the protocol
 /// thread to come up for air.
 enum Task {
+    Touch {
+        contact: u8,
+        phase: TouchPhase,
+        x: u16,
+        y: u16,
+    },
     Focus(bool),
     /// A monitor layout to put on the display-control channel: one entry per
     /// monitor, already laid out. Both a resize and a change of monitor count
     /// are this — MS-RDPEDISP has one message and the layout is the whole of it.
     Layout(Vec<MonitorLayoutEntry>),
+}
+
+/// Where a touch contact is in its life, as the far end is told it: down when
+/// the finger lands, moved while it is down, up when it lifts, and cancelled
+/// when the phone takes the gesture for itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TouchPhase {
+    Down,
+    Move,
+    Up,
+    Cancel,
 }
 
 /// A monitor layout that has been asked for, and what the desktop would have to
@@ -498,6 +525,15 @@ impl Client {
         self.shared.clipboard.set_local(text);
     }
 
+    /// A touch contact at a point of the desktop. Dropped unless the server has
+    /// opened the touch channel, which it may never do.
+    pub fn touch(&self, contact: u8, phase: TouchPhase, x: u16, y: u16) {
+        if self.shared.view_only.load(Ordering::Relaxed) {
+            return;
+        }
+        self.push(Task::Touch { contact, phase, x, y });
+    }
+
     pub fn set_view_only(&self, view_only: bool) {
         self.shared.view_only.store(view_only, Ordering::Relaxed);
     }
@@ -682,6 +718,14 @@ impl Client {
         // static channels goes out in the client's settings, so a channel
         // attached later is one the server was never told about.
         connector.attach_static_channel(CliprdrClient::new(self.shared.clipboard.backend()));
+        // Sound is played from blocks the processor queues, which the loop
+        // below hands to the handler; the channel is only attached when the
+        // config asks for it, since the server is told it is there.
+        let audio_blocks = config.audio.then(|| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            connector.attach_static_channel(Rdpsnd::new(Box::new(PhoneAudio::new(tx))));
+            rx
+        });
         // The dynamic channel carrier, and the one dynamic channel on it.
         // Display control is how an RDP desktop is reshaped after connect —
         // and, since its message is a whole monitor layout, the only way this
@@ -695,7 +739,10 @@ impl Client {
                 display_control.display_control.store(true, Ordering::Relaxed);
                 Ok(Vec::new())
             }),
-        ));
+        )
+        // Direct touch, which the server may or may not open. Registered either
+        // way, since it costs the server nothing to be offered it.
+        .with_dynamic_channel(RdpeiClient::default()));
         self.shared
             .monitor_count
             .store(config.monitors.clamp(1, 16), Ordering::Relaxed);
@@ -792,7 +839,7 @@ impl Client {
         handler.connected(usize::from(desktop.width), usize::from(desktop.height));
 
         let writer = self.spawn_writer(Counting::new(wire.clone_handle(), &self.shared));
-        let outcome = self.active_stage(result, &mut framed, handler);
+        let outcome = self.active_stage(result, &mut framed, handler, audio_blocks);
         let _ = self.shared.out.send(Out::Stop);
         let _ = socket.shutdown(std::net::Shutdown::Both);
         let _ = writer.join();
@@ -824,6 +871,7 @@ impl Client {
         result: ConnectionResult,
         framed: &mut Framed<S>,
         handler: &mut dyn Handler,
+        audio_blocks: Option<std::sync::mpsc::Receiver<crate::audio::AudioBlock>>,
     ) -> Result<()> {
         let io_channel_id = result.io_channel_id;
         let user_channel_id = result.user_channel_id;
@@ -977,6 +1025,11 @@ impl Client {
                             _ => {}
                         }
                     }
+                    if let Some(blocks) = &audio_blocks {
+                        while let Ok(block) = blocks.try_recv() {
+                            handler.audio(block.sample_rate, block.channels, &block.pcm);
+                        }
+                    }
                     if drew {
                         if let Some(speed) = rate.sample() {
                             self.shared.info.lock().unwrap().line_speed = speed;
@@ -1059,6 +1112,9 @@ impl Client {
                     Task::Layout(entries) => {
                         self.send_layout(framed, &mut stage, entries)?;
                     }
+                    Task::Touch { contact, phase, x, y } => {
+                        self.send_touch(framed, &mut stage, contact, phase, x, y)?;
+                    }
                 }
             }
         }
@@ -1070,6 +1126,50 @@ impl Client {
     ///
     /// A refusal is silence: the server either reactivates with a new desktop
     /// or does nothing at all, and there is no message that says no.
+    /// One contact, one frame, one PDU. A contact that is not in a legal flag
+    /// combination would be refused by the far end, so each phase is spelled out
+    /// with one of the eight the spec allows.
+    fn send_touch<S: Read + Write>(
+        &self,
+        framed: &mut Framed<S>,
+        stage: &mut ActiveStage,
+        contact: u8,
+        phase: TouchPhase,
+        x: u16,
+        y: u16,
+    ) -> Result<()> {
+        let Some(dvc) = stage.get_dvc::<RdpeiClient>() else {
+            return Ok(());
+        };
+        let channel_id = dvc.channel_id();
+        let live = TouchContactFlags::INRANGE | TouchContactFlags::INCONTACT;
+        let flags = match phase {
+            TouchPhase::Down => TouchContactFlags::DOWN | live,
+            TouchPhase::Move => TouchContactFlags::UPDATE | live,
+            TouchPhase::Up => TouchContactFlags::UP,
+            TouchPhase::Cancel => TouchContactFlags::UP | TouchContactFlags::CANCELED,
+        };
+        let pdu = TouchEventPdu::new(
+            0,
+            vec![TouchFrame::new(
+                0,
+                vec![TouchContact::new(contact, i32::from(x), i32::from(y), flags)],
+            )],
+        );
+        // Refused while the channel is not ready or the server has suspended
+        // input; a touch that cannot be sent is not worth the session.
+        let messages = match dvc.processor().encode_touch_event(channel_id, pdu) {
+            Ok(messages) => messages,
+            Err(e) => {
+                log::debug!("touch not sent: {e}");
+                return Ok(());
+            }
+        };
+        let frame = stage.encode_dvc_messages(messages).map_err(session)?;
+        framed.write_all(&frame)?;
+        Ok(())
+    }
+
     fn send_layout<S: Read + Write>(
         &self,
         framed: &mut Framed<S>,
@@ -1406,7 +1506,7 @@ fn connector_config(
         // connected — so there is never a reason for the server to draw its own
         // login screen over the session it has just opened.
         autologon: true,
-        enable_audio_playback: false,
+        enable_audio_playback: config.audio,
         enable_audio_capture: false,
         compression_type: config.compression,
         pointer_software_rendering: false,

@@ -77,6 +77,7 @@ public final class IronRdpProvider implements BackendProvider {
     public static final String MONITORS = "Monitors";
     public static final String GRAPHICS = "Graphics";
     public static final String EXPERIENCE = "Experience";
+    public static final String SOUND = "Sound";
     public static final String COMPRESSION = "Compression";
     public static final String VIEW_ONLY = "ViewOnly";
 
@@ -126,6 +127,14 @@ public final class IronRdpProvider implements BackendProvider {
                     new Choice("full", "Everything"),
                     new Choice("balanced", "No animation"),
                     new Choice("plain", "As little as possible")),
+            BackendOption.choice(Backend.TOUCH_OPTION, "Touch",
+                    "Touchpad moves a cursor the way a trackpad does. Direct sends each finger to the point it touches, for a remote app that takes touch.",
+                    Backend.TOUCH_PAD, Scope.CONNECTION, false,
+                    new Choice(Backend.TOUCH_PAD, "Touchpad"),
+                    new Choice(Backend.TOUCH_DIRECT, "Direct")),
+            BackendOption.bool(SOUND, "Sound",
+                    "Play the remote machine's sound on this phone, where the server sends it.",
+                    false, Scope.LAYERED, false),
             BackendOption.bool(COMPRESSION, "Compression",
                     "Enable connection-level compression. Uses less bandwidth, but more CPU.",
                     true, Scope.LAYERED, false),

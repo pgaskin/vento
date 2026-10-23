@@ -58,6 +58,8 @@
 #include <freerdp/client/cliprdr.h>
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/disp.h>
+#include <freerdp/client/rdpei.h>
+#include <freerdp/channels/rdpei.h>
 #include <freerdp/channels/rdpgfx.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/gdi/gfx.h>
@@ -82,6 +84,7 @@ enum {
     CMD_CLIPBOARD,
     CMD_FOCUS,
     CMD_RESIZE,
+    CMD_TOUCH,
     CMD_DISCONNECT,
 };
 
@@ -146,6 +149,9 @@ struct Session {
        call: a channel's interface is handed over once, when it connects. */
     CliprdrClientContext *cliprdr;
     DispClientContext *disp;
+    /* Touch, from the rdpei channel. Only the protocol thread may call it: the
+       library frees the channel with the connection. */
+    RdpeiClientContext *rdpei;
     _Atomic int gfxOpen; /* the graphics pipeline's channel is up */
     /* What the server confirmed of the capability sets the pipeline offered:
        the version, and whether that version with its flags carries H.264. */
@@ -190,6 +196,10 @@ struct Session {
     char *experience;
     char *graphics;
     char *sound;
+    int microphone;
+    int camera;
+    char *gatewayHost; /* NULL for a direct connection */
+    int gatewayPort;
     char *clientName;
     char *configPath;
     int width, height, monitors, keyboardLayout;
@@ -877,6 +887,8 @@ static void onChannelConnected(void *context, const ChannelConnectedEventArgs *e
            being open is the capability, and it is a fact about this session
            rather than about the backend. */
         s->canResize = 1;
+    } else if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0) {
+        s->rdpei = (RdpeiClientContext *) e->pInterface;
     }
 }
 
@@ -893,6 +905,8 @@ static void onChannelDisconnected(void *context, const ChannelDisconnectedEventA
     } else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0) {
         s->disp = NULL;
         s->canResize = 0;
+    } else if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0) {
+        s->rdpei = NULL;
     }
 }
 
@@ -953,19 +967,29 @@ static BOOL onAuthenticate(freerdp *instance, char **username, char **password, 
 
    1 rather than 2 deliberately: 2 is "remember this", which would put the
    decision in a file of FreeRDP's beside the one this app already keeps. */
-static DWORD askTrust(Session *s, const char *fingerprint) {
+static DWORD askTrust(Session *s, const char *fingerprint, const char *host, UINT16 port) {
     pthread_mutex_lock(&s->lock);
     s->trustAnswered = 0;
     s->trustAccepted = 0;
     pthread_mutex_unlock(&s->lock);
 
+    /* The library asks for the gateway's certificate with the gateway's name, so
+       a host that is the gateway is the gateway's question. Java keeps its pin
+       under a different key, and the target's pins stay where they were. */
+    const int viaGateway = s->gatewayHost && host && strcmp(host, s->gatewayHost) == 0;
+    char hostPort[300];
+    snprintf(hostPort, sizeof(hostPort), "%s:%u", host ? host : "", (unsigned) port);
+
     int attached;
     JNIEnv *env = attach(s, &attached);
     if (env) {
         jstring js = (*env)->NewStringUTF(env, fingerprint ? fingerprint : "");
-        (*env)->CallVoidMethod(env, s->callbacks, mTrustNeeded, js);
+        jstring jhp = (*env)->NewStringUTF(env, hostPort);
+        (*env)->CallVoidMethod(env, s->callbacks, mTrustNeeded, js,
+                               viaGateway ? JNI_TRUE : JNI_FALSE, jhp);
         cleared(env);
         (*env)->DeleteLocalRef(env, js);
+        (*env)->DeleteLocalRef(env, jhp);
         detach(s, attached);
     }
 
@@ -981,8 +1005,8 @@ static DWORD askTrust(Session *s, const char *fingerprint) {
 static DWORD onVerifyCertificate(freerdp *instance, const char *host, UINT16 port,
                                  const char *common_name, const char *subject, const char *issuer,
                                  const char *fingerprint, DWORD flags) {
-    (void) host; (void) port; (void) common_name; (void) subject; (void) issuer; (void) flags;
-    return askTrust(sessionOf(instance->context), fingerprint);
+    (void) common_name; (void) subject; (void) issuer; (void) flags;
+    return askTrust(sessionOf(instance->context), fingerprint, host, port);
 }
 
 /* Not the same question, and leaving it unset is a refusal: this is the one
@@ -993,9 +1017,9 @@ static DWORD onVerifyChangedCertificate(freerdp *instance, const char *host, UIN
                                         const char *issuer, const char *fingerprint,
                                         const char *old_subject, const char *old_issuer,
                                         const char *old_fingerprint, DWORD flags) {
-    (void) host; (void) port; (void) common_name; (void) subject; (void) issuer;
+    (void) common_name; (void) subject; (void) issuer;
     (void) old_subject; (void) old_issuer; (void) old_fingerprint; (void) flags;
-    return askTrust(sessionOf(instance->context), fingerprint);
+    return askTrust(sessionOf(instance->context), fingerprint, host, port);
 }
 
 /* ---- keysyms to scancodes ----------------------------------------------- */
@@ -1392,6 +1416,29 @@ static void doResize(Session *s, int width, int height) {
     s->disp->SendMonitorLayout(s->disp, (UINT32) count, layout);
 }
 
+/* A touch contact, by the phase numbers Backend.TOUCH_ uses: 0 down, 1 move,
+   2 up, 3 cancelled. The library builds the legal flag combination for each
+   and keeps its own contact ids, so a contact is named here by the id the app
+   gave it. Dropped while the channel is not open, which is the server's choice. */
+static void doTouch(Session *s, int contact, int phase, int x, int y) {
+    RdpeiClientContext *rdpei = s->rdpei;
+    if (!rdpei || !s->connected) {
+        return;
+    }
+    INT32 contactId = 0;
+    UINT rc = CHANNEL_RC_OK;
+    switch (phase) {
+        case 0: rc = rdpei->TouchBegin(rdpei, contact, x, y, &contactId); break;
+        case 1: rc = rdpei->TouchUpdate(rdpei, contact, x, y, &contactId); break;
+        case 2: rc = rdpei->TouchEnd(rdpei, contact, x, y, &contactId); break;
+        case 3: rc = rdpei->TouchCancel(rdpei, contact, x, y, &contactId); break;
+        default: return;
+    }
+    if (rc != CHANNEL_RC_OK) {
+        LOGW("touch phase %d for contact %d not sent: 0x%08x", phase, contact, rc);
+    }
+}
+
 static void drainCommands(Session *s) {
     for (;;) {
         Cmd c;
@@ -1412,6 +1459,11 @@ static void drainCommands(Session *s) {
             case CMD_CLIPBOARD: doClipboard(s, c.text, c.textLen); c.text = NULL; break;
             case CMD_FOCUS: doFocus(s, c.a); break;
             case CMD_RESIZE: doResize(s, c.a, c.b); break;
+            case CMD_TOUCH:
+                /* The position is packed in c, as two 16-bit halves, so it fits the
+                   command without another field. */
+                doTouch(s, c.a, c.b, (int) ((c.c >> 16) & 0xffff), (int) (c.c & 0xffff));
+                break;
             case CMD_DISCONNECT:
                 doReleaseAll(s);
                 freerdp_abort_connect_context(s->instance->context);
@@ -1490,6 +1542,32 @@ static void onPostDisconnect(freerdp *instance) {
     gdi_free(instance);
 }
 
+/* "host" or "host:port", with 443 when there is no port. Empty is a direct
+   connection. IPv6 literals are not taken: a colon in the host is the port. */
+static void parseGateway(Session *s, const char *text) {
+    s->gatewayHost = NULL;
+    s->gatewayPort = 443;
+    if (!text || !*text) {
+        return;
+    }
+    size_t hostLen = strlen(text);
+    const char *colon = strrchr(text, ':');
+    char *end = NULL;
+    const long port = colon ? strtol(colon + 1, &end, 10) : 0;
+    if (colon && end && end != colon + 1 && *end == '\0' && port > 0 && port <= 65535) {
+        hostLen = (size_t) (colon - text);
+        s->gatewayPort = (int) port;
+    }
+    if (hostLen == 0) {
+        return;
+    }
+    s->gatewayHost = malloc(hostLen + 1);
+    if (s->gatewayHost) {
+        memcpy(s->gatewayHost, text, hostLen);
+        s->gatewayHost[hostLen] = '\0';
+    }
+}
+
 static void applySettings(Session *s, rdpSettings *settings) {
     freerdp_settings_set_string(settings, FreeRDP_ServerHostname, s->host);
     freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, (UINT32) s->port);
@@ -1556,6 +1634,10 @@ static void applySettings(Session *s, rdpSettings *settings) {
     freerdp_settings_set_bool(settings, FreeRDP_CompressionEnabled, s->compression != 0);
     freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE);
+    /* Offers the rdpei channel, which the library loads on this setting alone.
+       Harmless when the app never sends touch: the server can open it and leave
+       it idle. */
+    freerdp_settings_set_bool(settings, FreeRDP_MultiTouchInput, TRUE);
 
     /* The picture. The graphics pipeline is what a machine since Windows 8
        would rather send a desktop over, and the only path that carries H.264 —
@@ -1600,6 +1682,34 @@ static void applySettings(Session *s, rdpSettings *settings) {
     const int soundThere = s->sound && strcmp(s->sound, "remote") == 0;
     freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, soundHere);
     freerdp_settings_set_bool(settings, FreeRDP_RemoteConsoleAudio, soundThere);
+    /* The microphone is the audin channel's capture side, which the library
+       opens through OpenSL ES. The app checks RECORD_AUDIO before it gets here,
+       since the capture device cannot be opened without it. */
+    freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, s->microphone);
+
+    /* The camera is the rdpecam dynamic channel, which the library adds by name
+       the same way its own client does with /dvc:rdpecam. Its Android backend
+       is the Camera2 NDK, and the app has checked CAMERA before it gets here. */
+    if (s->camera) {
+        static const char *const cameraChannel[] = {"rdpecam"};
+        if (!freerdp_client_add_dynamic_channel(settings, 1, cameraChannel)) {
+            LOGW("could not add the camera channel");
+        }
+    }
+
+    /* RD Gateway, over HTTPS only (the RPC transport is the old one). The gateway
+       takes the connection's own credentials, so there is nothing separate to
+       store. TSC_PROXY_MODE_DIRECT means always use it, where the detect mode
+       would only use it when the direct route fails. */
+    freerdp_settings_set_bool(settings, FreeRDP_GatewayEnabled, s->gatewayHost != NULL);
+    if (s->gatewayHost) {
+        freerdp_settings_set_string(settings, FreeRDP_GatewayHostname, s->gatewayHost);
+        freerdp_settings_set_uint32(settings, FreeRDP_GatewayPort, (UINT32) s->gatewayPort);
+        freerdp_settings_set_uint32(settings, FreeRDP_GatewayUsageMethod, TSC_PROXY_MODE_DIRECT);
+        freerdp_settings_set_bool(settings, FreeRDP_GatewayUseSameCredentials, TRUE);
+        freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, TRUE);
+        freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, FALSE);
+    }
 
     /* How big the far end draws its own interface. The protocol allows 100–500
        for the desktop factor and exactly 100, 140 or 180 for the device one,
@@ -1785,7 +1895,9 @@ JNIEXPORT jlong JNICALL
 Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
         JNIEnv *env, jclass cls, jobject listener, jstring address, jstring userName,
         jstring domain, jstring password, jstring nla, jboolean legacyTls, jboolean compression,
-        jstring graphics, jstring experience, jstring sound, jint scale, jint width, jint height,
+        jstring graphics, jstring experience, jstring sound, jboolean microphone,
+        jboolean camera, jstring gateway, jint scale,
+        jint width, jint height,
         jint monitors, jint keyboardLayout, jstring clientName, jstring configPath,
         jint connectTimeoutMs) {
     (void) cls;
@@ -1799,7 +1911,8 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
         mBell = (*env)->GetMethodID(env, k, "onBell", "()V");
         mClipboard = (*env)->GetMethodID(env, k, "onClipboard", "(Ljava/lang/String;)V");
         mCredentialsNeeded = (*env)->GetMethodID(env, k, "onCredentialsNeeded", "(Z)V");
-        mTrustNeeded = (*env)->GetMethodID(env, k, "onTrustNeeded", "(Ljava/lang/String;)V");
+        mTrustNeeded = (*env)->GetMethodID(env, k, "onTrustNeeded",
+                                           "(Ljava/lang/String;ZLjava/lang/String;)V");
         mClosed = (*env)->GetMethodID(env, k, "onClosed", "(Ljava/lang/String;)V");
         /* Last, and that is the point: it is what every other caller tests, so
            publishing it first would let a second one past while the method ids
@@ -1836,6 +1949,11 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
     s->graphics = dup_jstring(env, graphics);
     s->experience = dup_jstring(env, experience);
     s->sound = dup_jstring(env, sound);
+    s->microphone = microphone != JNI_FALSE;
+    s->camera = camera != JNI_FALSE;
+    char *gatewayText = dup_jstring(env, gateway);
+    parseGateway(s, gatewayText);
+    free(gatewayText);
     s->clientName = dup_jstring(env, clientName);
     s->configPath = dup_jstring(env, configPath);
     s->compression = compression != JNI_FALSE;
@@ -1896,6 +2014,7 @@ fail:
     free(s->graphics);
     free(s->experience);
     free(s->sound);
+    free(s->gatewayHost);
     free(s->clientName);
     free(s->configPath);
     free(s);
@@ -2008,6 +2127,7 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeDestroy(
     free(s->graphics);
     free(s->experience);
     free(s->sound);
+    free(s->gatewayHost);
     free(s->clientName);
     free(s->configPath);
     free(s->credUser);
@@ -2027,6 +2147,22 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativePointer(
     Session *s = handleOf(handle);
     if (s) {
         Cmd c = {CMD_POINTER, x, y, buttonMask, NULL, 0};
+        post(s, &c);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeTouch(
+        JNIEnv *env, jclass cls, jlong handle, jint contact, jint phase, jint x, jint y) {
+    (void) env;
+    (void) cls;
+    Session *s = handleOf(handle);
+    if (s && phase >= 0 && phase <= 3) {
+        /* Clamped here as the rest of the input is, and packed as the command
+           wants: the position in the low halves of c. */
+        const INT64 xy = ((INT64) (x < 0 ? 0 : x > 65535 ? 65535 : x) << 16) |
+                         (INT64) (y < 0 ? 0 : y > 65535 ? 65535 : y);
+        Cmd c = {CMD_TOUCH, contact, phase, xy, NULL, 0};
         post(s, &c);
     }
 }

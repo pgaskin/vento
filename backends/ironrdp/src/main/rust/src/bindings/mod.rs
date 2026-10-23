@@ -12,6 +12,7 @@
 
 mod session;
 
+use crate::client::TouchPhase;
 use crate::{Config, Credentials, Nla};
 use common::android::bitmap;
 use common::android::callbacks::Callbacks;
@@ -60,6 +61,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNat
     compression: JString,
     remote_fx: jboolean,
     experience: JString,
+    sound: jboolean,
     width: jint,
     height: jint,
     monitors: jint,
@@ -100,6 +102,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNat
             client_name: string(env, &client_name)?.unwrap_or_else(|| "remotedesktop".into()),
             keyboard_layout: keyboard_layout as u32,
             connect_timeout: Duration::from_millis(connect_timeout_ms.max(1000) as u64),
+            audio: sound,
         };
         log::info!(
             "connecting to {} as {:?} ({}x{} × {}, nla {:?}, compression {:?}, remotefx {}, experience {:?})",
@@ -251,6 +254,35 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNat
 ) {
     if let Some(session) = unsafe { session(handle) } {
         session.client.set_focused(focused);
+    }
+}
+
+/// A touch contact. `phase` is 0 down, 1 move, 2 up, 3 cancelled; anything else
+/// is ignored rather than guessed at.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNative_nativeTouch(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+    contact: jint,
+    phase: jint,
+    x: jint,
+    y: jint,
+) {
+    let phase = match phase {
+        0 => TouchPhase::Down,
+        1 => TouchPhase::Move,
+        2 => TouchPhase::Up,
+        3 => TouchPhase::Cancel,
+        _ => return,
+    };
+    if let Some(session) = unsafe { session(handle) } {
+        session.client.touch(
+            contact.clamp(0, 255) as u8,
+            phase,
+            x.clamp(0, 65535) as u16,
+            y.clamp(0, 65535) as u16,
+        );
     }
 }
 

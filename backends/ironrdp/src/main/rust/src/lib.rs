@@ -36,6 +36,7 @@ pub const PROTOCOL_VERSION: &str = "RDP 5.x (IronRDP)";
 #[cfg(target_os = "android")]
 mod bindings;
 
+mod audio;
 mod client;
 mod clipboard;
 mod error;

@@ -50,6 +50,7 @@ import net.pgaskin.remotedesktop.control.ui.TextInput;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -151,6 +152,20 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     private final CursorController cursor;
     private final GestureRecognizer gestures;
     private final TouchRouter router;
+
+    /**
+     * Direct touch, from the connection's Touch option: each finger is a contact
+     * at the point it is on, rather than a trackpad moving a cursor. Only ever
+     * set for a backend that takes it.
+     */
+    private boolean directTouch;
+    /** The most contacts the far end is offered (the rdpei default). */
+    private static final int MAX_CONTACTS = 10;
+    /** Which contact each finger that is down is, by pointer id. */
+    private final Map<Integer, Integer> contactOfPointer = new HashMap<>();
+    /** Where each contact last was, in desktop pixels, for a cancel to name. */
+    private final int[] contactX = new int[MAX_CONTACTS];
+    private final int[] contactY = new int[MAX_CONTACTS];
     private final TapRegions tapRegions = TapRegions.standard();
     private final MouseOverlay overlay;
     private final ExtensionKeyboard keyboard;
@@ -255,7 +270,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         cursor.setListener(this);
         gestures = new GestureRecognizer(cfg, cursor, this, scheduler);
         gestures.setRegions(tapRegions, this);
-        router = new TouchRouter(gestures);
+        router = new TouchRouter(touchListener);
         // Its own button source, so a tap on the touchpad during an
         // overlay-held drag cannot release what the overlay is holding.
         overlay = new MouseOverlay(cfg, cursor.newButtonSource(), scheduler);
@@ -674,6 +689,106 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
             return true;
         }
         return router.onTouchEvent(ev);
+    }
+
+    /**
+     * Set once, when the session starts, from the connection's Touch option. A
+     * backend that cannot take touch is left in the touchpad, whatever it was asked.
+     */
+    public void setDirectTouch(boolean direct) {
+        directTouch = direct && backend.supportsTouch();
+    }
+
+    /*
+     * Direct touch is a listener, not a path around the router. The router has
+     * already let the toolbar, the mouse overlay and the keyboard take their
+     * fingers, so a finger that reaches here is the desktop's. In touchpad mode
+     * the same fingers go to the gestures, as they always did.
+     */
+    private final TouchRouter.Listener touchListener = new TouchRouter.Listener() {
+        @Override
+        public void touchBegan(int id, float x, float y, long t) {
+            if (directTouch) {
+                directDown(id, x, y);
+            } else {
+                gestures.touchBegan(id, x, y, t);
+            }
+        }
+
+        @Override
+        public void touchMoved(int id, float prevX, float prevY, float x, float y, long t) {
+            if (directTouch) {
+                directMove(id, x, y);
+            } else {
+                gestures.touchMoved(id, prevX, prevY, x, y, t);
+            }
+        }
+
+        @Override
+        public void touchEnded(int id, float prevX, float prevY, float x, float y, long t) {
+            if (directTouch) {
+                directUp(id, x, y);
+            } else {
+                gestures.touchEnded(id, prevX, prevY, x, y, t);
+            }
+        }
+
+        @Override
+        public void touchCancelled(long t) {
+            if (directTouch) {
+                directCancel();
+            } else {
+                gestures.touchCancelled(t);
+            }
+        }
+    };
+
+    private void directMove(int pointerId, float x, float y) {
+        final Integer contact = contactOfPointer.get(pointerId);
+        if (contact != null) {
+            sendTouch(contact, Backend.TOUCH_MOVE, x, y);
+        }
+    }
+
+    private void directUp(int pointerId, float x, float y) {
+        final Integer contact = contactOfPointer.remove(pointerId);
+        if (contact != null) {
+            sendTouch(contact, Backend.TOUCH_UP, x, y);
+        }
+    }
+
+    private void directCancel() {
+        for (int contact : contactOfPointer.values()) {
+            backend.touch(contact, Backend.TOUCH_CANCEL, contactX[contact], contactY[contact]);
+        }
+        contactOfPointer.clear();
+    }
+
+    private void directDown(int pointerId, float x, float y) {
+        if (contactOfPointer.containsKey(pointerId)) {
+            return;
+        }
+        final boolean[] taken = new boolean[MAX_CONTACTS];
+        for (int contact : contactOfPointer.values()) {
+            taken[contact] = true;
+        }
+        for (int contact = 0; contact < MAX_CONTACTS; contact++) {
+            if (!taken[contact]) {
+                contactOfPointer.put(pointerId, contact);
+                sendTouch(contact, Backend.TOUCH_DOWN, x, y);
+                return;
+            }
+        }
+        // More fingers than the far end takes: the extra ones are not sent.
+    }
+
+    /** A view point, mapped to a desktop pixel and kept inside the desktop. */
+    private void sendTouch(int contact, int phase, float x, float y) {
+        final int maxX = Math.max(0, viewport.desktopWidth() - 1);
+        final int maxY = Math.max(0, viewport.desktopHeight() - 1);
+        contactX[contact] = Math.max(0, Math.min(Math.round(viewport.toDesktopX(x)), maxX));
+        contactY[contact] = Math.max(0, Math.min(Math.round(viewport.toDesktopY(y)), maxY));
+        backend.touch(contact, phase, contactX[contact], contactY[contact]);
     }
 
     // ---- the physical mouse ------------------------------------------------
