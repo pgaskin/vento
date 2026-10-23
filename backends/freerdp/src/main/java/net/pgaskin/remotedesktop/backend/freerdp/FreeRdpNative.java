@@ -177,6 +177,9 @@ final class FreeRdpNative {
      */
     static native void nativeFocus(long handle, boolean focused);
 
+    /** A touch contact; {@code phase} is one of the {@code Backend.TOUCH_} values. */
+    static native void nativeTouch(long handle, int contact, int phase, int x, int y);
+
     static native void nativeViewOnly(long handle, boolean viewOnly);
 
     /**

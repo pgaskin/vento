@@ -58,6 +58,8 @@
 #include <freerdp/client/cliprdr.h>
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/disp.h>
+#include <freerdp/client/rdpei.h>
+#include <freerdp/channels/rdpei.h>
 #include <freerdp/channels/rdpgfx.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/gdi/gfx.h>
@@ -82,6 +84,7 @@ enum {
     CMD_CLIPBOARD,
     CMD_FOCUS,
     CMD_RESIZE,
+    CMD_TOUCH,
     CMD_DISCONNECT,
 };
 
@@ -146,6 +149,9 @@ struct Session {
        call: a channel's interface is handed over once, when it connects. */
     CliprdrClientContext *cliprdr;
     DispClientContext *disp;
+    /* Touch, from the rdpei channel. Only the protocol thread may call it: the
+       library frees the channel with the connection. */
+    RdpeiClientContext *rdpei;
     _Atomic int gfxOpen; /* the graphics pipeline's channel is up */
     /* What the server confirmed of the capability sets the pipeline offered:
        the version, and whether that version with its flags carries H.264. */
@@ -881,6 +887,8 @@ static void onChannelConnected(void *context, const ChannelConnectedEventArgs *e
            being open is the capability, and it is a fact about this session
            rather than about the backend. */
         s->canResize = 1;
+    } else if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0) {
+        s->rdpei = (RdpeiClientContext *) e->pInterface;
     }
 }
 
@@ -897,6 +905,8 @@ static void onChannelDisconnected(void *context, const ChannelDisconnectedEventA
     } else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0) {
         s->disp = NULL;
         s->canResize = 0;
+    } else if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0) {
+        s->rdpei = NULL;
     }
 }
 
@@ -1406,6 +1416,29 @@ static void doResize(Session *s, int width, int height) {
     s->disp->SendMonitorLayout(s->disp, (UINT32) count, layout);
 }
 
+/* A touch contact, by the phase numbers Backend.TOUCH_ uses: 0 down, 1 move,
+   2 up, 3 cancelled. The library builds the legal flag combination for each
+   and keeps its own contact ids, so a contact is named here by the id the app
+   gave it. Dropped while the channel is not open, which is the server's choice. */
+static void doTouch(Session *s, int contact, int phase, int x, int y) {
+    RdpeiClientContext *rdpei = s->rdpei;
+    if (!rdpei || !s->connected) {
+        return;
+    }
+    INT32 contactId = 0;
+    UINT rc = CHANNEL_RC_OK;
+    switch (phase) {
+        case 0: rc = rdpei->TouchBegin(rdpei, contact, x, y, &contactId); break;
+        case 1: rc = rdpei->TouchUpdate(rdpei, contact, x, y, &contactId); break;
+        case 2: rc = rdpei->TouchEnd(rdpei, contact, x, y, &contactId); break;
+        case 3: rc = rdpei->TouchCancel(rdpei, contact, x, y, &contactId); break;
+        default: return;
+    }
+    if (rc != CHANNEL_RC_OK) {
+        LOGW("touch phase %d for contact %d not sent: 0x%08x", phase, contact, rc);
+    }
+}
+
 static void drainCommands(Session *s) {
     for (;;) {
         Cmd c;
@@ -1426,6 +1459,11 @@ static void drainCommands(Session *s) {
             case CMD_CLIPBOARD: doClipboard(s, c.text, c.textLen); c.text = NULL; break;
             case CMD_FOCUS: doFocus(s, c.a); break;
             case CMD_RESIZE: doResize(s, c.a, c.b); break;
+            case CMD_TOUCH:
+                /* The position is packed in c, as two 16-bit halves, so it fits the
+                   command without another field. */
+                doTouch(s, c.a, c.b, (int) ((c.c >> 16) & 0xffff), (int) (c.c & 0xffff));
+                break;
             case CMD_DISCONNECT:
                 doReleaseAll(s);
                 freerdp_abort_connect_context(s->instance->context);
@@ -1666,6 +1704,10 @@ static void applySettings(Session *s, rdpSettings *settings) {
     freerdp_settings_set_bool(settings, FreeRDP_CompressionEnabled, s->compression != 0);
     freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE);
+    /* Offers the rdpei channel, which the library loads on this setting alone.
+       Harmless when the app never sends touch: the server can open it and leave
+       it idle. */
+    freerdp_settings_set_bool(settings, FreeRDP_MultiTouchInput, TRUE);
     /* The library's retry loop returns at once unless this is on. The retry
        count stays the library's own default. */
     freerdp_settings_set_bool(settings, FreeRDP_AutoReconnectionEnabled, TRUE);
@@ -2180,6 +2222,22 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativePointer(
     Session *s = handleOf(handle);
     if (s) {
         Cmd c = {CMD_POINTER, x, y, buttonMask, NULL, 0};
+        post(s, &c);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeTouch(
+        JNIEnv *env, jclass cls, jlong handle, jint contact, jint phase, jint x, jint y) {
+    (void) env;
+    (void) cls;
+    Session *s = handleOf(handle);
+    if (s && phase >= 0 && phase <= 3) {
+        /* Clamped here as the rest of the input is, and packed as the command
+           wants: the position in the low halves of c. */
+        const INT64 xy = ((INT64) (x < 0 ? 0 : x > 65535 ? 65535 : x) << 16) |
+                         (INT64) (y < 0 ? 0 : y > 65535 ? 65535 : y);
+        Cmd c = {CMD_TOUCH, contact, phase, xy, NULL, 0};
         post(s, &c);
     }
 }

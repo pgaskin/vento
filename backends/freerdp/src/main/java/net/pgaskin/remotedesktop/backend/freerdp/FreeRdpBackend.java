@@ -342,6 +342,19 @@ public final class FreeRdpBackend implements Backend, FreeRdpNative.Callbacks {
     }
 
     @Override
+    public boolean supportsTouch() {
+        return true;
+    }
+
+    @Override
+    public void touch(int contact, int phase, int x, int y) {
+        final long h = handle;
+        if (h != 0 && !dead) {
+            FreeRdpNative.nativeTouch(h, contact, phase, x, y);
+        }
+    }
+
+    @Override
     public void keyDown(int keysym, int keyId) {
         final long h = handle;
         if (h != 0) {
