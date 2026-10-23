@@ -20,20 +20,29 @@
     android:paddingStart="@dimen/row_padding"
     android:paddingEnd="8dp">
 
+    <!-- The name takes what it needs, up to a cap wide enough for its longest word,
+         so it wraps on spaces and never inside a word. The value gets the rest of
+         the row: a layered option's value carries its inherited answer ("App
+         default: ..."), usually the longer of the two. -->
     <TextView
         android:id="@+id/label"
-        android:layout_width="0dp"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
+        android:maxWidth="@dimen/row_name_max_width"
         android:textAppearance="?attr/textAppearanceBodyLarge" />
 
     <com.google.android.material.button.MaterialButton
         xmlns:app="http://schemas.android.com/apk/res-auto"
         android:id="@+id/value"
         style="@style/Widget.Material3.Button.TextButton.Icon"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_weight="1"
         android:layout_marginStart="8dp"
+        android:gravity="end|center_vertical"
+        android:textAlignment="viewEnd"
+        android:ellipsize="end"
+        android:maxLines="3"
         app:icon="@drawable/ic_dropdown"
         app:iconGravity="textEnd" />
 
