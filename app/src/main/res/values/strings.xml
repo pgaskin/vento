@@ -273,6 +273,7 @@
     <string name="panel_log">View log</string>
     <string name="log_title">Log</string>
     <string name="log_copy">Copy</string>
+    <string name="log_share">Share</string>
     <string name="log_copied">Copied to the clipboard</string>
     <string name="log_reading">Reading logcat…</string>
     <string name="log_unreadable">Failed to read logcat.</string>

@@ -186,7 +186,7 @@ final class ConnectionPanel {
         screenshot = content.findViewById(R.id.screenshot);
 
         content.findViewById(R.id.close).setOnClickListener(v -> dialog.dismiss());
-        content.findViewById(R.id.log).setOnClickListener(v -> SessionLog.show(activity));
+        content.findViewById(R.id.log).setOnClickListener(v -> LogActivity.open(activity));
         // The panel stays open behind the share sheet, and the desktop behind
         // it stays live: this takes a copy of the connection rather than doing
         // anything to it, so there is nothing here to come back to.

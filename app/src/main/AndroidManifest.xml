@@ -125,6 +125,10 @@
             android:name=".LicensesActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".LogActivity"
+            android:exported="false" />
+
         <!--
             The fake desktop the input stack was built against — the whole
             app before there was a protocol to speak, and now a screen

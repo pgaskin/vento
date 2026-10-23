@@ -329,7 +329,7 @@ public final class SessionActivity extends Activity
         statusActions = findViewById(R.id.status_actions);
         loading = findViewById(R.id.loading);
         findViewById(R.id.reconnect).setOnClickListener(v -> panelReconnect());
-        findViewById(R.id.log).setOnClickListener(v -> SessionLog.show(this));
+        findViewById(R.id.log).setOnClickListener(v -> LogActivity.open(this));
     }
 
     /**
