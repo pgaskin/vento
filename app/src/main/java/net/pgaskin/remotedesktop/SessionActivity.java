@@ -162,7 +162,12 @@ public final class SessionActivity extends Activity
      * are here as well.
      */
     private void start(String address, String backendId) {
-        if (awaitingMicrophone(connectionOptions(), () -> start(address, backendId))) {
+        final Map<String, String> wanted = connectionOptions();
+        final Runnable again = () -> start(address, backendId);
+        if (awaitingPermission(wanted, MICROPHONE_OPTION,
+                android.Manifest.permission.RECORD_AUDIO, REQUEST_MICROPHONE, again)
+                || awaitingPermission(wanted, CAMERA_OPTION,
+                android.Manifest.permission.CAMERA, REQUEST_CAMERA, again)) {
             return;
         }
         try {
@@ -370,16 +375,19 @@ public final class SessionActivity extends Activity
 
     /**
      * What the backend is built with: the requested options, except that a
-     * microphone the phone has not been allowed to use is off rather than
-     * requested. A refused microphone is a session without one, not no session.
+     * microphone or camera the phone has not been allowed to use is off rather
+     * than requested. A refused device is a session without it, not no session.
      */
     private Map<String, String> sessionOptions() {
         final Map<String, String> options = connectionOptions();
-        if (!microphoneWanted(options) || microphoneGranted()) {
-            return options;
-        }
         final Map<String, String> without = new HashMap<>(options);
-        without.put(MICROPHONE_OPTION, "false");
+        if (wanted(options, MICROPHONE_OPTION)
+                && !granted(android.Manifest.permission.RECORD_AUDIO)) {
+            without.put(MICROPHONE_OPTION, "false");
+        }
+        if (wanted(options, CAMERA_OPTION) && !granted(android.Manifest.permission.CAMERA)) {
+            without.put(CAMERA_OPTION, "false");
+        }
         return without;
     }
 
@@ -431,38 +439,44 @@ public final class SessionActivity extends Activity
         }
     }
 
-    /** The backend option that sends the microphone; read by name, as FreeRDP's provider names it. */
+    /*
+     * The backend options that send the microphone and the camera, read by name
+     * as FreeRDP's provider names them. Each needs a permission from Android, and
+     * the connection is opened as soon as the session starts, with the device, so
+     * a connection that wants one waits for the answer.
+     */
     private static final String MICROPHONE_OPTION = "Microphone";
+    private static final String CAMERA_OPTION = "Camera";
     private static final int REQUEST_MICROPHONE = 2;
+    private static final int REQUEST_CAMERA = 3;
 
     /** Asked once per window, so a refusal does not come back on every connect. */
-    private boolean askedForMicrophone;
-    /** What to do once the microphone question has been answered. */
-    private Runnable afterMicrophone;
+    private final java.util.Set<Integer> askedForPermission = new java.util.HashSet<>();
+    /** What to do once the permission question has been answered. */
+    private Runnable afterPermission;
 
-    private boolean microphoneWanted(Map<String, String> options) {
-        return "true".equals(options.get(MICROPHONE_OPTION));
+    private boolean wanted(Map<String, String> options, String option) {
+        return "true".equals(options.get(option));
     }
 
-    private boolean microphoneGranted() {
-        return checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+    private boolean granted(String permission) {
+        return checkSelfPermission(permission)
                 == android.content.pm.PackageManager.PERMISSION_GRANTED;
     }
 
     /**
-     * The connection is opened as soon as the session starts, and the capture
-     * device with it, so a connection that wants the microphone waits for the
-     * answer. Returns true when it is waiting, and then {@code then} runs once
-     * the answer is in, whichever it was.
+     * Returns true when the window is waiting for an answer to a permission
+     * this connection needs, and then {@code then} runs once it is in, whichever
+     * it was. A refusal is not an error: the session starts without the device.
      */
-    private boolean awaitingMicrophone(Map<String, String> options, Runnable then) {
-        if (!microphoneWanted(options) || microphoneGranted() || askedForMicrophone) {
+    private boolean awaitingPermission(Map<String, String> options, String option,
+                                       String permission, int request, Runnable then) {
+        if (!wanted(options, option) || granted(permission)
+                || !askedForPermission.add(request)) {
             return false;
         }
-        askedForMicrophone = true;
-        afterMicrophone = then;
-        requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO},
-                REQUEST_MICROPHONE);
+        afterPermission = then;
+        requestPermissions(new String[]{permission}, request);
         return true;
     }
 
@@ -470,11 +484,10 @@ public final class SessionActivity extends Activity
     public void onRequestPermissionsResult(int requestCode, String[] permissions,
                                            int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQUEST_MICROPHONE && afterMicrophone != null) {
-            // A refusal is not an error here: the session starts without the
-            // microphone, which openOrAttach arranges.
-            final Runnable then = afterMicrophone;
-            afterMicrophone = null;
+        if ((requestCode == REQUEST_MICROPHONE || requestCode == REQUEST_CAMERA)
+                && afterPermission != null) {
+            final Runnable then = afterPermission;
+            afterPermission = null;
             then.run();
         }
     }

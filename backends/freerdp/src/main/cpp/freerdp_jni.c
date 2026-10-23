@@ -191,6 +191,7 @@ struct Session {
     char *graphics;
     char *sound;
     int microphone;
+    int camera;
     char *gatewayHost; /* NULL for a direct connection */
     int gatewayPort;
     char *clientName;
@@ -1717,6 +1718,16 @@ static void applySettings(Session *s, rdpSettings *settings) {
        since the capture device cannot be opened without it. */
     freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, s->microphone);
 
+    /* The camera is the rdpecam dynamic channel, which the library adds by name
+       the same way its own client does with /dvc:rdpecam. Its Android backend
+       is the Camera2 NDK, and the app has checked CAMERA before it gets here. */
+    if (s->camera) {
+        static const char *const cameraChannel[] = {"rdpecam"};
+        if (!freerdp_client_add_dynamic_channel(settings, 1, cameraChannel)) {
+            LOGW("could not add the camera channel");
+        }
+    }
+
     /* RD Gateway, over HTTPS only (the RPC transport is the old one). The gateway
        takes the connection's own credentials, so there is nothing separate to
        store. TSC_PROXY_MODE_DIRECT means always use it, where the detect mode
@@ -1917,7 +1928,7 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
         JNIEnv *env, jclass cls, jobject listener, jstring address, jstring userName,
         jstring domain, jstring password, jstring nla, jboolean legacyTls, jboolean compression,
         jstring graphics, jstring experience, jstring sound, jboolean microphone,
-        jstring gateway, jint scale,
+        jboolean camera, jstring gateway, jint scale,
         jint width, jint height,
         jint monitors, jint keyboardLayout, jstring clientName, jstring configPath,
         jint connectTimeoutMs) {
@@ -1972,6 +1983,7 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
     s->experience = dup_jstring(env, experience);
     s->sound = dup_jstring(env, sound);
     s->microphone = microphone != JNI_FALSE;
+    s->camera = camera != JNI_FALSE;
     char *gatewayText = dup_jstring(env, gateway);
     parseGateway(s, gatewayText);
     free(gatewayText);

@@ -114,6 +114,8 @@ final class FreeRdpNative {
      * @param sound      {@code off}, {@code local} or {@code remote}
      * @param microphone send this phone's microphone; the caller only passes
      *                   true once RECORD_AUDIO is granted
+     * @param camera     send this phone's camera; the caller only passes true
+     *                   once CAMERA is granted
      * @param gateway    an RD Gateway as host or host:port; empty for none
      * @param scale      the percentage the far end is asked to draw its own
      *                   interface at; 100, 140 and 180 are the only values the
@@ -126,7 +128,7 @@ final class FreeRdpNative {
                                     String domain, String password, String nla,
                                     boolean legacyTls, boolean compression, String graphics,
                                     String experience, String sound, boolean microphone,
-                                    String gateway, int scale, int width,
+                                    boolean camera, String gateway, int scale, int width,
                                     int height, int monitors, int keyboardLayout,
                                     String clientName, String configPath, int connectTimeoutMs);
 
