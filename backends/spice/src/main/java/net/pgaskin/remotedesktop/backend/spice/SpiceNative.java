@@ -63,6 +63,16 @@ final class SpiceNative {
         void onFrameEnd();
 
         /**
+         * A decoded H.264 frame as NV12 (a Y plane, then interleaved UV), for the top-left
+         * {@code w} by {@code h} at ({@code x}, {@code y}) of the desktop. The frame is
+         * {@code frameW} by {@code frameH}.
+         *
+         * @param colorMode bit 0 set for BT.709 rather than BT.601, bit 1 set for full
+         *                  range rather than limited
+         */
+        void onVideo(int x, int y, int w, int h, int frameW, int frameH, int colorMode, byte[] nv12);
+
+        /**
          * @param argb {@code width * height} pixels, {@code Color}-packed, or
          *             empty where the guest has hidden the cursor
          * @param hash of the pixels, which is the identity {@code CursorCache}

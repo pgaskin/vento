@@ -25,6 +25,7 @@
 
 pub mod bitmap;
 pub mod callbacks;
+pub mod h264;
 pub mod slot;
 
 use jni::objects::JString;

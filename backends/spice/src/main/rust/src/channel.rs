@@ -210,10 +210,9 @@ impl Channel {
 ///
 /// Theirs is `perform_link` and this is the same handshake, because the
 /// capability list is not: their display default advertises **H.264 video
-/// streams**, and this build has that decoder patched out, so a server that
-/// took the offer would send a codec this end cannot decode and the region
-/// under the stream would freeze. It advertises the stream *report* too, which
-/// is a message this client never sends back.
+/// streams**, which this client offers only on Android, where it can decode them.
+/// It advertises the stream *report* too, which is a message this client never
+/// sends back.
 ///
 /// The rest is what makes the picture work and is theirs unchanged — chiefly
 /// `COMPOSITE`, without which the guest's QXL driver falls back to a software
@@ -230,14 +229,17 @@ where
         // sends what it has not been granted is disconnected.
         Kind::Main => cap::DEFAULT_MAIN | cap::MAIN_AGENT_CONNECTED_TOKENS,
         Kind::Display => {
-            cap::DISPLAY_SIZED_STREAM
+            let caps = cap::DISPLAY_SIZED_STREAM
                 | cap::DISPLAY_MONITORS_CONFIG
                 | cap::DISPLAY_COMPOSITE
                 | cap::DISPLAY_A8_SURFACE
                 | cap::DISPLAY_LZ4_COMPRESSION
                 | cap::DISPLAY_PREF_COMPRESSION
                 | cap::DISPLAY_MULTI_CODEC
-                | cap::DISPLAY_CODEC_MJPEG
+                | cap::DISPLAY_CODEC_MJPEG;
+            // H.264 streams are decoded on the phone, so they are offered only where
+            // that decoder is compiled in.
+            if cfg!(target_os = "android") { caps | cap::DISPLAY_CODEC_H264 } else { caps }
         }
         _ => cap::DEFAULT_MAIN,
     };

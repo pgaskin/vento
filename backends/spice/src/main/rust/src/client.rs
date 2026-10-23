@@ -69,6 +69,13 @@ pub trait Handler {
     fn desktop_size(&mut self, width: usize, height: usize);
     fn damaged(&mut self, x: usize, y: usize, width: usize, height: usize);
     fn frame_end(&mut self);
+    /// A decoded H.264 frame as NV12 for the top-left `w` by `h` of a destination
+    /// rectangle at (`x`, `y`) of the desktop. The frame is `frame_w` by `frame_h`.
+    /// The framebuffer under it is not updated: the display draws the frame in
+    /// place of it.
+    fn video(&mut self, x: usize, y: usize, w: usize, h: usize, frame_w: usize, frame_h: usize, color_mode: i32, nv12: &[u8]) {
+        let _ = (x, y, w, h, frame_w, frame_h, color_mode, nv12);
+    }
     /// The cursor's pixels in the framebuffer's own word order, or empty for a
     /// cursor the guest has hidden.
     fn cursor(&mut self, pixels: &[u32], width: i32, height: i32, hot_x: i32, hot_y: i32);

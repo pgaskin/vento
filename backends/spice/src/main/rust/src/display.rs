@@ -22,12 +22,14 @@ use crate::client::Handler;
 use crate::error::Result;
 use crate::framebuffer::Framebuffer;
 use crate::images::Images;
+use shakenfist_spice_compression::video::VideoDecoderError;
 use shakenfist_spice_compression::{JpegDecoderRsDecoder, VideoDecoder, video};
 use shakenfist_spice_protocol::constants::display_server;
 use shakenfist_spice_protocol::messages::{
     DrawBase, ImageDescriptor, Notify, SpiceBrush, SpiceOpaque, SurfaceCreate,
 };
 use std::collections::HashMap;
+use common::video::PlanesSlot;
 use std::sync::{Arc, RwLock};
 
 /// One live video stream: where it goes and what decodes it.
@@ -36,6 +38,9 @@ struct Stream {
     /// whatever size they arrive at.
     dest: (usize, usize, usize, usize),
     decoder: Box<dyn VideoDecoder>,
+    /// Where an H.264 stream's frames are left for the display, rather than
+    /// being drawn into the framebuffer; `None` for a stream drawn here.
+    planes: Option<PlanesSlot>,
 }
 
 pub struct Display {
@@ -57,6 +62,22 @@ pub struct Display {
     /// where it happens, since it is the one thing that would make the picture
     /// incomplete without anything looking wrong.
     off_surface: u64,
+}
+
+/// A decoder for an H.264 stream, and the slot its frames are left in. Only the
+/// phone decodes H.264 here, so off Android the stream is refused.
+#[cfg(target_os = "android")]
+fn h264_stream() -> (std::result::Result<Box<dyn VideoDecoder>, VideoDecoderError>, Option<PlanesSlot>) {
+    let slot: PlanesSlot = Arc::new(std::sync::Mutex::new(None));
+    match crate::h264::MediaCodecVideo::new(slot.clone()) {
+        Ok(decoder) => (Ok(Box::new(decoder)), Some(slot)),
+        Err(e) => (Err(e), None),
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn h264_stream() -> (std::result::Result<Box<dyn VideoDecoder>, VideoDecoderError>, Option<PlanesSlot>) {
+    (Err(VideoDecoderError::UnsupportedCodec(video::SPICE_VIDEO_CODEC_TYPE_H264)), None)
 }
 
 impl Display {
@@ -301,7 +322,12 @@ impl Display {
             read_u32(body, 46).unwrap_or(0) as usize, // right
             read_u32(body, 42).unwrap_or(0) as usize, // bottom
         );
-        match video::for_stream(codec, Arc::new(JpegDecoderRsDecoder::new())) {
+        let (made, planes) = if codec == video::SPICE_VIDEO_CODEC_TYPE_H264 {
+            h264_stream()
+        } else {
+            (video::for_stream(codec, Arc::new(JpegDecoderRsDecoder::new())), None)
+        };
+        match made {
             Ok(decoder) => {
                 log::info!(
                     "display: stream {id} is {} at ({},{})",
@@ -319,14 +345,10 @@ impl Display {
                             dest.3.saturating_sub(dest.1),
                         ),
                         decoder,
+                        planes,
                     },
                 );
             }
-            // H.264 is the one that gets here, because the decoder that would
-            // take it is a C++ one this build patches out: the phone has one of
-            // its own and putting the stream through it is 46c's. Until then
-            // the region under the stream keeps whatever was drawn there, which
-            // is a still picture rather than a hole.
             Err(e) => log::warn!("display: stream {id} is not decoded here: {e}"),
         }
     }
@@ -362,6 +384,23 @@ impl Display {
         }
         let (x, y, w, h) = stream.dest;
         match stream.decoder.decode(packet) {
+            Ok(Some(_)) if stream.planes.is_some() => {
+                // The phone draws this frame, so the framebuffer under it is left
+                // alone, as the RDP client leaves it.
+                let slot = stream.planes.as_ref().unwrap();
+                if let Some(planes) = slot.lock().unwrap().take() {
+                    handler.video(
+                        x,
+                        y,
+                        w.min(planes.width),
+                        h.min(planes.height),
+                        planes.width,
+                        planes.height,
+                        planes.color_mode,
+                        &planes.data,
+                    );
+                }
+            }
             Ok(Some(frame)) => {
                 let mut framebuffer = self.framebuffer.write().unwrap();
                 framebuffer.blit(

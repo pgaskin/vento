@@ -45,6 +45,8 @@ mod cursor;
 mod display;
 mod error;
 mod framebuffer;
+#[cfg(target_os = "android")]
+mod h264;
 mod images;
 mod keymap;
 mod tls;

@@ -36,6 +36,19 @@ impl Handler for Bridge {
         self.callbacks.desktop_size(width as i32, height as i32);
     }
 
+    fn video(&mut self, x: usize, y: usize, w: usize, h: usize, frame_w: usize, frame_h: usize, color_mode: i32, nv12: &[u8]) {
+        self.callbacks.video(
+            x as i32,
+            y as i32,
+            w as i32,
+            h as i32,
+            frame_w as i32,
+            frame_h as i32,
+            color_mode,
+            nv12,
+        );
+    }
+
     fn damaged(&mut self, x: usize, y: usize, width: usize, height: usize) {
         self.callbacks
             .damaged(x as i32, y as i32, width as i32, height as i32);

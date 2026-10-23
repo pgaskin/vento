@@ -408,6 +408,14 @@ public final class SpiceBackend implements Backend, SpiceNative.Callbacks {
     }
 
     @Override
+    public void onVideo(int x, int y, int w, int h, int frameW, int frameH, int colorMode, byte[] nv12) {
+        final Listener l = listener;
+        if (l != null) {
+            l.videoFrame(x, y, w, h, frameW, frameH, colorMode, nv12);
+        }
+    }
+
+    @Override
     public void onCursor(int[] argb, int width, int height, int hotX, int hotY, long hash) {
         final Bitmap shape = cursors.shape(hash, argb, width, height);
         main.post(() -> {
