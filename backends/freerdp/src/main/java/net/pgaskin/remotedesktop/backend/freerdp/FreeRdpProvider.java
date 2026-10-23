@@ -68,6 +68,13 @@ public final class FreeRdpProvider implements BackendProvider {
     public static final String GRAPHICS = "Graphics";
     public static final String EXPERIENCE = "Experience";
     public static final String SOUND = "Sound";
+    /**
+     * The app asks for RECORD_AUDIO before connecting when this is on, and
+     * reads the key by name, so it has to stay "Microphone".
+     */
+    public static final String MICROPHONE = "Microphone";
+    /** An RD Gateway as host or host:port; empty connects directly. */
+    public static final String GATEWAY = "Gateway";
     public static final String COMPRESSION = "Compression";
     public static final String VIEW_ONLY = "ViewOnly";
 
@@ -133,6 +140,12 @@ public final class FreeRdpProvider implements BackendProvider {
                     new Choice("off", "Off"),
                     new Choice("local", "This phone"),
                     new Choice("remote", "The remote machine")),
+            BackendOption.bool(MICROPHONE, "Microphone",
+                    "Send this phone's microphone to the remote machine. Android asks for permission before connecting.",
+                    false, Scope.CONNECTION, false),
+            BackendOption.text(GATEWAY, "RD Gateway",
+                    "Reach this machine through an RD Gateway, as host or host:port (443 if no port). The connection's own username and password are used for it. Leave empty to connect directly.",
+                    "", Scope.CONNECTION, false),
             BackendOption.bool(COMPRESSION, "Compression",
                     "Enable connection-level compression. Uses less bandwidth, but more CPU.",
                     true, Scope.LAYERED, false),
