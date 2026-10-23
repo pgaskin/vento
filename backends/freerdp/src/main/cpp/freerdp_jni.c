@@ -191,6 +191,8 @@ struct Session {
     char *graphics;
     char *sound;
     int microphone;
+    char *gatewayHost; /* NULL for a direct connection */
+    int gatewayPort;
     char *clientName;
     char *configPath;
     int width, height, monitors, keyboardLayout;
@@ -954,19 +956,29 @@ static BOOL onAuthenticate(freerdp *instance, char **username, char **password, 
 
    1 rather than 2 deliberately: 2 is "remember this", which would put the
    decision in a file of FreeRDP's beside the one this app already keeps. */
-static DWORD askTrust(Session *s, const char *fingerprint) {
+static DWORD askTrust(Session *s, const char *fingerprint, const char *host, UINT16 port) {
     pthread_mutex_lock(&s->lock);
     s->trustAnswered = 0;
     s->trustAccepted = 0;
     pthread_mutex_unlock(&s->lock);
 
+    /* The library asks for the gateway's certificate with the gateway's name, so
+       a host that is the gateway is the gateway's question. Java keeps its pin
+       under a different key, and the target's pins stay where they were. */
+    const int viaGateway = s->gatewayHost && host && strcmp(host, s->gatewayHost) == 0;
+    char hostPort[300];
+    snprintf(hostPort, sizeof(hostPort), "%s:%u", host ? host : "", (unsigned) port);
+
     int attached;
     JNIEnv *env = attach(s, &attached);
     if (env) {
         jstring js = (*env)->NewStringUTF(env, fingerprint ? fingerprint : "");
-        (*env)->CallVoidMethod(env, s->callbacks, mTrustNeeded, js);
+        jstring jhp = (*env)->NewStringUTF(env, hostPort);
+        (*env)->CallVoidMethod(env, s->callbacks, mTrustNeeded, js,
+                               viaGateway ? JNI_TRUE : JNI_FALSE, jhp);
         cleared(env);
         (*env)->DeleteLocalRef(env, js);
+        (*env)->DeleteLocalRef(env, jhp);
         detach(s, attached);
     }
 
@@ -982,8 +994,8 @@ static DWORD askTrust(Session *s, const char *fingerprint) {
 static DWORD onVerifyCertificate(freerdp *instance, const char *host, UINT16 port,
                                  const char *common_name, const char *subject, const char *issuer,
                                  const char *fingerprint, DWORD flags) {
-    (void) host; (void) port; (void) common_name; (void) subject; (void) issuer; (void) flags;
-    return askTrust(sessionOf(instance->context), fingerprint);
+    (void) common_name; (void) subject; (void) issuer; (void) flags;
+    return askTrust(sessionOf(instance->context), fingerprint, host, port);
 }
 
 /* Not the same question, and leaving it unset is a refusal: this is the one
@@ -994,9 +1006,9 @@ static DWORD onVerifyChangedCertificate(freerdp *instance, const char *host, UIN
                                         const char *issuer, const char *fingerprint,
                                         const char *old_subject, const char *old_issuer,
                                         const char *old_fingerprint, DWORD flags) {
-    (void) host; (void) port; (void) common_name; (void) subject; (void) issuer;
+    (void) common_name; (void) subject; (void) issuer;
     (void) old_subject; (void) old_issuer; (void) old_fingerprint; (void) flags;
-    return askTrust(sessionOf(instance->context), fingerprint);
+    return askTrust(sessionOf(instance->context), fingerprint, host, port);
 }
 
 /* ---- keysyms to scancodes ----------------------------------------------- */
@@ -1554,6 +1566,39 @@ static BOOL reconnectSession(Session *s, rdpContext *ctx) {
     return TRUE;
 }
 
+/* "host" or "host:port", with 443 when there is no port. Empty is a direct
+   connection. IPv6 literals are not taken: a colon in the host is the port. */
+static void parseGateway(Session *s, const char *text) {
+    s->gatewayHost = NULL;
+    s->gatewayPort = 443;
+    if (!text || !*text) {
+        return;
+    }
+    size_t hostLen = strlen(text);
+    const char *colon = strrchr(text, ':');
+    if (colon && colon[1] != '\0') {
+        int digits = 1;
+        for (const char *p = colon + 1; *p; p++) {
+            if (*p < '0' || *p > '9') {
+                digits = 0;
+            }
+        }
+        const long port = digits ? strtol(colon + 1, NULL, 10) : 0;
+        if (digits && port > 0 && port <= 65535) {
+            hostLen = (size_t) (colon - text);
+            s->gatewayPort = (int) port;
+        }
+    }
+    if (hostLen == 0) {
+        return;
+    }
+    s->gatewayHost = malloc(hostLen + 1);
+    if (s->gatewayHost) {
+        memcpy(s->gatewayHost, text, hostLen);
+        s->gatewayHost[hostLen] = '\0';
+    }
+}
+
 static void applySettings(Session *s, rdpSettings *settings) {
     freerdp_settings_set_string(settings, FreeRDP_ServerHostname, s->host);
     freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, (UINT32) s->port);
@@ -1671,6 +1716,20 @@ static void applySettings(Session *s, rdpSettings *settings) {
        opens through OpenSL ES. The app checks RECORD_AUDIO before it gets here,
        since the capture device cannot be opened without it. */
     freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, s->microphone);
+
+    /* RD Gateway, over HTTPS only (the RPC transport is the old one). The gateway
+       takes the connection's own credentials, so there is nothing separate to
+       store. TSC_PROXY_MODE_DIRECT means always use it, where the detect mode
+       would only use it when the direct route fails. */
+    freerdp_settings_set_bool(settings, FreeRDP_GatewayEnabled, s->gatewayHost != NULL);
+    if (s->gatewayHost) {
+        freerdp_settings_set_string(settings, FreeRDP_GatewayHostname, s->gatewayHost);
+        freerdp_settings_set_uint32(settings, FreeRDP_GatewayPort, (UINT32) s->gatewayPort);
+        freerdp_settings_set_uint32(settings, FreeRDP_GatewayUsageMethod, TSC_PROXY_MODE_DIRECT);
+        freerdp_settings_set_bool(settings, FreeRDP_GatewayUseSameCredentials, TRUE);
+        freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, TRUE);
+        freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, FALSE);
+    }
 
     /* How big the far end draws its own interface. The protocol allows 100–500
        for the desktop factor and exactly 100, 140 or 180 for the device one,
@@ -1857,7 +1916,8 @@ JNIEXPORT jlong JNICALL
 Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
         JNIEnv *env, jclass cls, jobject listener, jstring address, jstring userName,
         jstring domain, jstring password, jstring nla, jboolean legacyTls, jboolean compression,
-        jstring graphics, jstring experience, jstring sound, jboolean microphone, jint scale,
+        jstring graphics, jstring experience, jstring sound, jboolean microphone,
+        jstring gateway, jint scale,
         jint width, jint height,
         jint monitors, jint keyboardLayout, jstring clientName, jstring configPath,
         jint connectTimeoutMs) {
@@ -1872,7 +1932,8 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
         mBell = (*env)->GetMethodID(env, k, "onBell", "()V");
         mClipboard = (*env)->GetMethodID(env, k, "onClipboard", "(Ljava/lang/String;)V");
         mCredentialsNeeded = (*env)->GetMethodID(env, k, "onCredentialsNeeded", "(Z)V");
-        mTrustNeeded = (*env)->GetMethodID(env, k, "onTrustNeeded", "(Ljava/lang/String;)V");
+        mTrustNeeded = (*env)->GetMethodID(env, k, "onTrustNeeded",
+                                           "(Ljava/lang/String;ZLjava/lang/String;)V");
         mClosed = (*env)->GetMethodID(env, k, "onClosed", "(Ljava/lang/String;)V");
         mReconnecting = (*env)->GetMethodID(env, k, "onReconnecting", "(II)V");
         /* Last, and that is the point: it is what every other caller tests, so
@@ -1911,6 +1972,9 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
     s->experience = dup_jstring(env, experience);
     s->sound = dup_jstring(env, sound);
     s->microphone = microphone != JNI_FALSE;
+    char *gatewayText = dup_jstring(env, gateway);
+    parseGateway(s, gatewayText);
+    free(gatewayText);
     s->clientName = dup_jstring(env, clientName);
     s->configPath = dup_jstring(env, configPath);
     s->compression = compression != JNI_FALSE;
@@ -1971,6 +2035,7 @@ fail:
     free(s->graphics);
     free(s->experience);
     free(s->sound);
+    free(s->gatewayHost);
     free(s->clientName);
     free(s->configPath);
     free(s);
@@ -2083,6 +2148,7 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeDestroy(
     free(s->graphics);
     free(s->experience);
     free(s->sound);
+    free(s->gatewayHost);
     free(s->clientName);
     free(s->configPath);
     free(s->credUser);
