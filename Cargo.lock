@@ -2493,6 +2493,7 @@ dependencies = [
  "ironrdp-graphics",
  "ironrdp-input",
  "ironrdp-pdu",
+ "ironrdp-rdpei",
  "ironrdp-rdpsnd",
  "ironrdp-session",
  "ironrdp-svc",

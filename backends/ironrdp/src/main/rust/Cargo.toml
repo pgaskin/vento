@@ -39,6 +39,7 @@ ironrdp-core = { path = "../../../../../third_party/ironrdp/crates/ironrdp-core"
 ironrdp-graphics = { path = "../../../../../third_party/ironrdp/crates/ironrdp-graphics" }
 ironrdp-input = { path = "../../../../../third_party/ironrdp/crates/ironrdp-input" }
 ironrdp-pdu = { path = "../../../../../third_party/ironrdp/crates/ironrdp-pdu" }
+ironrdp-rdpei = { path = "../../../../../third_party/ironrdp/crates/ironrdp-rdpei" }
 ironrdp-rdpsnd = { path = "../../../../../third_party/ironrdp/crates/ironrdp-rdpsnd" }
 ironrdp-session = { path = "../../../../../third_party/ironrdp/crates/ironrdp-session" }
 ironrdp-svc = { path = "../../../../../third_party/ironrdp/crates/ironrdp-svc" }

@@ -274,6 +274,35 @@ public interface Backend {
     default void pointerRelative(int dx, int dy, int buttonMask) {
     }
 
+    /** A touch contact went down. */
+    int TOUCH_DOWN = 0;
+    /** A touch contact moved while it was down. */
+    int TOUCH_MOVE = 1;
+    /** A touch contact lifted. */
+    int TOUCH_UP = 2;
+    /** A touch contact was taken away, by the phone or by a call. */
+    int TOUCH_CANCEL = 3;
+
+    /**
+     * Whether {@link #touch} reaches the far end. The direct-touch mode is only
+     * offered when it does. A backend that says yes may still find the far end
+     * does not take touch, which is not an error: the contact is dropped.
+     */
+    default boolean supportsTouch() {
+        return false;
+    }
+
+    /**
+     * A touch contact at a point of the remote desktop, in its own pixels. Not
+     * the cursor: this is the absolute mode, for a server that takes a finger as
+     * a finger rather than as a trackpad.
+     *
+     * @param contact an identity for the finger, stable while it is down
+     * @param phase   one of the {@code TOUCH_} constants
+     */
+    default void touch(int contact, int phase, int x, int y) {
+    }
+
     /**
      * @param keysym an X11 keysym ({@code control.input.Keysym})
      * @param keyId  a stable identity for the physical key — any value, as long

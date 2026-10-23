@@ -16,6 +16,8 @@ use crate::tls;
 
 use ironrdp_blocking::{Framed, connect_begin, connect_finalize, mark_as_upgraded};
 use ironrdp_cliprdr::CliprdrClient;
+use ironrdp_rdpei::RdpeiClient;
+use ironrdp_rdpei::pdu::{TouchContact, TouchContactFlags, TouchEventPdu, TouchFrame};
 use ironrdp_rdpsnd::client::Rdpsnd;
 use ironrdp_cliprdr::pdu::OwnedFormatDataResponse;
 use ironrdp_connector::connection_activation::{ConnectionActivationSequence, ConnectionActivationState};
@@ -248,11 +250,28 @@ enum Out {
 /// Something only the active stage can encode, so it waits for the protocol
 /// thread to come up for air.
 enum Task {
+    Touch {
+        contact: u8,
+        phase: TouchPhase,
+        x: u16,
+        y: u16,
+    },
     Focus(bool),
     /// A monitor layout to put on the display-control channel: one entry per
     /// monitor, already laid out. Both a resize and a change of monitor count
     /// are this — MS-RDPEDISP has one message and the layout is the whole of it.
     Layout(Vec<MonitorLayoutEntry>),
+}
+
+/// Where a touch contact is in its life, as the far end is told it: down when
+/// the finger lands, moved while it is down, up when it lifts, and cancelled
+/// when the phone takes the gesture for itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TouchPhase {
+    Down,
+    Move,
+    Up,
+    Cancel,
 }
 
 /// A monitor layout that has been asked for, and what the desktop would have to
@@ -506,6 +525,15 @@ impl Client {
         self.shared.clipboard.set_local(text);
     }
 
+    /// A touch contact at a point of the desktop. Dropped unless the server has
+    /// opened the touch channel, which it may never do.
+    pub fn touch(&self, contact: u8, phase: TouchPhase, x: u16, y: u16) {
+        if self.shared.view_only.load(Ordering::Relaxed) {
+            return;
+        }
+        self.push(Task::Touch { contact, phase, x, y });
+    }
+
     pub fn set_view_only(&self, view_only: bool) {
         self.shared.view_only.store(view_only, Ordering::Relaxed);
     }
@@ -711,7 +739,10 @@ impl Client {
                 display_control.display_control.store(true, Ordering::Relaxed);
                 Ok(Vec::new())
             }),
-        ));
+        )
+        // Direct touch, which the server may or may not open. Registered either
+        // way, since it costs the server nothing to be offered it.
+        .with_dynamic_channel(RdpeiClient::default()));
         self.shared
             .monitor_count
             .store(config.monitors.clamp(1, 16), Ordering::Relaxed);
@@ -1081,6 +1112,9 @@ impl Client {
                     Task::Layout(entries) => {
                         self.send_layout(framed, &mut stage, entries)?;
                     }
+                    Task::Touch { contact, phase, x, y } => {
+                        self.send_touch(framed, &mut stage, contact, phase, x, y)?;
+                    }
                 }
             }
         }
@@ -1092,6 +1126,50 @@ impl Client {
     ///
     /// A refusal is silence: the server either reactivates with a new desktop
     /// or does nothing at all, and there is no message that says no.
+    /// One contact, one frame, one PDU. A contact that is not in a legal flag
+    /// combination would be refused by the far end, so each phase is spelled out
+    /// with one of the eight the spec allows.
+    fn send_touch<S: Read + Write>(
+        &self,
+        framed: &mut Framed<S>,
+        stage: &mut ActiveStage,
+        contact: u8,
+        phase: TouchPhase,
+        x: u16,
+        y: u16,
+    ) -> Result<()> {
+        let Some(dvc) = stage.get_dvc::<RdpeiClient>() else {
+            return Ok(());
+        };
+        let channel_id = dvc.channel_id();
+        let live = TouchContactFlags::INRANGE | TouchContactFlags::INCONTACT;
+        let flags = match phase {
+            TouchPhase::Down => TouchContactFlags::DOWN | live,
+            TouchPhase::Move => TouchContactFlags::UPDATE | live,
+            TouchPhase::Up => TouchContactFlags::UP,
+            TouchPhase::Cancel => TouchContactFlags::UP | TouchContactFlags::CANCELED,
+        };
+        let pdu = TouchEventPdu::new(
+            0,
+            vec![TouchFrame::new(
+                0,
+                vec![TouchContact::new(contact, i32::from(x), i32::from(y), flags)],
+            )],
+        );
+        // Refused while the channel is not ready or the server has suspended
+        // input; a touch that cannot be sent is not worth the session.
+        let messages = match dvc.processor().encode_touch_event(channel_id, pdu) {
+            Ok(messages) => messages,
+            Err(e) => {
+                log::debug!("touch not sent: {e}");
+                return Ok(());
+            }
+        };
+        let frame = stage.encode_dvc_messages(messages).map_err(session)?;
+        framed.write_all(&frame)?;
+        Ok(())
+    }
+
     fn send_layout<S: Read + Write>(
         &self,
         framed: &mut Framed<S>,
