@@ -200,7 +200,7 @@ struct Session {
 
 static jclass gCallbacksClass;
 static jmethodID mConnected, mDesktopSize, mDamage, mFrameEnd, mCursor, mBell,
-        mClipboard, mCredentialsNeeded, mTrustNeeded, mClosed;
+        mClipboard, mCredentialsNeeded, mTrustNeeded, mClosed, mVideo;
 
 /* ---- JNI plumbing ------------------------------------------------------- */
 
@@ -859,6 +859,57 @@ static UINT onGfxCapsConfirm(RdpgfxClientContext *gfx, const RDPGFX_CAPS_CONFIRM
 /* A channel's interface arrives on an event rather than from a call, so the
    pointer has to be kept: this is the only place either of them is handed
    over. */
+/* An AVC420 frame as its I420 planes, from the graphics pipeline. It is packed to
+   NV12 for the display, which converts it on the GPU. The rectangle is the frame's
+   place on the surface, and the origin is the surface's place on the desktop. */
+static BOOL onAvcPlanes(void *custom, UINT16 surfaceId, BYTE *const yuv[3], const UINT32 stride[3],
+                        UINT32 left, UINT32 top, UINT32 right, UINT32 bottom, UINT32 originX,
+                        UINT32 originY) {
+    (void) surfaceId;
+    Session *s = (Session *) custom;
+    const UINT32 w = right - left;
+    const UINT32 h = bottom - top;
+    if (!s || !w || !h) {
+        return TRUE;
+    }
+    const UINT32 cw = (w + 1) / 2;
+    const UINT32 ch = (h + 1) / 2;
+    const size_t size = (size_t) w * h + (size_t) 2 * cw * ch;
+    BYTE *nv12 = malloc(size);
+    if (!nv12) {
+        return FALSE;
+    }
+    for (UINT32 row = 0; row < h; row++) {
+        memcpy(nv12 + (size_t) row * w, yuv[0] + (size_t) row * stride[0], w);
+    }
+    BYTE *uv = nv12 + (size_t) w * h;
+    for (UINT32 row = 0; row < ch; row++) {
+        for (UINT32 x = 0; x < cw; x++) {
+            uv[(size_t) row * cw * 2 + 2 * x] = yuv[1][(size_t) row * stride[1] + x];
+            uv[(size_t) row * cw * 2 + 2 * x + 1] = yuv[2][(size_t) row * stride[2] + x];
+        }
+    }
+    /* BT.709 for HD, and full range: the same as the phone's own H.264 decoder
+       takes when the stream does not say. */
+    const jint colorMode = (h >= 720 ? 1 : 0) | 2;
+    int attached;
+    JNIEnv *env = attach(s, &attached);
+    if (env) {
+        jbyteArray array = (*env)->NewByteArray(env, (jsize) size);
+        if (array) {
+            (*env)->SetByteArrayRegion(env, array, 0, (jsize) size, (const jbyte *) nv12);
+            (*env)->CallVoidMethod(env, s->callbacks, mVideo, (jint) (left + originX),
+                                   (jint) (top + originY), (jint) w, (jint) h, (jint) w, (jint) h,
+                                   colorMode, array);
+            (*env)->DeleteLocalRef(env, array);
+        }
+        cleared(env);
+        detach(s, attached);
+    }
+    free(nv12);
+    return TRUE;
+}
+
 static void onChannelConnected(void *context, const ChannelConnectedEventArgs *e) {
     rdpContext *ctx = (rdpContext *) context;
     Session *s = sessionOf(ctx);
@@ -868,6 +919,8 @@ static void onChannelConnected(void *context, const ChannelConnectedEventArgs *e
         RdpgfxClientContext *gfx = (RdpgfxClientContext *) e->pInterface;
         gdi_graphics_pipeline_init(ctx->gdi, gfx);
         gfx->CapsConfirm = onGfxCapsConfirm;
+        gfx->OnAvcPlanes = onAvcPlanes;
+        gfx->avcPlanesCustom = s;
         s->gfxOpen = 1;
     } else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
         wireCliprdr(s, (CliprdrClientContext *) e->pInterface);
@@ -1801,6 +1854,7 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
         mCredentialsNeeded = (*env)->GetMethodID(env, k, "onCredentialsNeeded", "(Z)V");
         mTrustNeeded = (*env)->GetMethodID(env, k, "onTrustNeeded", "(Ljava/lang/String;)V");
         mClosed = (*env)->GetMethodID(env, k, "onClosed", "(Ljava/lang/String;)V");
+        mVideo = (*env)->GetMethodID(env, k, "onVideo", "(IIIIIII[B)V");
         /* Last, and that is the point: it is what every other caller tests, so
            publishing it first would let a second one past while the method ids
            above were still zero. */

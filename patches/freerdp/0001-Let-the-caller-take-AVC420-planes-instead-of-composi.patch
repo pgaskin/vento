@@ -1,0 +1,121 @@
+From 516ede35ae7070ebca15c5e67cdf0293f66f4e06 Mon Sep 17 00:00:00 2001
+From: Nick Haghiri <ElCruncharino@users.noreply.gitlab.gnome.org>
+Date: Fri, 23 Oct 2026 15:14:17 -0400
+Subject: [PATCH 1/1] Let the caller take AVC420 planes instead of composing
+ them
+
+Adds an optional callback to the graphics context. When it is set, an
+AVC420 surface command is decoded but not converted to RGB, and the
+callback gets the I420 planes with their strides and the frame's place
+on the surface.
+
+diff --git a/include/freerdp/client/rdpgfx.h b/include/freerdp/client/rdpgfx.h
+index 56dd92d39..9a7791887 100644
+--- a/include/freerdp/client/rdpgfx.h
++++ b/include/freerdp/client/rdpgfx.h
+@@ -119,6 +119,13 @@ extern "C"
+ 	                                            UINT64 windowID);
+ 	typedef UINT (*pcRdpgfxUnmapWindowForSurface)(RdpgfxClientContext* context, UINT64 windowID);
+ 
++	/* Local: a decoded AVC420 frame, as its I420 planes and their strides, for the
++	 * caller to draw itself. The rectangle is the frame's place on the surface, and
++	 * the origin is the surface's place on the desktop. */
++	typedef BOOL (*pfnRdpgfxAvcPlanes)(void* custom, UINT16 surfaceId, BYTE* const yuv[3],
++	                                   const UINT32 stride[3], UINT32 left, UINT32 top,
++	                                   UINT32 right, UINT32 bottom, UINT32 originX, UINT32 originY);
++
+ 	struct s_rdpgfx_client_context
+ 	{
+ 		void* handle;
+@@ -172,6 +179,10 @@ extern "C"
+ 		WINPR_ATTR_NODISCARD pcRdpgfxMapWindowForSurface MapWindowForSurface;
+ 		WINPR_ATTR_NODISCARD pcRdpgfxUnmapWindowForSurface UnmapWindowForSurface;
+ 
++		/* Local: when set, AVC420 frames go here instead of being composed. */
++		pfnRdpgfxAvcPlanes OnAvcPlanes;
++		void* avcPlanesCustom;
++
+ 		CRITICAL_SECTION mux;
+ 		rdpCodecs* codecs;
+ 		PROFILER_DEFINE(SurfaceProfiler)
+diff --git a/include/freerdp/codec/h264.h b/include/freerdp/codec/h264.h
+index 16fc8cc5d..bd0b1f019 100644
+--- a/include/freerdp/codec/h264.h
++++ b/include/freerdp/codec/h264.h
+@@ -74,6 +74,14 @@ extern "C"
+ 	WINPR_ATTR_NODISCARD
+ 	FREERDP_API UINT32 h264_context_get_option(H264_CONTEXT* h264, H264_CONTEXT_OPTION option);
+ 
++	/* Decodes an AVC420 frame and stops before the conversion: the planes and their
++	 * strides are handed back in yuv and stride, and stay valid until the next frame.
++	 * Returns 1 for a frame, 0 for none yet, and below 0 on error. */
++	WINPR_ATTR_NODISCARD
++	FREERDP_API INT32 avc420_decode_planes(H264_CONTEXT* h264, const BYTE* pSrcData, UINT32 SrcSize,
++	                                       const RECTANGLE_16* regionRects, UINT32 numRegionRects,
++	                                       BYTE* yuv[3], UINT32 stride[3]);
++
+ 	WINPR_ATTR_NODISCARD
+ 	FREERDP_API INT32 avc420_compress(H264_CONTEXT* h264, const BYTE* pSrcData, DWORD SrcFormat,
+ 	                                  UINT32 nSrcStep, UINT32 nSrcWidth, UINT32 nSrcHeight,
+diff --git a/libfreerdp/codec/h264.c b/libfreerdp/codec/h264.c
+index da7f7dca6..d70f505a0 100644
+--- a/libfreerdp/codec/h264.c
++++ b/libfreerdp/codec/h264.c
+@@ -201,6 +201,25 @@ INT32 avc420_decompress(H264_CONTEXT* h264, const BYTE* pSrcData, UINT32 SrcSize
+ 	return 1;
+ }
+ 
++INT32 avc420_decode_planes(H264_CONTEXT* h264, const BYTE* pSrcData, UINT32 SrcSize,
++                           const RECTANGLE_16* regionRects, UINT32 numRegionRects,
++                           BYTE* yuv[3], UINT32 stride[3])
++{
++	if (!h264 || h264->Compressor)
++		return -1001;
++
++	const int status = log_decompress(h264, pSrcData, SrcSize, regionRects, numRegionRects);
++	if (status > 0)
++	{
++		for (size_t i = 0; i < 3; i++)
++		{
++			yuv[i] = h264->pYUVData[i];
++			stride[i] = h264->iStride[i];
++		}
++	}
++	return status;
++}
++
+ WINPR_ATTR_NODISCARD
+ static BOOL allocate_h264_metablock(UINT32 QP, RECTANGLE_16* rectangles,
+                                     RDPGFX_H264_METABLOCK* meta, size_t count)
+diff --git a/libfreerdp/gdi/gfx.c b/libfreerdp/gdi/gfx.c
+index 8d9d70895..311fa29fe 100644
+--- a/libfreerdp/gdi/gfx.c
++++ b/libfreerdp/gdi/gfx.c
+@@ -730,6 +730,27 @@ static UINT gdi_SurfaceCommand_AVC420(rdpGdi* gdi, RdpgfxClientContext* context,
+ 		return ERROR_INTERNAL_ERROR;
+ 
+ 	meta = &(bs->meta);
++	if (context->OnAvcPlanes)
++	{
++		/* The caller draws the planes itself, so the surface is neither composed nor
++		 * reported as changed here. A frame still in the decoder has no planes yet. */
++		BYTE* yuv[3] = { nullptr, nullptr, nullptr };
++		UINT32 stride[3] = { 0, 0, 0 };
++		rc = avc420_decode_planes(surface->h264, bs->data, bs->length, meta->regionRects,
++		                          meta->numRegionRects, yuv, stride);
++		if (rc < 0)
++		{
++			WLog_WARN(TAG, "avc420_decode_planes failure: %" PRId32 ", ignoring update.", rc);
++			return CHANNEL_RC_OK;
++		}
++		if (rc > 0)
++		{
++			context->OnAvcPlanes(context->avcPlanesCustom, cmd->surfaceId, yuv, stride, cmd->left,
++			                     cmd->top, cmd->right, cmd->bottom, surface->outputOriginX,
++			                     surface->outputOriginY);
++		}
++		return CHANNEL_RC_OK;
++	}
+ 	rc = avc420_decompress(surface->h264, bs->data, bs->length, surface->data, surface->format,
+ 	                       surface->scanline, surface->width, surface->height, meta->regionRects,
+ 	                       meta->numRegionRects);

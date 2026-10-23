@@ -36,6 +36,9 @@ pub struct Callbacks {
     trust_needed: jni::objects::JMethodID,
     unverified: jni::objects::JMethodID,
     closed: jni::objects::JMethodID,
+    /// Only the RDP interface declares it; a backend without video leaves it out
+    /// and [`Callbacks::video`] does nothing.
+    video: Option<jni::objects::JMethodID>,
 }
 
 impl Callbacks {
@@ -80,7 +83,46 @@ impl Callbacks {
                 jni_str!("onClosed"),
                 jni_sig!("(Ljava/lang/String;)V"),
             )?,
+            video: match env.get_method_id(&class, jni_str!("onVideo"), jni_sig!("(IIIIIII[B)V")) {
+                Ok(method) => Some(method),
+                Err(_) => {
+                    env.exception_clear();
+                    None
+                }
+            },
         })
+    }
+
+    /// A decoded frame as NV12, for the top-left `w` by `h` at (`x`, `y`), out of a
+    /// `frame_w` by `frame_h` picture. On the protocol thread.
+    pub fn video(&self, x: i32, y: i32, w: i32, h: i32, frame_w: i32, frame_h: i32, color_mode: i32, nv12: &[u8]) {
+        let Some(method) = self.video else {
+            return;
+        };
+        let result: jni::errors::Result<()> = self.vm.attach_current_thread(|env| {
+            let bytes = env.byte_array_from_slice(nv12)?;
+            unsafe {
+                env.call_method_unchecked(
+                    &self.target,
+                    method,
+                    ReturnType::Primitive(Primitive::Void),
+                    &[
+                        int(x),
+                        int(y),
+                        int(w),
+                        int(h),
+                        int(frame_w),
+                        int(frame_h),
+                        int(color_mode),
+                        jvalue { l: bytes.as_raw() },
+                    ],
+                )
+            }?;
+            Ok(())
+        });
+        if let Err(e) = result {
+            log::warn!("callback failed: {e}");
+        }
     }
 
     /// Attach this thread and make one void call.
