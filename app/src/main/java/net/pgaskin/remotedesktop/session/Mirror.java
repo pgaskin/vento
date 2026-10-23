@@ -223,7 +223,12 @@ final class Mirror {
      * desktop the viewport can see, in desktop pixels; anything outside it
      * keeps its damage until it is looked at.
      */
-    void update(Backend backend, float vx0, float vy0, float vx1, float vy1) {
+    /** Reads a rectangle of the desktop into a tile, as {@link Backend#readRegion} does. */
+    interface Reader {
+        boolean read(int x, int y, int w, int h, Bitmap dst, int dstX, int dstY);
+    }
+
+    void update(Reader reader, float vx0, float vy0, float vx1, float vy1) {
         c0 = clamp((int) Math.floor(vx0 / tileW), 0, cols - 1);
         r0 = clamp((int) Math.floor(vy0 / tileH), 0, rows - 1);
         c1 = clamp((int) Math.ceil(vx1 / tileW) - 1, c0, cols - 1);
@@ -252,7 +257,7 @@ final class Mirror {
                 }
                 // Exactly what changed, where it belongs inside the tile.
                 final int tx0 = left(c), ty0 = top(r);
-                final boolean ok = backend.readRegion(dx0, dy0, dx1 - dx0, dy1 - dy0,
+                final boolean ok = reader.read(dx0, dy0, dx1 - dx0, dy1 - dy0,
                         tiles[i], dx0 - tx0, dy0 - ty0);
                 if (ok) {
                     ready[i] = true;

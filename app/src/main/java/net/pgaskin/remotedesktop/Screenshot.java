@@ -132,7 +132,7 @@ final class Screenshot {
             return null;
         }
         try {
-            return backend.thumbnail(w, h);
+            return session.thumbnail(w, h);
         } catch (OutOfMemoryError e) {
             // A desktop at 1:1 is four bytes a pixel and a phone's heap is not
             // large: 3840x2400 is 35 MB in one allocation, and the alternative

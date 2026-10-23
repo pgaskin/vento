@@ -30,6 +30,7 @@ import net.pgaskin.remotedesktop.backend.Backend;
 import net.pgaskin.remotedesktop.backend.Backends;
 import net.pgaskin.remotedesktop.control.input.TapRegions;
 import net.pgaskin.remotedesktop.session.SessionView;
+import net.pgaskin.remotedesktop.session.VideoLayer;
 
 import java.util.Map;
 
@@ -88,6 +89,8 @@ public final class SessionActivity extends Activity
      * that is already running.
      */
     private Session session;
+    /** The GPU video layer for this window's session, when it has one. */
+    private VideoLayer videoLayer;
     private SessionView view;
     private Connection connection; // non-null from the store, so it can leave a preview
 
@@ -211,6 +214,11 @@ public final class SessionActivity extends Activity
         final FrameLayout root = findViewById(android.R.id.content);
         root.addView(view, 0, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        // The GPU video layer, behind the view, which draws the server's video.
+        videoLayer = new VideoLayer(this);
+        view.setVideoLayer(videoLayer);
+        root.addView(videoLayer.surface(), 0, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         bindStatusPanel();
         prompts = new PromptDialogs(this, dialogs, this, connection != null);
         session.attach(view, prompts);
@@ -263,6 +271,9 @@ public final class SessionActivity extends Activity
     @Override
     protected void onResume() {
         super.onResume();
+        if (videoLayer != null) {
+            videoLayer.surface().onResume();
+        }
         refreshSettings();
         if (awaitingSetup != null) {
             // Everything this window is was decided in onCreate, against an
@@ -520,6 +531,9 @@ public final class SessionActivity extends Activity
      */
     @Override
     protected void onPause() {
+        if (videoLayer != null) {
+            videoLayer.surface().onPause();
+        }
         super.onPause();
         savePreview();
     }
@@ -535,7 +549,7 @@ public final class SessionActivity extends Activity
         if (connection != null && session != null && !session.isClosed()
                 && session.backend().state() == Backend.State.CONNECTED) {
             Connections.saveThumbnail(this, connection.id(),
-                    session.backend().thumbnail(THUMBNAIL_MAX, THUMBNAIL_MAX));
+                    session.thumbnail(THUMBNAIL_MAX, THUMBNAIL_MAX));
         }
     }
 

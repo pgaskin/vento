@@ -189,6 +189,17 @@ public final class Session implements Backend.Listener, Prompt.Handler {
         return openedWith;
     }
 
+    /**
+     * The backend's thumbnail of the desktop with any video painted over it, which is
+     * what a screenshot and the session's thumbnail are, since the backend's own
+     * picture of video is stale or absent.
+     */
+    public android.graphics.Bitmap thumbnail(int maxW, int maxH) {
+        final android.graphics.Bitmap thumb = backend.thumbnail(maxW, maxH);
+        final Backend.Listener l = view;
+        return l instanceof SessionView v ? v.thumbnail(thumb, maxW, maxH) : thumb;
+    }
+
     public Backend backend() {
         return backend;
     }
@@ -594,6 +605,12 @@ public final class Session implements Backend.Listener, Prompt.Handler {
     @Override
     public void damaged(int x, int y, int width, int height) {
         view.damaged(x, y, width, height);
+    }
+
+    @Override
+    public void videoFrame(int x, int y, int width, int height,
+                           int frameWidth, int frameHeight, int colorMode, byte[] nv12) {
+        view.videoFrame(x, y, width, height, frameWidth, frameHeight, colorMode, nv12);
     }
 
     @Override
