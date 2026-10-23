@@ -270,7 +270,7 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         cursor.setListener(this);
         gestures = new GestureRecognizer(cfg, cursor, this, scheduler);
         gestures.setRegions(tapRegions, this);
-        router = new TouchRouter(gestures);
+        router = new TouchRouter(touchListener);
         // Its own button source, so a tap on the touchpad during an
         // overlay-held drag cannot release what the overlay is holding.
         overlay = new MouseOverlay(cfg, cursor.newButtonSource(), scheduler);
@@ -688,9 +688,6 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         if (PhysicalMouse.isMouse(ev) && mouse.onTouchEvent(ev)) {
             return true;
         }
-        if (directTouch) {
-            return onDirectTouch(ev);
-        }
         return router.onTouchEvent(ev);
     }
 
@@ -702,47 +699,69 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         directTouch = direct && backend.supportsTouch();
     }
 
-    /**
-     * Each finger goes to the far end where it is, as a contact of its own. The
-     * touchpad's pan, zoom and tap are not here: in direct mode a finger is the
-     * thing it touched, not something that moves a cursor.
+    /*
+     * Direct touch is a listener, not a path around the router. The router has
+     * already let the toolbar, the mouse overlay and the keyboard take their
+     * fingers, so a finger that reaches here is the desktop's. In touchpad mode
+     * the same fingers go to the gestures, as they always did.
      */
-    private boolean onDirectTouch(MotionEvent ev) {
-        switch (ev.getActionMasked()) {
-            case MotionEvent.ACTION_DOWN:
-            case MotionEvent.ACTION_POINTER_DOWN: {
-                final int i = ev.getActionIndex();
-                directDown(ev.getPointerId(i), ev.getX(i), ev.getY(i));
-                return true;
+    private final TouchRouter.Listener touchListener = new TouchRouter.Listener() {
+        @Override
+        public void touchBegan(int id, float x, float y, long t) {
+            if (directTouch) {
+                directDown(id, x, y);
+            } else {
+                gestures.touchBegan(id, x, y, t);
             }
-            case MotionEvent.ACTION_MOVE: {
-                for (int i = 0; i < ev.getPointerCount(); i++) {
-                    final Integer contact = contactOfPointer.get(ev.getPointerId(i));
-                    if (contact != null) {
-                        sendTouch(contact, Backend.TOUCH_MOVE, ev.getX(i), ev.getY(i));
-                    }
-                }
-                return true;
-            }
-            case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_POINTER_UP: {
-                final int i = ev.getActionIndex();
-                final Integer contact = contactOfPointer.remove(ev.getPointerId(i));
-                if (contact != null) {
-                    sendTouch(contact, Backend.TOUCH_UP, ev.getX(i), ev.getY(i));
-                }
-                return true;
-            }
-            case MotionEvent.ACTION_CANCEL: {
-                for (int contact : contactOfPointer.values()) {
-                    backend.touch(contact, Backend.TOUCH_CANCEL, contactX[contact], contactY[contact]);
-                }
-                contactOfPointer.clear();
-                return true;
-            }
-            default:
-                return false;
         }
+
+        @Override
+        public void touchMoved(int id, float prevX, float prevY, float x, float y, long t) {
+            if (directTouch) {
+                directMove(id, x, y);
+            } else {
+                gestures.touchMoved(id, prevX, prevY, x, y, t);
+            }
+        }
+
+        @Override
+        public void touchEnded(int id, float prevX, float prevY, float x, float y, long t) {
+            if (directTouch) {
+                directUp(id, x, y);
+            } else {
+                gestures.touchEnded(id, prevX, prevY, x, y, t);
+            }
+        }
+
+        @Override
+        public void touchCancelled(long t) {
+            if (directTouch) {
+                directCancel();
+            } else {
+                gestures.touchCancelled(t);
+            }
+        }
+    };
+
+    private void directMove(int pointerId, float x, float y) {
+        final Integer contact = contactOfPointer.get(pointerId);
+        if (contact != null) {
+            sendTouch(contact, Backend.TOUCH_MOVE, x, y);
+        }
+    }
+
+    private void directUp(int pointerId, float x, float y) {
+        final Integer contact = contactOfPointer.remove(pointerId);
+        if (contact != null) {
+            sendTouch(contact, Backend.TOUCH_UP, x, y);
+        }
+    }
+
+    private void directCancel() {
+        for (int contact : contactOfPointer.values()) {
+            backend.touch(contact, Backend.TOUCH_CANCEL, contactX[contact], contactY[contact]);
+        }
+        contactOfPointer.clear();
     }
 
     private void directDown(int pointerId, float x, float y) {
