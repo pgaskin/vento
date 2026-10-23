@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop;
 
+import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -67,13 +68,17 @@ final class SessionLog {
                 .setTitle(R.string.log_title)
                 .setView(tall)
                 .setPositiveButton(android.R.string.ok, null)
-                .setNeutralButton(R.string.log_copy, (d, w) -> copy(ctx, text[0]))
+                .setNeutralButton(R.string.log_copy, null)
                 .show();
-        // Copy has nothing to copy until the log is read, and copying the empty
-        // text it has until then said it had copied something. So it waits.
+        // The button is handled here rather than by the builder: copy the text as
+        // it is now, then close. An empty log is refused in copy() itself.
         final android.widget.Button copyButton =
                 dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL);
-        copyButton.setEnabled(false);
+        copyButton.setOnClickListener(v -> {
+            Log.i(TAG, "copy tapped, " + text[0].length() + " chars");
+            copyWhenFocused(ctx, text[0], 0);
+            dialog.dismiss();
+        });
 
         // Forking logcat and draining a whole log buffer is tens to hundreds of
         // milliseconds, and both places this is reachable from are moments the
@@ -84,7 +89,6 @@ final class SessionLog {
             main.post(() -> {
                 text[0] = read;
                 view.setText(read);
-                copyButton.setEnabled(true);
                 // Showing the top of a log is showing the oldest thing in it;
                 // what somebody opening this wants is what just happened.
                 tall.post(() -> tall.fullScroll(ScrollView.FOCUS_DOWN));
@@ -92,12 +96,31 @@ final class SessionLog {
         }, "session-log").start();
     }
 
-    private static void copy(Context ctx, String text) {
-        final ClipboardManager cm = ctx.getSystemService(ClipboardManager.class);
-        if (cm == null || text == null || text.isEmpty()) {
+    /** Waits, a few times over, for the activity to have focus again before copying. */
+    private static void copyWhenFocused(Context ctx, String text, int attempt) {
+        if (!(ctx instanceof Activity activity) || activity.hasWindowFocus() || attempt >= 20) {
+            copy(ctx, text);
             return;
         }
-        cm.setPrimaryClip(ClipData.newPlainText("log", text));
+        new Handler(Looper.getMainLooper()).postDelayed(
+                () -> copyWhenFocused(ctx, text, attempt + 1), 50);
+    }
+
+    private static void copy(Context ctx, String text) {
+        final boolean focused = !(ctx instanceof Activity a) || a.hasWindowFocus();
+        Log.i(TAG, "copy: " + (text == null ? -1 : text.length()) + " chars, focused " + focused);
+        final ClipboardManager cm = ctx.getSystemService(ClipboardManager.class);
+        if (cm == null || text == null || text.isEmpty()) {
+            Log.w(TAG, "copy: nothing to copy (clipboard " + (cm != null) + ")");
+            return;
+        }
+        try {
+            cm.setPrimaryClip(ClipData.newPlainText("log", text));
+            Log.i(TAG, "copy: clipboard now has " + cm.hasPrimaryClip());
+        } catch (RuntimeException e) {
+            Log.w(TAG, "copy: the clipboard refused", e);
+            return;
+        }
         Toast.makeText(ctx, R.string.log_copied, Toast.LENGTH_SHORT).show();
     }
 
