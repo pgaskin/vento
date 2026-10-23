@@ -190,6 +190,7 @@ struct Session {
     char *experience;
     char *graphics;
     char *sound;
+    int microphone;
     char *clientName;
     char *configPath;
     int width, height, monitors, keyboardLayout;
@@ -1600,6 +1601,10 @@ static void applySettings(Session *s, rdpSettings *settings) {
     const int soundThere = s->sound && strcmp(s->sound, "remote") == 0;
     freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, soundHere);
     freerdp_settings_set_bool(settings, FreeRDP_RemoteConsoleAudio, soundThere);
+    /* The microphone is the audin channel's capture side, which the library
+       opens through OpenSL ES. The app checks RECORD_AUDIO before it gets here,
+       since the capture device cannot be opened without it. */
+    freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, s->microphone);
 
     /* How big the far end draws its own interface. The protocol allows 100–500
        for the desktop factor and exactly 100, 140 or 180 for the device one,
@@ -1785,7 +1790,8 @@ JNIEXPORT jlong JNICALL
 Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
         JNIEnv *env, jclass cls, jobject listener, jstring address, jstring userName,
         jstring domain, jstring password, jstring nla, jboolean legacyTls, jboolean compression,
-        jstring graphics, jstring experience, jstring sound, jint scale, jint width, jint height,
+        jstring graphics, jstring experience, jstring sound, jboolean microphone, jint scale,
+        jint width, jint height,
         jint monitors, jint keyboardLayout, jstring clientName, jstring configPath,
         jint connectTimeoutMs) {
     (void) cls;
@@ -1836,6 +1842,7 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
     s->graphics = dup_jstring(env, graphics);
     s->experience = dup_jstring(env, experience);
     s->sound = dup_jstring(env, sound);
+    s->microphone = microphone != JNI_FALSE;
     s->clientName = dup_jstring(env, clientName);
     s->configPath = dup_jstring(env, configPath);
     s->compression = compression != JNI_FALSE;

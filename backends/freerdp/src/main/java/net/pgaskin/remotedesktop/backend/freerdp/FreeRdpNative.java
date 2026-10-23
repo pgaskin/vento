@@ -104,6 +104,8 @@ final class FreeRdpNative {
      *                   {@code bitmap}
      * @param experience {@code full}, {@code balanced} or {@code plain}
      * @param sound      {@code off}, {@code local} or {@code remote}
+     * @param microphone send this phone's microphone; the caller only passes
+     *                   true once RECORD_AUDIO is granted
      * @param scale      the percentage the far end is asked to draw its own
      *                   interface at; 100, 140 and 180 are the only values the
      *                   protocol allows, and anything else is taken as 100
@@ -114,7 +116,8 @@ final class FreeRdpNative {
     static native long nativeCreate(Callbacks listener, String address, String userName,
                                     String domain, String password, String nla,
                                     boolean legacyTls, boolean compression, String graphics,
-                                    String experience, String sound, int scale, int width,
+                                    String experience, String sound, boolean microphone,
+                                    int scale, int width,
                                     int height, int monitors, int keyboardLayout,
                                     String clientName, String configPath, int connectTimeoutMs);
 
