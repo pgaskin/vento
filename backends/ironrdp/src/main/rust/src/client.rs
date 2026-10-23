@@ -16,6 +16,7 @@ use crate::tls;
 
 use ironrdp_blocking::{Framed, connect_begin, connect_finalize, mark_as_upgraded};
 use ironrdp_cliprdr::CliprdrClient;
+use ironrdp_egfx::client::{GraphicsPipelineClient, GraphicsPipelineHandler};
 use ironrdp_rdpei::RdpeiClient;
 use ironrdp_rdpei::pdu::{TouchContact, TouchContactFlags, TouchEventPdu, TouchFrame};
 use ironrdp_rdpsnd::client::Rdpsnd;
@@ -62,6 +63,12 @@ const POLL: Duration = Duration::from_millis(250);
 /// does everywhere; RFB counts clicks, as button presses. The whole of that
 /// mismatch is this constant and the edge detection in [`Client::pointer`].
 const WHEEL_UNITS: i16 = 120;
+
+/// The graphics pipeline's per-command callbacks. Unused: the compositor keeps
+/// the surface pixels and the session draws them, so there is nothing to answer.
+struct EgfxHandler;
+
+impl GraphicsPipelineHandler for EgfxHandler {}
 
 /// What a connection is told before it starts.
 pub struct Config {
@@ -742,7 +749,11 @@ impl Client {
         )
         // Direct touch, which the server may or may not open. Registered either
         // way, since it costs the server nothing to be offered it.
-        .with_dynamic_channel(RdpeiClient::default()));
+        .with_dynamic_channel(RdpeiClient::default())
+        // The graphics pipeline (EGFX). The client-side compositor in ironrdp-egfx
+        // holds the surface pixels; the session drains them into the framebuffer as
+        // graphics updates, so the handler has nothing of its own to do.
+        .with_dynamic_channel(GraphicsPipelineClient::new(Box::new(EgfxHandler), None)));
         self.shared
             .monitor_count
             .store(config.monitors.clamp(1, 16), Ordering::Relaxed);
@@ -1511,8 +1522,8 @@ fn connector_config(
         compression_type: config.compression,
         pointer_software_rendering: false,
         multitransport_flags: None,
-        // The graphics pipeline is deliberately not offered; see IronRdpProvider.
-        support_dyn_vc_gfx_protocol: false,
+        // The graphics pipeline is offered: KRDP refuses a client without it.
+        support_dyn_vc_gfx_protocol: true,
         performance_flags: match config.experience {
             Experience::Full => {
                 PerformanceFlags::ENABLE_FONT_SMOOTHING | PerformanceFlags::ENABLE_DESKTOP_COMPOSITION
