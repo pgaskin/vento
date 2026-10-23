@@ -34,6 +34,7 @@ pub const PROTOCOL_VERSION: &str = "RDP 5.x (IronRDP)";
 // session behind them. Android only — everything above is the protocol, and it
 // builds, tests and runs an example on the host with none of this compiled.
 #[cfg(target_os = "android")]
+mod audio;
 mod bindings;
 
 mod client;

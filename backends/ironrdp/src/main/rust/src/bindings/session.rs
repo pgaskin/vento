@@ -62,6 +62,11 @@ impl Handler for Bridge {
         self.callbacks.clipboard(text);
     }
 
+    fn audio(&mut self, sample_rate: u32, channels: u16, pcm: &[u8]) {
+        self.callbacks
+            .audio(sample_rate as i32, i32::from(channels), pcm);
+    }
+
     fn credentials(&mut self, needs_user: bool) -> Option<Credentials> {
         self.callbacks.credentials_needed(needs_user);
         self.credentials.wait()

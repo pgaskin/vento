@@ -60,6 +60,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNat
     compression: JString,
     remote_fx: jboolean,
     experience: JString,
+    sound: jboolean,
     width: jint,
     height: jint,
     monitors: jint,
@@ -100,6 +101,7 @@ pub extern "system" fn Java_net_pgaskin_remotedesktop_backend_ironrdp_IronRdpNat
             client_name: string(env, &client_name)?.unwrap_or_else(|| "remotedesktop".into()),
             keyboard_layout: keyboard_layout as u32,
             connect_timeout: Duration::from_millis(connect_timeout_ms.max(1000) as u64),
+            audio: sound,
         };
         log::info!(
             "connecting to {} as {:?} ({}x{} × {}, nla {:?}, compression {:?}, remotefx {}, experience {:?})",

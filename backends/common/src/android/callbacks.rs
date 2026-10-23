@@ -36,6 +36,9 @@ pub struct Callbacks {
     trust_needed: jni::objects::JMethodID,
     unverified: jni::objects::JMethodID,
     closed: jni::objects::JMethodID,
+    /// Only the RDP interface declares it; a backend without sound leaves it out
+    /// and [`Callbacks::audio`] does nothing.
+    audio: Option<jni::objects::JMethodID>,
 }
 
 impl Callbacks {
@@ -80,7 +83,38 @@ impl Callbacks {
                 jni_str!("onClosed"),
                 jni_sig!("(Ljava/lang/String;)V"),
             )?,
+            audio: match env.get_method_id(&class, jni_str!("onAudio"), jni_sig!("(II[B)V")) {
+                Ok(method) => Some(method),
+                Err(_) => {
+                    // A failed lookup leaves its exception pending; it is not a
+                    // reason to refuse the backend.
+                    env.exception_clear();
+                    None
+                }
+            },
         })
+    }
+
+    /// A block of 16-bit interleaved PCM, on the protocol thread.
+    pub fn audio(&self, sample_rate: i32, channels: i32, pcm: &[u8]) {
+        let Some(method) = self.audio else {
+            return;
+        };
+        let result: jni::errors::Result<()> = self.vm.attach_current_thread(|env| {
+            let bytes = env.byte_array_from_slice(pcm)?;
+            unsafe {
+                env.call_method_unchecked(
+                    &self.target,
+                    method,
+                    ReturnType::Primitive(Primitive::Void),
+                    &[int(sample_rate), int(channels), jvalue { l: bytes.as_raw() }],
+                )
+            }?;
+            Ok(())
+        });
+        if let Err(e) = result {
+            log::warn!("callback failed: {e}");
+        }
     }
 
     /// Attach this thread and make one void call.
