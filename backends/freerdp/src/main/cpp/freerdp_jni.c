@@ -200,7 +200,7 @@ struct Session {
 
 static jclass gCallbacksClass;
 static jmethodID mConnected, mDesktopSize, mDamage, mFrameEnd, mCursor, mBell,
-        mClipboard, mCredentialsNeeded, mTrustNeeded, mClosed;
+        mClipboard, mCredentialsNeeded, mTrustNeeded, mClosed, mReconnecting;
 
 /* ---- JNI plumbing ------------------------------------------------------- */
 
@@ -1490,6 +1490,69 @@ static void onPostDisconnect(freerdp *instance) {
     gdi_free(instance);
 }
 
+/* ---- automatic reconnection --------------------------------------------- */
+
+static void fireReconnecting(Session *s, int attempt, int max) {
+    int attached;
+    JNIEnv *env = attach(s, &attached);
+    if (env) {
+        (*env)->CallVoidMethod(env, s->callbacks, mReconnecting, (jint) attempt, (jint) max);
+        cleared(env);
+        detach(s, attached);
+    }
+}
+
+/* The same callback as the first connection; the Java side treats it as the
+   session being back, which is what it is. */
+static void fireConnected(Session *s, int w, int h) {
+    int attached;
+    JNIEnv *env = attach(s, &attached);
+    if (env) {
+        (*env)->CallVoidMethod(env, s->callbacks, mConnected, (jint) w, (jint) h);
+        cleared(env);
+        detach(s, attached);
+    }
+}
+
+/* The library runs the retries (client_auto_reconnect, the loop the desktop and
+   Android clients use); these supply its delay, report each attempt, and let a
+   close interrupt the wait. A close is a quit request, which the library reads
+   as the window going away, so the loop returns instead of waiting out a delay
+   for a session nobody is watching. */
+static BOOL onReconnectWindowEvents(freerdp *instance) {
+    Session *s = sessionOf(instance->context);
+    pthread_mutex_lock(&s->lock);
+    const int quit = s->quit;
+    pthread_mutex_unlock(&s->lock);
+    return !quit;
+}
+
+static SSIZE_T onRetryDialog(freerdp *instance, const char *what, size_t current, void *userarg) {
+    (void) userarg;
+    rdpSettings *settings = instance->context->settings;
+    if (strcmp(what, "connection") != 0) {
+        return -1;
+    }
+    fireReconnecting(sessionOf(instance->context), (int) current + 1,
+                     (int) freerdp_settings_get_uint32(settings, FreeRDP_AutoReconnectMaxRetries));
+    return (SSIZE_T) freerdp_settings_get_uint32(settings, FreeRDP_TcpConnectTimeout);
+}
+
+/* Called when the transport has died mid-session. The picture and input stop
+   until the library reports the session back, which it does by way of the same
+   connected callback as the first time. */
+static BOOL reconnectSession(Session *s, rdpContext *ctx) {
+    s->connected = 0;
+    if (!client_auto_reconnect_ex(ctx->instance, onReconnectWindowEvents)) {
+        return FALSE;
+    }
+    s->connected = 1;
+    rdpSettings *settings = ctx->settings;
+    fireConnected(s, (int) freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth),
+                  (int) freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight));
+    return TRUE;
+}
+
 static void applySettings(Session *s, rdpSettings *settings) {
     freerdp_settings_set_string(settings, FreeRDP_ServerHostname, s->host);
     freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, (UINT32) s->port);
@@ -1556,6 +1619,9 @@ static void applySettings(Session *s, rdpSettings *settings) {
     freerdp_settings_set_bool(settings, FreeRDP_CompressionEnabled, s->compression != 0);
     freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE);
+    /* The library's retry loop returns at once unless this is on. The retry
+       count stays the library's own default. */
+    freerdp_settings_set_bool(settings, FreeRDP_AutoReconnectionEnabled, TRUE);
 
     /* The picture. The graphics pipeline is what a machine since Windows 8
        would rather send a desktop over, and the only path that carries H.264 —
@@ -1695,6 +1761,7 @@ static void *protocolThread(void *arg) {
     ctx->instance->PreConnect = onPreConnect;
     ctx->instance->PostConnect = onPostConnect;
     ctx->instance->PostDisconnect = onPostDisconnect;
+    ctx->instance->RetryDialog = onRetryDialog;
     ctx->instance->AuthenticateEx = onAuthenticate;
     /* Two callbacks rather than one: the library keeps a store of its own and
        asks a different question when what is on file disagrees. Leaving the
@@ -1749,7 +1816,7 @@ static void *protocolThread(void *arg) {
            an auto-reset event left signalled turns this loop into a spin. */
         ResetEvent(s->wake);
         drainCommands(s);
-        if (!freerdp_check_event_handles(ctx)) {
+        if (!freerdp_check_event_handles(ctx) && !reconnectSession(s, ctx)) {
             break;
         }
     }
@@ -1801,6 +1868,7 @@ Java_net_pgaskin_remotedesktop_backend_freerdp_FreeRdpNative_nativeCreate(
         mCredentialsNeeded = (*env)->GetMethodID(env, k, "onCredentialsNeeded", "(Z)V");
         mTrustNeeded = (*env)->GetMethodID(env, k, "onTrustNeeded", "(Ljava/lang/String;)V");
         mClosed = (*env)->GetMethodID(env, k, "onClosed", "(Ljava/lang/String;)V");
+        mReconnecting = (*env)->GetMethodID(env, k, "onReconnecting", "(II)V");
         /* Last, and that is the point: it is what every other caller tests, so
            publishing it first would let a second one past while the method ids
            above were still zero. */
