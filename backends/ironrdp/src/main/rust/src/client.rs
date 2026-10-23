@@ -17,6 +17,9 @@ use crate::tls;
 use ironrdp_blocking::{Framed, connect_begin, connect_finalize, mark_as_upgraded};
 use ironrdp_cliprdr::CliprdrClient;
 use ironrdp_cliprdr::pdu::OwnedFormatDataResponse;
+use ironrdp_egfx::client::{GraphicsPipelineClient, GraphicsPipelineHandler};
+use ironrdp_egfx::decode::H264Decoder;
+use ironrdp_pdu::geometry::ExclusiveRectangle;
 use ironrdp_connector::connection_activation::{ConnectionActivationSequence, ConnectionActivationState};
 use ironrdp_connector::sspi::network_client::NetworkClient;
 use ironrdp_connector::{
@@ -59,6 +62,67 @@ const POLL: Duration = Duration::from_millis(250);
 /// mismatch is this constant and the edge detection in [`Client::pointer`].
 const WHEEL_UNITS: i16 = 120;
 
+pub use common::video::{PlanesSlot, VideoPlanes};
+
+/// A frame for one destination rectangle of the desktop, on its way to the display.
+struct VideoMsg {
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    planes: VideoPlanes,
+}
+
+/// The graphics pipeline's callbacks. AVC frames come here as planes instead of
+/// being composited; everything else is the surface.
+struct EgfxHandler {
+    video: (PlanesSlot, std::sync::mpsc::Sender<VideoMsg>),
+}
+
+impl GraphicsPipelineHandler for EgfxHandler {
+    fn takes_video_frames(&self) -> bool {
+        true
+    }
+
+    fn on_video_frame(
+        &mut self,
+        _surface_id: u16,
+        destination: &ExclusiveRectangle,
+        _frame: &ironrdp_egfx::decode::DecodedFrame,
+    ) {
+        let (slot, tx) = &self.video;
+        if let Some(planes) = slot.lock().unwrap().take() {
+            let _ = tx.send(VideoMsg {
+                x: usize::from(destination.left),
+                y: usize::from(destination.top),
+                w: usize::from(destination.right - destination.left),
+                h: usize::from(destination.bottom - destination.top),
+                planes,
+            });
+        }
+    }
+}
+
+/// The phone's H.264 decoder. Without one the graphics pipeline offers no AVC,
+/// and the server sends the heavier codecs instead.
+fn h264_decoder(planes: PlanesSlot, full_range: bool) -> Option<Box<dyn H264Decoder>> {
+    #[cfg(target_os = "android")]
+    {
+        match crate::h264::MediaCodecH264::new(planes, full_range) {
+            Ok(decoder) => Some(Box::new(decoder)),
+            Err(e) => {
+                log::warn!("no H.264 decoder, the graphics pipeline will not offer AVC: {e}");
+                None
+            }
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (planes, full_range);
+        None
+    }
+}
+
 /// What a connection is told before it starts.
 pub struct Config {
     /// `host` or `host:port`; 3389 when there is no port.
@@ -94,6 +158,8 @@ pub struct Config {
     /// `keymap`).
     pub keyboard_layout: u32,
     pub connect_timeout: Duration,
+    /// The colour range to assume for decoded video when the codec does not say.
+    pub gpu_video_full_range: bool,
 }
 
 impl Default for Config {
@@ -114,6 +180,7 @@ impl Default for Config {
             // The same twenty seconds both other backends wait: a mistyped
             // address must not be a spinner that never stops.
             connect_timeout: Duration::from_secs(20),
+            gpu_video_full_range: true,
         }
     }
 }
@@ -199,6 +266,12 @@ pub trait Handler {
     fn desktop_size(&mut self, width: usize, height: usize);
     fn damaged(&mut self, x: usize, y: usize, width: usize, height: usize);
     fn frame_end(&mut self);
+    /// A decoded frame as NV12 for the top-left `w` by `h` of a destination
+    /// rectangle at (`x`, `y`) of the desktop. The frame is `frame_w` by `frame_h`,
+    /// which is at least that large.
+    fn video(&mut self, x: usize, y: usize, w: usize, h: usize, frame_w: usize, frame_h: usize, color_mode: i32, nv12: &[u8]) {
+        let _ = (x, y, w, h, frame_w, frame_h, color_mode, nv12);
+    }
     /// `pixels` is `width × height`, laid out as `R, G, B, A`. A zero size
     /// means the server has hidden the pointer.
     fn cursor(&mut self, pixels: &[u32], width: usize, height: usize, hot_x: i32, hot_y: i32);
@@ -688,6 +761,10 @@ impl Client {
         // client asks for more than one monitor at all. The callback fires when
         // the server's capabilities arrive, which is the moment the channel
         // becomes usable; it answers with no messages of its own.
+        // Decoded AVC frames come back as planes, through a slot the decoder fills
+        // and a channel the session drains.
+        let video_slot: PlanesSlot = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let (video_tx, video_rx) = std::sync::mpsc::channel();
         let display_control = Arc::clone(&self.shared);
         connector.attach_static_channel(DrdynvcClient::new().with_dynamic_channel(
             DisplayControlClient::new(move |caps| {
@@ -695,7 +772,12 @@ impl Client {
                 display_control.display_control.store(true, Ordering::Relaxed);
                 Ok(Vec::new())
             }),
-        ));
+        )
+        // The graphics pipeline (EGFX). AVC frames go to the display as planes.
+        .with_dynamic_channel(GraphicsPipelineClient::new(
+            Box::new(EgfxHandler { video: (video_slot.clone(), video_tx) }),
+            h264_decoder(video_slot, config.gpu_video_full_range),
+        )));
         self.shared
             .monitor_count
             .store(config.monitors.clamp(1, 16), Ordering::Relaxed);
@@ -792,7 +874,7 @@ impl Client {
         handler.connected(usize::from(desktop.width), usize::from(desktop.height));
 
         let writer = self.spawn_writer(Counting::new(wire.clone_handle(), &self.shared));
-        let outcome = self.active_stage(result, &mut framed, handler);
+        let outcome = self.active_stage(result, &mut framed, handler, video_rx);
         let _ = self.shared.out.send(Out::Stop);
         let _ = socket.shutdown(std::net::Shutdown::Both);
         let _ = writer.join();
@@ -824,6 +906,7 @@ impl Client {
         result: ConnectionResult,
         framed: &mut Framed<S>,
         handler: &mut dyn Handler,
+        video_rx: std::sync::mpsc::Receiver<VideoMsg>,
     ) -> Result<()> {
         let io_channel_id = result.io_channel_id;
         let user_channel_id = result.user_channel_id;
@@ -976,6 +1059,18 @@ impl Client {
                             }
                             _ => {}
                         }
+                    }
+                    while let Ok(msg) = video_rx.try_recv() {
+                        handler.video(
+                            msg.x,
+                            msg.y,
+                            msg.w,
+                            msg.h,
+                            msg.planes.width,
+                            msg.planes.height,
+                            msg.planes.color_mode,
+                            &msg.planes.data,
+                        );
                     }
                     if drew {
                         if let Some(speed) = rate.sample() {
@@ -1411,8 +1506,8 @@ fn connector_config(
         compression_type: config.compression,
         pointer_software_rendering: false,
         multitransport_flags: None,
-        // The graphics pipeline is deliberately not offered; see IronRdpProvider.
-        support_dyn_vc_gfx_protocol: false,
+        // The graphics pipeline is offered: KRDP refuses a client without it.
+        support_dyn_vc_gfx_protocol: true,
         performance_flags: match config.experience {
             Experience::Full => {
                 PerformanceFlags::ENABLE_FONT_SMOOTHING | PerformanceFlags::ENABLE_DESKTOP_COMPOSITION

@@ -40,6 +40,8 @@ mod client;
 mod clipboard;
 mod error;
 mod framebuffer;
+#[cfg(target_os = "android")]
+mod h264;
 mod keymap;
 mod tls;
 

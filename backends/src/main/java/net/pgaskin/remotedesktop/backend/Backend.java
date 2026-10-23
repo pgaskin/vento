@@ -58,6 +58,18 @@ public interface Backend {
          */
         void damaged(int x, int y, int width, int height);
 
+        /**
+         * Any thread. A decoded video frame as NV12 for the top-left {@code width} by
+         * {@code height} of a rectangle at ({@code x}, {@code y}); the frame itself is
+         * {@code frameWidth} by {@code frameHeight}. The desktop there is not updated:
+         * the display draws the frame in place of it, until something damages it again.
+         * {@code colorMode} is bit 0 for BT.709 rather than BT.601 and bit 1 for full
+         * range rather than limited.
+         */
+        default void videoFrame(int x, int y, int width, int height,
+                                int frameWidth, int frameHeight, int colorMode, byte[] nv12) {
+        }
+
         /** Any thread. End of an update batch — a good moment to draw. */
         void frameEnd();
 

@@ -1,0 +1,43 @@
+From d9c2e179437f75ab5820412ac368bbf0d4baa601 Mon Sep 17 00:00:00 2001
+From: Nick Haghiri <ElCruncharino@users.noreply.gitlab.gnome.org>
+Date: Fri, 23 Oct 2026 14:10:55 -0400
+Subject: [PATCH 2/2] egfx: let a handler take AVC frames instead of
+ compositing them
+
+
+diff --git a/crates/ironrdp-egfx/src/client.rs b/crates/ironrdp-egfx/src/client.rs
+index 14c7bc9f..65e68248 100644
+--- a/crates/ironrdp-egfx/src/client.rs
++++ b/crates/ironrdp-egfx/src/client.rs
+@@ -221,6 +221,19 @@ pub struct BitmapUpdate {
+ /// All methods have default no-op implementations so you only need
+ /// to override the ones relevant to your use case.
+ pub trait GraphicsPipelineHandler: Send {
++    /// Whether AVC frames go to [`on_video_frame`](Self::on_video_frame) instead of
++    /// being composited into the surface. Off by default, which is the surface path.
++    fn takes_video_frames(&self) -> bool {
++        false
++    }
++
++    /// An AVC frame, decoded, for the destination rectangle of a surface, when
++    /// [`takes_video_frames`](Self::takes_video_frames) is on. The frame may be
++    /// larger than the rectangle, which is its top-left part.
++    fn on_video_frame(&mut self, surface_id: u16, destination: &ExclusiveRectangle, frame: &crate::decode::DecodedFrame) {
++        let _ = (surface_id, destination, frame);
++    }
++
+     /// Returns the capability sets to advertise to the server
+     ///
+     /// The default advertises V8.1 (AVC420) and V8 (no AVC) as fallback.
+@@ -994,6 +1007,11 @@ impl GraphicsPipelineClient {
+             return Err(pdu_other_err!("decoded frame smaller than destination rectangle"));
+         }
+ 
++        if self.handler.takes_video_frames() {
++            self.handler.on_video_frame(surface_id, dest_rect, &frame);
++            return Ok(());
++        }
++
+         let cropped_data = crop_decoded_frame(frame.data(), frame.width(), frame.height(), dest_width, dest_height);
+ 
+         let update = BitmapUpdate {

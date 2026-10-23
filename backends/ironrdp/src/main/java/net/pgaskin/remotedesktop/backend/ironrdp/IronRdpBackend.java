@@ -155,6 +155,7 @@ public final class IronRdpBackend implements Backend, IronRdpNative.Callbacks {
                 bool(IronRdpProvider.COMPRESSION) ? "rdp61" : null,
                 !"bitmap".equals(options.get(IronRdpProvider.GRAPHICS)),
                 options.get(IronRdpProvider.EXPERIENCE),
+                !"limited".equals(options.get(IronRdpProvider.GPU_VIDEO_RANGE)),
                 size[0], size[1], monitorCount(), KEYBOARD_LAYOUT,
                 android.os.Build.MODEL, CONNECT_TIMEOUT_MS);
         if (h == 0) {
@@ -445,6 +446,14 @@ public final class IronRdpBackend implements Backend, IronRdpNative.Callbacks {
         final Listener l = listener;
         if (l != null) {
             l.frameEnd();
+        }
+    }
+
+    @Override
+    public void onVideo(int x, int y, int w, int h, int frameW, int frameH, int colorMode, byte[] nv12) {
+        final Listener l = listener;
+        if (l != null) {
+            l.videoFrame(x, y, w, h, frameW, frameH, colorMode, nv12);
         }
     }
 

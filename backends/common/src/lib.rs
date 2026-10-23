@@ -13,6 +13,7 @@
 //! not — and an artefact's licence page is generated from that graph.
 
 pub mod address;
+pub mod video;
 
 #[cfg(target_os = "android")]
 pub mod android;

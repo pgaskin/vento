@@ -51,6 +51,16 @@ final class IronRdpNative {
         void onFrameEnd();
 
         /**
+         * A decoded frame as NV12 (a Y plane, then interleaved UV), for the top-left
+         * {@code w} by {@code h} at ({@code x}, {@code y}) of the desktop. The frame is
+         * {@code frameW} by {@code frameH}.
+         *
+         * @param colorMode bit 0 set for BT.709 rather than BT.601, bit 1 set for full
+         *                  range rather than limited
+         */
+        void onVideo(int x, int y, int w, int h, int frameW, int frameH, int colorMode, byte[] nv12);
+
+        /**
          * @param argb {@code width * height} pixels, {@code Color}-packed;
          *             empty when the server has hidden the pointer
          * @param hotX the hotspot, positively
@@ -130,7 +140,7 @@ final class IronRdpNative {
     static native long nativeCreate(Callbacks listener, String address, String userName,
                                     String domain, String password, String nla,
                                     String compression, boolean remoteFx, String experience,
-                                    int width, int height, int monitors, int keyboardLayout,
+                                    boolean gpuVideoFullRange, int width, int height, int monitors, int keyboardLayout,
                                     String clientName, int connectTimeoutMs);
 
     /**

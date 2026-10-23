@@ -1,0 +1,43 @@
+From 4171f7e36d6c28f80296837f860472a963a68263 Mon Sep 17 00:00:00 2001
+From: Nick Haghiri <ElCruncharino@users.noreply.gitlab.gnome.org>
+Date: Fri, 23 Oct 2026 13:56:02 -0400
+Subject: [PATCH 1/2] egfx: let a decoder convert only the rectangle that is
+ drawn
+
+
+diff --git a/crates/ironrdp-egfx/src/client.rs b/crates/ironrdp-egfx/src/client.rs
+index a9a471c6..14c7bc9f 100644
+--- a/crates/ironrdp-egfx/src/client.rs
++++ b/crates/ironrdp-egfx/src/client.rs
+@@ -968,7 +968,11 @@ impl GraphicsPipelineClient {
+         };
+ 
+         let frame = decoder
+-            .decode(stream.data)
++            .decode_region(
++                stream.data,
++                u32::from(dest_rect.right.saturating_sub(dest_rect.left)),
++                u32::from(dest_rect.bottom.saturating_sub(dest_rect.top)),
++            )
+             .map_err(|e| pdu_other_err!("H.264 decode", source: e))?;
+ 
+         // MS-RDPEGFX 2.2.1.4.1: RDPGFX_RECT16 right/bottom are exclusive (one-past-end),
+diff --git a/crates/ironrdp-egfx/src/decode.rs b/crates/ironrdp-egfx/src/decode.rs
+index d9b1b316..8ba539b4 100644
+--- a/crates/ironrdp-egfx/src/decode.rs
++++ b/crates/ironrdp-egfx/src/decode.rs
+@@ -167,6 +167,14 @@ pub trait H264Decoder: Send {
+     /// macroblock alignment (16x16). The caller crops to fit.
+     fn decode(&mut self, data: &[u8]) -> DecoderResult<DecodedFrame>;
+ 
++    /// Decode a frame that is only going to be shown in its top-left `width` by
++    /// `height` pixels. A decoder that can convert less than the whole picture
++    /// should, since the rest is never drawn. The default decodes all of it.
++    fn decode_region(&mut self, data: &[u8], width: u32, height: u32) -> DecoderResult<DecodedFrame> {
++        let _ = (width, height);
++        self.decode(data)
++    }
++
+     /// Reset the decoder state
+     ///
+     /// Called when surfaces are reset (e.g., on `ResetGraphics`).
