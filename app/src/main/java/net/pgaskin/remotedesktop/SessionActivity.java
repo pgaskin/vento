@@ -31,6 +31,7 @@ import net.pgaskin.remotedesktop.backend.Backends;
 import net.pgaskin.remotedesktop.control.input.TapRegions;
 import net.pgaskin.remotedesktop.session.SessionView;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -161,6 +162,9 @@ public final class SessionActivity extends Activity
      * are here as well.
      */
     private void start(String address, String backendId) {
+        if (awaitingMicrophone(connectionOptions(), () -> start(address, backendId))) {
+            return;
+        }
         try {
             session = openOrAttach(address);
         } catch (Throwable t) {
@@ -359,6 +363,26 @@ public final class SessionActivity extends Activity
                 : Sessions.keyForAddress(address);
     }
 
+    /** What the connection asks for, as saved or as given on the command line. */
+    private Map<String, String> connectionOptions() {
+        return connection != null ? Options.forConnection(this, connection) : optionsFromIntent();
+    }
+
+    /**
+     * What the backend is built with: the requested options, except that a
+     * microphone the phone has not been allowed to use is off rather than
+     * requested. A refused microphone is a session without one, not no session.
+     */
+    private Map<String, String> sessionOptions() {
+        final Map<String, String> options = connectionOptions();
+        if (!microphoneWanted(options) || microphoneGranted()) {
+            return options;
+        }
+        final Map<String, String> without = new HashMap<>(options);
+        without.put(MICROPHONE_OPTION, "false");
+        return without;
+    }
+
     private Session openOrAttach(String address) {
         final Session live = Sessions.byKey(sessionKey(address));
         if (live != null && !live.isClosed()) {
@@ -367,8 +391,7 @@ public final class SessionActivity extends Activity
         // A saved connection carries its own options, layered over its backend's;
         // an address from the command line gets the defaults. The application
         // context, because the backend outlives this activity by design.
-        final Map<String, String> options = connection != null
-                ? Options.forConnection(this, connection) : optionsFromIntent();
+        final Map<String, String> options = sessionOptions();
         final Backend backend = Backends.create(getApplicationContext(), backendId(), address,
                 connection != null ? connection.userName() : getIntent().getStringExtra("user"),
                 connection != null ? connection.password()
@@ -405,6 +428,54 @@ public final class SessionActivity extends Activity
         if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1);
+        }
+    }
+
+    /** The backend option that sends the microphone; read by name, as FreeRDP's provider names it. */
+    private static final String MICROPHONE_OPTION = "Microphone";
+    private static final int REQUEST_MICROPHONE = 2;
+
+    /** Asked once per window, so a refusal does not come back on every connect. */
+    private boolean askedForMicrophone;
+    /** What to do once the microphone question has been answered. */
+    private Runnable afterMicrophone;
+
+    private boolean microphoneWanted(Map<String, String> options) {
+        return "true".equals(options.get(MICROPHONE_OPTION));
+    }
+
+    private boolean microphoneGranted() {
+        return checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED;
+    }
+
+    /**
+     * The connection is opened as soon as the session starts, and the capture
+     * device with it, so a connection that wants the microphone waits for the
+     * answer. Returns true when it is waiting, and then {@code then} runs once
+     * the answer is in, whichever it was.
+     */
+    private boolean awaitingMicrophone(Map<String, String> options, Runnable then) {
+        if (!microphoneWanted(options) || microphoneGranted() || askedForMicrophone) {
+            return false;
+        }
+        askedForMicrophone = true;
+        afterMicrophone = then;
+        requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO},
+                REQUEST_MICROPHONE);
+        return true;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_MICROPHONE && afterMicrophone != null) {
+            // A refusal is not an error here: the session starts without the
+            // microphone, which openOrAttach arranges.
+            final Runnable then = afterMicrophone;
+            afterMicrophone = null;
+            then.run();
         }
     }
 

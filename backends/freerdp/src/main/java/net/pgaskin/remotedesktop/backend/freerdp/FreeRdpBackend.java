@@ -184,7 +184,7 @@ public final class FreeRdpBackend implements Backend, FreeRdpNative.Callbacks {
                 options.get(FreeRdpProvider.NLA), bool(FreeRdpProvider.LEGACY_TLS),
                 bool(FreeRdpProvider.COMPRESSION),
                 options.get(FreeRdpProvider.GRAPHICS), options.get(FreeRdpProvider.EXPERIENCE),
-                options.get(FreeRdpProvider.SOUND), scale(),
+                options.get(FreeRdpProvider.SOUND), bool(FreeRdpProvider.MICROPHONE), scale(),
                 size[0], size[1], monitorCount(), KEYBOARD_LAYOUT,
                 android.os.Build.MODEL, store.getAbsolutePath(), CONNECT_TIMEOUT_MS);
         if (h == 0) {
