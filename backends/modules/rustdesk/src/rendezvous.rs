@@ -439,17 +439,23 @@ fn why(failure: &Failure, other: &str) -> String {
     }
 }
 
+/// A rendezvous or relay server: `host`, `host:port`, `[literal]` or
+/// `[literal]:port`, as in the address field, and also an IPv6 literal without
+/// brackets, which means that address on the default port. RustDesk reads
+/// these servers that way (hbb_common's `check_port`), so a relay named by
+/// its server or a server copied from RustDesk's settings can be one.
 fn resolve(host: &str, default_port: u16) -> Result<SocketAddr> {
-    let with_port = if host.contains(':') {
-        host.to_string()
-    } else {
-        format!("{host}:{default_port}")
-    };
-    with_port
+    let host = host.trim();
+    if let Ok(ip) = host.parse::<std::net::Ipv6Addr>() {
+        return Ok(SocketAddr::new(ip.into(), default_port));
+    }
+    let (name, port) = runtime::address::split(host, default_port, runtime::address::Ports::Plain)
+        .map_err(Error::Address)?;
+    (name.as_str(), port)
         .to_socket_addrs()
-        .map_err(|e| Error::Protocol(format!("{with_port} does not resolve: {e}")))?
+        .map_err(|e| Error::Protocol(format!("{host} does not resolve: {e}")))?
         .next()
-        .ok_or_else(|| Error::Protocol(format!("{with_port} resolves to nothing")))
+        .ok_or_else(|| Error::Protocol(format!("{host} resolves to nothing")))
 }
 
 fn would_block(e: &std::io::Error) -> bool {
@@ -506,6 +512,26 @@ mod tests {
         // An address part more than 32 bits once the timestamp is taken off.
         assert!(matches!(unmangle(&trimmed(1 << 100)), Err(Error::Protocol(_))));
         assert!(unmangle(&[]).is_ok());
+    }
+
+    /// Every form a server may be given in. An IPv6 literal has colons
+    /// whether or not a port follows, so the presence of a colon does not
+    /// say whether the port was given.
+    #[test]
+    fn a_server_resolves_in_every_form() {
+        let at = |host: &str| resolve(host, RENDEZVOUS_PORT).unwrap().to_string();
+        assert_eq!(at("10.33.0.208"), "10.33.0.208:21116");
+        assert_eq!(at("10.33.0.208:21200"), "10.33.0.208:21200");
+        assert_eq!(at("::1"), "[::1]:21116");
+        assert_eq!(at("fd00:33::208"), "[fd00:33::208]:21116");
+        assert_eq!(at("[::1]"), "[::1]:21116");
+        assert_eq!(at("[::1]:21200"), "[::1]:21200");
+        assert_eq!(at(" [fd00:33::208]:21117 "), "[fd00:33::208]:21117");
+        assert_eq!(resolve("localhost", RELAY_PORT).unwrap().port(), RELAY_PORT);
+        assert_eq!(resolve("localhost:21200", RELAY_PORT).unwrap().port(), 21200);
+        assert!(matches!(resolve("[::1", RELAY_PORT), Err(Error::Address(_))));
+        assert!(matches!(resolve("::1:x", RELAY_PORT), Err(Error::Address(_))));
+        assert!(matches!(resolve("10.33.0.208:0", RELAY_PORT), Err(Error::Address(_))));
     }
 
     /// An IPv6 address is the plain sixteen bytes and a port, the only length
