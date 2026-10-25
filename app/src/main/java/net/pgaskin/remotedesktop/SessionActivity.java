@@ -14,6 +14,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.ContextThemeWrapper;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -38,7 +39,7 @@ import java.util.Map;
  *
  * <p>Usually a saved connection, opened from the home screen by id. It can
  * also be an address from the command line, as {@code scripts/session.sh}
- * does:
+ * does, if the developer setting {@link AppSettings#externalLaunch} allows it:
  *
  * <pre>
  *   adb shell am start -n net.pgaskin.remotedesktop/.SessionActivity \
@@ -54,6 +55,8 @@ public final class SessionActivity extends Activity
         implements SessionView.Host, ConnectionPanel.Host, PromptDialogs.Host {
 
     public static final String EXTRA_CONNECTION = "connection"; // else a bare address
+
+    private static final String TAG = "SessionActivity";
 
     /**
      * The intent that opens a saved connection, used by every caller: the home
@@ -111,6 +114,10 @@ public final class SessionActivity extends Activity
         getWindow().setDecorFitsSystemWindows(false);
 
         connection = Connections.byId(this, getIntent().getStringExtra(EXTRA_CONNECTION));
+        if (connection == null && refused(getIntent())) {
+            finish();
+            return;
+        }
         final String address = connection != null ? connection.address()
                 : getIntent().getStringExtra("address");
         // A connection saved with a backend this build does not have (from an
@@ -190,7 +197,8 @@ public final class SessionActivity extends Activity
         view.setHudVisible(hudWanted());
         // --ei tile 512, for testing tile sizes from the command line. There is
         // no setting; other sessions use the default.
-        view.setTileSize(getIntent().getIntExtra("tile", 0));
+        view.setTileSize(AppSettings.externalLaunch(this)
+                ? getIntent().getIntExtra("tile", 0) : 0);
         // Before the desktop arrives the window is an app screen, so it uses the
         // surface color rather than the black that letterboxes a desktop.
         view.setEmptyColor(MaterialColors.getColor(view,
@@ -297,7 +305,32 @@ public final class SessionActivity extends Activity
 
     /** The HUD setting, or {@code --ez hud true} for one session. */
     private boolean hudWanted() {
-        return AppSettings.hud(this) || getIntent().getBooleanExtra("hud", false);
+        return AppSettings.hud(this) || (AppSettings.externalLaunch(this)
+                && getIntent().getBooleanExtra("hud", false));
+    }
+
+    /**
+     * Whether a launch with an address rather than a saved connection is
+     * refused, because {@link AppSettings#externalLaunch} is off. Says so in
+     * the log and in a toast, since the window closes without showing anything.
+     *
+     * <p>Not for a session from such a launch that is still running: the
+     * notification reopens it with the same intent, and the setting is about
+     * starting connections.
+     */
+    private boolean refused(Intent intent) {
+        final String address = intent.getStringExtra("address");
+        if (address == null || AppSettings.externalLaunch(this)) {
+            return false;
+        }
+        final Session live = Sessions.byKey(Sessions.keyForAddress(address));
+        if (live != null && !live.isClosed()) {
+            return false;
+        }
+        Log.i(TAG, "not connecting to " + address + " from the launch intent:"
+                + " external launches need developer mode and the setting allowing them");
+        Toast.makeText(this, R.string.session_external_launch_off, Toast.LENGTH_SHORT).show();
+        return true;
     }
 
     // ---- status panel -----------------------------------------------------
@@ -374,8 +407,11 @@ public final class SessionActivity extends Activity
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        setIntent(intent);
         final Connection c = Connections.byId(this, intent.getStringExtra(EXTRA_CONNECTION));
+        if (c == null && refused(intent)) {
+            return; // this window keeps its own intent and session
+        }
+        setIntent(intent);
         final String address = c != null ? c.address() : intent.getStringExtra("address");
         if (session != null && address != null && !session.matches(
                 c != null ? Sessions.keyFor(c.id()) : Sessions.keyForAddress(address))) {

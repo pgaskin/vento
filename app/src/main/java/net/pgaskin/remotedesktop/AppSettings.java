@@ -37,6 +37,7 @@ public final class AppSettings {
     public static final String KEY_RELEASE_KEYS = "releaseKeys";
     public static final String KEY_SESSION_TIMEOUT = "sessionTimeout";  // minutes off screen
     public static final String KEY_DEVELOPER_MODE = "developerMode";    // the hidden rows
+    public static final String KEY_EXTERNAL_LAUNCH = "externalLaunch";  // a hidden row
 
     /**
      * Every key in this file with its default value. The getters below read it,
@@ -71,6 +72,7 @@ public final class AppSettings {
         m.put(KEY_RELEASE_KEYS, true);
         m.put(KEY_SESSION_TIMEOUT, "0");
         m.put(KEY_DEVELOPER_MODE, false);
+        m.put(KEY_EXTERNAL_LAUNCH, false);
         return Collections.unmodifiableMap(m);
     }
 
@@ -308,8 +310,8 @@ public final class AppSettings {
     }
 
     /**
-     * Whether the developer rows are shown: the playground's two recorders and
-     * the row that deletes their recordings.
+     * Whether the developer rows are shown: the playground's two recorders,
+     * the row that deletes their recordings, and {@link #externalLaunch}.
      *
      * <p>Unlocked like Android's own developer options, with ten taps on the
      * version row, because the recorders are of no use to other users: they
@@ -327,6 +329,19 @@ public final class AppSettings {
 
     public static void setDeveloperMode(Context ctx, boolean on) {
         prefs(ctx).edit().putBoolean(KEY_DEVELOPER_MODE, on).apply();
+    }
+
+    /**
+     * Whether {@link SessionActivity} may start a connection from the address,
+     * credentials and options in its launch intent ({@code scripts/session.sh}
+     * from adb), rather than only from a saved connection's id.
+     *
+     * <p>A developer row, and only in effect in developer mode: turning that off
+     * (with "Restore defaults", or by importing a file) hides the row, and a
+     * stored value left from before must not keep working unseen.
+     */
+    public static boolean externalLaunch(Context ctx) {
+        return developerMode(ctx) && get(ctx, KEY_EXTERNAL_LAUNCH);
     }
 
     /** The row's choices, in minutes, in the order shown. */

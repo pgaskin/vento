@@ -25,6 +25,12 @@
 # -6 takes this host's global v6 address instead of its v4 one and brackets it,
 # which is the form the app requires of a literal. Docker publishes every
 # container on [::] as well, so the far ends are the same ones.
+#
+# The app only connects to an address from adb with developer mode on (ten
+# taps on Settings > Version) and Settings > General > "Allow external apps to
+# launch connections" on. Otherwise it closes at once with a toast, so this
+# checks both first, through run-as (the debug build is debuggable). The same
+# run-as can edit shared_prefs/settings_app.xml while the app is stopped.
 set -euo pipefail
 cd "$(dirname "$0")/.."   # the build is at the repository root
 
@@ -43,7 +49,7 @@ log() {
     exec adb logcat -v time \
         RealVnc:V CSession:V CSessionMgr:V CConnection:V CConn:V CProtoV4Down:V \
         CDesktop:V ConfigParameter:V Rfb:V Rdp:V FreeRdp:V LibVnc:V TigerVnc:V \
-        RustDesk:V Spice:V Backends:V \
+        RustDesk:V Spice:V Backends:V SessionActivity:V \
         AndroidRuntime:E DEBUG:F "$PKG:V" '*:S'
 }
 
@@ -88,6 +94,18 @@ INSTALL=(':app:installDebug')
 [ "$BUILD" = 1 ] && ./gradlew --quiet "${INSTALL[@]}"
 
 adb shell am force-stop "$PKG"
+
+# A missing file is a fresh install, where both are off.
+prefs="$(adb shell run-as "$PKG" cat shared_prefs/settings_app.xml 2>/dev/null || true)"
+for key in developerMode externalLaunch; do
+    if ! grep -q "name=\"$key\" value=\"true\"" <<<"$prefs"; then
+        echo "$PKG does not allow sessions from adb: turn on developer mode (ten taps on" \
+            "Settings > Version), then Settings > General > \"Allow external apps to" \
+            "launch connections\"" >&2
+        exit 1
+    fi
+done
+
 adb logcat -c
 adb shell am start -n "$ACT" \
     `# quoted for the shell on the phone, which globs [::1] against its own /` \

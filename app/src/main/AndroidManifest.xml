@@ -131,7 +131,8 @@
 
         <!--
             One connection on screen. Launched from the home screen with a
-            connection id, or from adb with an address (scripts/session.sh).
+            connection id, or from adb with an address (scripts/session.sh)
+            when the developer setting allowing it is on.
             A rotation must not drop a live connection, hence configChanges.
 
             documentLaunchMode gives each session its own window: the home
@@ -143,10 +144,12 @@
             has no window left to return to; one that ended by itself keeps its
             window and the reason shown on it.
 
-            Exported for the adb entry point, which means any app can make this
-            open a session to an address of its choice. It cannot use a saved
-            connection's password without guessing its id, and cannot see the
-            session, but it can start a connection.
+            Exported for the adb entry point. Any app can open a saved
+            connection if it can guess its id, but cannot see the session.
+            Starting a connection to an address of its choice needs developer
+            mode and "Allow external apps to launch connections"
+            (AppSettings.externalLaunch); without them the activity finishes
+            without connecting.
         -->
         <activity
             android:name=".SessionActivity"

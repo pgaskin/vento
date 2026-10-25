@@ -8,7 +8,7 @@
 # (scripts/session.sh) and a keyboard already registered (go run . in here).
 #
 #   go run . &                              # the HID keyboard, on :8099
-#   PASSWORD=vncpass ../session.sh -f -b rfb 10.0.0.5:5901
+#   PASSWORD=vncpass ../session.sh -b rfb 10.0.0.5:5901
 #   ./farwalk.sh -c protovnc                # capture at an X far end with xev
 #   ./farwalk.sh -w user@10.33.0.208        # capture at a Windows one, winkeys.ps1
 #

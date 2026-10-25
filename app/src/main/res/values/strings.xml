@@ -141,6 +141,8 @@
     <string name="settings_region_hints_summary">Explain the session controls and offer the choice between them on the first frame.</string>
     <string name="settings_previews">Store desktop previews</string>
     <string name="settings_previews_summary">Locally save encrypted preview screenshots of the remote desktop. Disabling this deletes all existing screenshots.</string>
+    <string name="settings_external_launch">Allow external apps to launch connections</string>
+    <string name="settings_external_launch_summary">Allow SessionActivity to be started by other apps or ADB.</string>
     <string name="settings_connection_defaults">Connection defaults</string>
     <string name="settings_reset">Reset</string>
     <string name="settings_reset_summary">Set all values above back to their defaults.</string>
@@ -312,4 +314,7 @@
     <string name="paste_modifiers">%1$s is locked, so all typed characters will include it.</string>
     <string name="paste_confirm_yes">Type it</string>
     <string name="paste_empty">Nothing on the clipboard.</string>
+
+    <!-- a session started by another app or adb with an address, while that is not allowed -->
+    <string name="session_external_launch_off">Ignoring connection request from external app.</string>
 </resources>
