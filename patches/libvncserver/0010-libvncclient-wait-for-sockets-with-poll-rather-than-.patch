@@ -1,0 +1,539 @@
+From 7881c30fe9f9a05617078de5f1ebd63000039d4f Mon Sep 17 00:00:00 2001
+From: "Claude Opus 5.5" <noreply@anthropic.com>
+Date: Sun, 25 Oct 2026 19:05:02 -0400
+Subject: [PATCH 10/10] libvncclient: wait for sockets with poll() rather than
+ select()
+
+select() takes an fd_set, a bitmap of FD_SETSIZE (1024) bits, so a
+socket at descriptor 1024 or above is set past its end: with glibc the
+kernel then reads and writes back bits of the caller's stack, and with
+_FORTIFY_SOURCE or on bionic FD_SET aborts. A client in a process with
+many open files gets such a socket. With the socket at descriptor 1102,
+the first WaitForMessage() overwrote ReadFromRFBServer()'s frame and the
+client crashed.
+
+Wait with poll() instead, through a new sock_wait() in common/sockets.c,
+in WaitForMessage(), WriteToRFBServer(), sock_wait_for_connected(), the
+OpenSSL handshake, and both listen functions. The timeouts stay as they
+were, rounded up to whole milliseconds. A socket with an error or a
+closed connection counts as ready, as it did, so the read or write after
+the wait reports it. Windows keeps select(), whose fd_set is a list of
+sockets with no limit on their values, and in sock_wait_for_connected()
+also the exceptfds that report a failed connect there.
+
+The connect wait is for POLLOUT, which a connection in progress reports
+once it is made or has failed. An earlier change to poll() (993df689,
+reverted in 7dd27504) waited for POLLIN there, which comes only once
+the other end sends something, and so broke a server's connection to
+an RFB repeater: the repeater waits for the server to speak first.
+
+WriteToTLS() retried GNUTLS_E_AGAIN at once, a busy loop for as long as
+the socket's send buffer was full, and the OpenSSL one did the same for
+SSL_ERROR_WANT_WRITE. Both now wait for the socket like
+WriteToRFBServer(), without a limit when writing, and only briefly when
+the library wants to read, since another thread may read what arrives.
+The OpenSSL handshake waits for writing on SSL_ERROR_WANT_WRITE, where it
+waited for reading.
+
+diff --git a/include/rfb/rfbclient.h b/include/rfb/rfbclient.h
+index ee8c285..7837a43 100644
+--- a/include/rfb/rfbclient.h
++++ b/include/rfb/rfbclient.h
+@@ -490,7 +490,7 @@ typedef struct _rfbClient {
+ 
+ #endif
+ #endif
+-	/* timeout in seconds for select() after connect() */
++	/* timeout in seconds for the wait after connect() */
+ 	unsigned int connectTimeout;
+ 
+ 	/* timeout in seconds when reading from half-open connections in
+@@ -860,7 +860,7 @@ extern rfbBool SameMachine(rfbSocket sock);
+  * will return.
+  * @param client The client to cause to wait until a message is received
+  * @param usecs The timeout in microseconds
+- * @return the return value of the underlying select() call
++ * @return the return value of the underlying poll() call (select() on Windows)
+  */
+ extern int WaitForMessage(rfbClient* client,unsigned int usecs);
+ 
+diff --git a/src/common/sockets.c b/src/common/sockets.c
+index 32fe1a1..71f45e1 100644
+--- a/src/common/sockets.c
++++ b/src/common/sockets.c
+@@ -24,6 +24,7 @@
+ 
+ #include <errno.h>
+ #include <fcntl.h>
++#include <limits.h>
+ #include <string.h>
+ 
+ #include "sockets.h"
+@@ -53,6 +54,7 @@ rfbBool sock_set_nonblocking(rfbSocket sock, rfbBool non_blocking, void (*log)(c
+ 
+ rfbBool sock_wait_for_connected(int socket, unsigned int timeout_seconds)
+ {
++#ifdef WIN32
+   fd_set writefds;
+   fd_set exceptfds;
+   struct timeval timeout;
+@@ -65,26 +67,77 @@ rfbBool sock_wait_for_connected(int socket, unsigned int timeout_seconds)
+       return FALSE;
+   }
+ 
++  /* Windows reports a failed connect in exceptfds; WSAPoll() did not report
++     it at all before Windows 10 2004. */
+   FD_ZERO(&writefds);
+   FD_SET(socket, &writefds);
+   FD_ZERO(&exceptfds);
+   FD_SET(socket, &exceptfds);
+   if (select(socket+1, NULL, &writefds, &exceptfds, &timeout)==1) {
+-#ifdef WIN32
+     if (FD_ISSET(socket, &exceptfds))
+       return FALSE;
+-#else
+-    int so_error;
+-    socklen_t len = sizeof so_error;
+-    getsockopt(socket, SOL_SOCKET, SO_ERROR, &so_error, &len);
+-    if (so_error!=0)
+-      return FALSE;
+-#endif
+     return TRUE;
+   }
+ 
+   return FALSE;
++#else
++  int so_error;
++  socklen_t len = sizeof so_error;
++  int timeout_ms = timeout_seconds > INT_MAX / 1000 ? -1 : (int)timeout_seconds * 1000;
++
++  /* A connection in progress becomes writable when it is made or has failed.
++     It does not become readable until the other end sends something, which
++     an RFB repeater waits for the server to do first. */
++  if (sock_wait(socket, TRUE, timeout_ms) <= 0)
++    return FALSE;
++
++  getsockopt(socket, SOL_SOCKET, SO_ERROR, &so_error, &len);
++  if (so_error!=0)
++    return FALSE;
++  return TRUE;
++#endif
+ }
+ 
+ 
++int sock_wait(rfbSocket sock, rfbBool for_writing, int timeout_ms)
++{
++#ifdef WIN32
++  fd_set fds;
++  struct timeval timeout;
++  int r;
++
++  if(sock == RFB_INVALID_SOCKET) {
++      errno = EBADF;
++      return -1;
++  }
++
++  timeout.tv_sec = timeout_ms / 1000;
++  timeout.tv_usec = (timeout_ms % 1000) * 1000;
++  FD_ZERO(&fds);
++  FD_SET(sock, &fds);
++  r = select(sock+1, for_writing ? NULL : &fds, for_writing ? &fds : NULL, NULL,
++             timeout_ms < 0 ? NULL : &timeout);
++  if (r < 0)
++    errno = WSAGetLastError();
++  return r;
++#else
++  struct pollfd pfd;
++  int r;
+ 
++  if(sock == RFB_INVALID_SOCKET) {
++      errno = EBADF;
++      return -1;
++  }
++
++  pfd.fd = sock;
++  pfd.events = for_writing ? POLLOUT : POLLIN;
++  pfd.revents = 0;
++  r = poll(&pfd, 1, timeout_ms < 0 ? -1 : timeout_ms);
++  /* select() fails on a descriptor that is not open, poll() reports it */
++  if (r > 0 && (pfd.revents & POLLNVAL)) {
++    errno = EBADF;
++    return -1;
++  }
++  return r;
++#endif
++}
+diff --git a/src/common/sockets.h b/src/common/sockets.h
+index 99a2f15..58289a8 100644
+--- a/src/common/sockets.h
++++ b/src/common/sockets.h
+@@ -62,6 +62,7 @@
+ #include <arpa/inet.h>
+ #include <netinet/tcp.h>
+ #include <netdb.h>
++#include <poll.h>
+ #endif
+ 
+ /*
+@@ -83,4 +84,17 @@ rfbBool sock_set_nonblocking(rfbSocket sock, rfbBool non_blocking, void (*log)(c
+ rfbBool sock_wait_for_connected(int socket, unsigned int timeout_seconds);
+ 
+ 
++/*
++   Wait for a socket to become readable, or writable if for_writing is TRUE,
++   for at most timeout_ms milliseconds, or without a limit if timeout_ms is
++   negative. A socket with a pending error or a closed connection counts as
++   ready, so that the next read or write reports it.
++   Returns a positive number when the socket is ready, 0 on timeout, and -1
++   on failure with errno set (EINTR when interrupted by a signal).
++   Uses poll() where select() would be limited to descriptors below
++   FD_SETSIZE; on Windows select() takes any socket and is used instead.
++*/
++int sock_wait(rfbSocket sock, rfbBool for_writing, int timeout_ms);
++
++
+ #endif /* _RFB_COMMON_SOCKETS_H */
+diff --git a/src/libvncclient/listen.c b/src/libvncclient/listen.c
+index 7815570..728b3e4 100644
+--- a/src/libvncclient/listen.c
++++ b/src/libvncclient/listen.c
+@@ -34,6 +34,7 @@
+ #else // #ifdef WIN32
+ #include <sys/wait.h>
+ #include <sys/utsname.h>
++#include <poll.h>
+ #endif
+ #if LIBVNCSERVER_HAVE_SYS_TIME_H
+ #include <sys/time.h>
+@@ -54,7 +55,7 @@ listenForIncomingConnections(rfbClient* client)
+   return;
+ #else
+   int listenSocket = RFB_INVALID_SOCKET, listen6Socket = RFB_INVALID_SOCKET;
+-  fd_set fds;
++  struct pollfd fds[2];
+ 
+   client->listenSpecified = TRUE;
+ 
+@@ -92,19 +93,20 @@ listenForIncomingConnections(rfbClient* client)
+ 
+     /* TODO: callback for discard any events (like X11 events) */
+ 
+-    FD_ZERO(&fds); 
+-
+-    if(listenSocket != RFB_INVALID_SOCKET)
+-      FD_SET(listenSocket, &fds);  
+-    if(listen6Socket != RFB_INVALID_SOCKET)
+-      FD_SET(listen6Socket, &fds);
++    /* poll() skips an entry whose descriptor is negative */
++    fds[0].fd = listenSocket;
++    fds[0].events = POLLIN;
++    fds[0].revents = 0;
++    fds[1].fd = listen6Socket;
++    fds[1].events = POLLIN;
++    fds[1].revents = 0;
+ 
+-    r = select(rfbMax(listenSocket, listen6Socket)+1, &fds, NULL, NULL, NULL);
++    r = poll(fds, 2, -1);
+ 
+     if (r > 0) {
+-      if (listenSocket != RFB_INVALID_SOCKET && FD_ISSET(listenSocket, &fds))
++      if (fds[0].revents)
+ 	client->sock = AcceptTcpConnection(listenSocket);
+-      else if (listen6Socket != RFB_INVALID_SOCKET && FD_ISSET(listen6Socket, &fds))
++      else if (fds[1].revents)
+ 	client->sock = AcceptTcpConnection(listen6Socket);
+ 
+       if (client->sock == RFB_INVALID_SOCKET)
+@@ -149,12 +151,14 @@ listenForIncomingConnections(rfbClient* client)
+ int
+ listenForIncomingConnectionsNoFork(rfbClient* client, int timeout)
+ {
++#ifdef WIN32
+   fd_set fds;
+   struct timeval to;
++#else
++  struct pollfd fds[2];
++#endif
+   int r;
+-
+-  to.tv_sec= timeout / 1000000;
+-  to.tv_usec= timeout % 1000000;
++  rfbBool ready4, ready6;
+ 
+   client->listenSpecified = TRUE;
+ 
+@@ -187,6 +191,10 @@ listenForIncomingConnectionsNoFork(rfbClient* client, int timeout)
+     }
+ #endif
+ 
++#ifdef WIN32
++  to.tv_sec= timeout / 1000000;
++  to.tv_usec= timeout % 1000000;
++
+   FD_ZERO(&fds);
+ 
+   if(client->listenSock != RFB_INVALID_SOCKET)
+@@ -198,12 +206,28 @@ listenForIncomingConnectionsNoFork(rfbClient* client, int timeout)
+     r = select(rfbMax(client->listenSock, client->listen6Sock) +1, &fds, NULL, NULL, NULL);
+   else
+     r = select(rfbMax(client->listenSock, client->listen6Sock) +1, &fds, NULL, NULL, &to);
++  ready4 = r > 0 && client->listenSock != RFB_INVALID_SOCKET && FD_ISSET(client->listenSock, &fds);
++  ready6 = r > 0 && client->listen6Sock != RFB_INVALID_SOCKET && FD_ISSET(client->listen6Sock, &fds);
++#else
++  /* poll() skips an entry whose descriptor is negative */
++  fds[0].fd = client->listenSock;
++  fds[0].events = POLLIN;
++  fds[0].revents = 0;
++  fds[1].fd = client->listen6Sock;
++  fds[1].events = POLLIN;
++  fds[1].revents = 0;
++
++  /* in milliseconds, rounded up so that a wait of less than one still waits */
++  r = poll(fds, 2, timeout < 0 ? -1 : timeout / 1000 + (timeout % 1000 != 0));
++  ready4 = r > 0 && fds[0].revents != 0;
++  ready6 = r > 0 && fds[1].revents != 0;
++#endif
+ 
+   if (r > 0)
+     {
+-      if (client->listenSock != RFB_INVALID_SOCKET && FD_ISSET(client->listenSock, &fds))
++      if (ready4)
+ 	client->sock = AcceptTcpConnection(client->listenSock); 
+-      else if (client->listen6Sock != RFB_INVALID_SOCKET && FD_ISSET(client->listen6Sock, &fds))
++      else if (ready6)
+ 	client->sock = AcceptTcpConnection(client->listen6Sock);
+ 
+       if (client->sock == RFB_INVALID_SOCKET)
+diff --git a/src/libvncclient/sockets.c b/src/libvncclient/sockets.c
+index 303ad1f..19f69ab 100644
+--- a/src/libvncclient/sockets.c
++++ b/src/libvncclient/sockets.c
+@@ -251,7 +251,6 @@ hexdump:
+ rfbBool
+ WriteToRFBServer(rfbClient* client, const char *buf, unsigned int n)
+ {
+-  fd_set fds;
+   int i = 0;
+   int j;
+   const char *obuf = buf;
+@@ -309,11 +308,8 @@ WriteToRFBServer(rfbClient* client, const char *buf, unsigned int n)
+               return FALSE;
+           }
+ 
+-	  FD_ZERO(&fds);
+-	  FD_SET(client->sock,&fds);
+-
+-	  if (select(client->sock+1, NULL, &fds, NULL, NULL) <= 0) {
+-	    rfbClientErr("select\n");
++	  if (sock_wait(client->sock, TRUE, -1) <= 0) {
++	    rfbClientErr("waiting to write failed: %s\n", strerror(errno));
+ 	    return FALSE;
+ 	  }
+ 	  j = 0;
+@@ -862,8 +858,8 @@ PrintInHex(char *buf, int len)
+ 
+ int WaitForMessage(rfbClient* client,unsigned int usecs)
+ {
+-  fd_set fds;
+-  struct timeval timeout;
++  /* rounded up, so that a wait of less than a millisecond still waits */
++  unsigned int msecs = usecs / 1000 + (usecs % 1000 != 0);
+   int num;
+ 
+   if (client->serverPort==-1)
+@@ -875,22 +871,13 @@ int WaitForMessage(rfbClient* client,unsigned int usecs)
+     return 1;
+   }
+ 
+-  timeout.tv_sec=(usecs/1000000);
+-  timeout.tv_usec=(usecs%1000000);
+-
+   if(client->sock == RFB_INVALID_SOCKET) {
+       errno = EBADF;
+       return -1;
+   }
+ 
+-  FD_ZERO(&fds);
+-  FD_SET(client->sock,&fds);
+-
+-  num=select(client->sock+1, &fds, NULL, NULL, &timeout);
++  num=sock_wait(client->sock, FALSE, (int)msecs);
+   if(num<0) {
+-#ifdef WIN32
+-    errno=WSAGetLastError();
+-#endif
+     rfbClientLog("Waiting for message failed: %d (%s)\n",errno,strerror(errno));
+   }
+ 
+diff --git a/src/libvncclient/tls_gnutls.c b/src/libvncclient/tls_gnutls.c
+index 3731eda..21ed5d5 100644
+--- a/src/libvncclient/tls_gnutls.c
++++ b/src/libvncclient/tls_gnutls.c
+@@ -445,22 +445,24 @@ SetTLSAnonCredential(rfbClient* client)
+    the length of the whole-handshake deadline it had before. */
+ #define TLS_HANDSHAKE_WAIT_MS 15000
+ 
+-/* Waits until the socket can be read or written, whichever gnutls was
+-   interrupted doing. FALSE when the wait failed, with errno set: to
+-   ETIMEDOUT when nothing happened for TLS_HANDSHAKE_WAIT_MS. poll() rather
+-   than select(), which cannot take a descriptor of FD_SETSIZE or above. */
++/* Waits until the socket can be written if for_writing, else read: the
++   direction gnutls_record_get_direction() gives after an interrupted call.
++   At most timeout_ms, or without a limit if it is negative. FALSE when the
++   wait failed, with errno set: to ETIMEDOUT when nothing happened in time.
++   poll() rather than select(), which cannot take a descriptor of
++   FD_SETSIZE or above. */
+ static rfbBool
+-WaitForTLSSocket(rfbClient* client)
++WaitForTLSSocket(rfbClient* client, int for_writing, int timeout_ms)
+ {
+   struct pollfd pfd;
+   int ret;
+ 
+   pfd.fd = client->sock;
+-  pfd.events = gnutls_record_get_direction((gnutls_session_t)client->tlsSession) ? POLLOUT : POLLIN;
++  pfd.events = for_writing ? POLLOUT : POLLIN;
+   while (1)
+   {
+     pfd.revents = 0;
+-    ret = poll(&pfd, 1, TLS_HANDSHAKE_WAIT_MS);
++    ret = poll(&pfd, 1, timeout_ms < 0 ? -1 : timeout_ms);
+     if (ret > 0) return TRUE;
+     if (ret == 0)
+     {
+@@ -482,7 +484,9 @@ HandshakeTLS(rfbClient* client)
+        or no room to write: wait for it rather than retrying at once. */
+     if (ret == GNUTLS_E_AGAIN || ret == GNUTLS_E_INTERRUPTED)
+     {
+-      if (WaitForTLSSocket(client)) continue;
++      if (WaitForTLSSocket(client, gnutls_record_get_direction((gnutls_session_t)client->tlsSession),
++                           TLS_HANDSHAKE_WAIT_MS))
++        continue;
+       if (errno == ETIMEDOUT)
+         rfbClientLog("TLS handshake failed: the server did not answer for %d seconds.\n",
+                      TLS_HANDSHAKE_WAIT_MS / 1000);
+@@ -854,17 +858,31 @@ WriteToTLS(rfbClient* client, const char *buf, unsigned int n)
+ {
+   unsigned int offset = 0;
+   ssize_t ret;
++  int for_writing;
+ 
+   while (offset < n)
+   {
+     LOCK(client->tlsRwMutex);
+     ret = gnutls_record_send((gnutls_session_t)client->tlsSession, buf+offset, (size_t)(n-offset));
++    /* under the lock, since a ReadFromTLS in another thread changes it */
++    for_writing = gnutls_record_get_direction((gnutls_session_t)client->tlsSession);
+     UNLOCK(client->tlsRwMutex);
+ 
+     if (ret == 0) continue;
+     if (ret < 0)
+     {
+-      if (ret == GNUTLS_E_AGAIN || ret == GNUTLS_E_INTERRUPTED) continue;
++      if (ret == GNUTLS_E_AGAIN || ret == GNUTLS_E_INTERRUPTED)
++      {
++        /* The socket is non-blocking, so this means that it has no room:
++           wait for it, as WriteToRFBServer does, rather than retrying at
++           once. Should gnutls want to read instead, what arrives may go to
++           a ReadFromTLS in another thread, so that wait is short. */
++        if (WaitForTLSSocket(client, for_writing, for_writing ? -1 : 100)
++            || errno == ETIMEDOUT)
++          continue;
++        rfbClientLog("Error writing to TLS: %s.\n", strerror(errno));
++        return -1;
++      }
+       rfbClientLog("Error writing to TLS: %s.\n", gnutls_strerror(ret));
+       return -1;
+     }
+diff --git a/src/libvncclient/tls_openssl.c b/src/libvncclient/tls_openssl.c
+index 57265af..b703089 100644
+--- a/src/libvncclient/tls_openssl.c
++++ b/src/libvncclient/tls_openssl.c
+@@ -21,6 +21,11 @@
+ #include <stdio.h>
+ #include <rfb/rfbclient.h>
+ #include <errno.h>
++#ifdef WIN32
++#define poll WSAPoll
++#else
++#include <poll.h>
++#endif
+ 
+ #include <openssl/err.h>
+ #include <openssl/ssl.h>
+@@ -166,27 +171,24 @@ InitializeTLS(void)
+   return TRUE;
+ }
+ 
+-static int sock_read_ready(SSL *ssl, uint32_t ms)
++/* Waits for the socket to become writable if for_writing, else readable,
++   for at most ms milliseconds, or without a limit if it is negative. poll()
++   rather than select(), which cannot take a descriptor of FD_SETSIZE or
++   above. */
++static int sock_ready(SSL *ssl, int for_writing, int ms)
+ {
+-	int r = 0;
+-	fd_set fds;
+-	struct timeval tv;
+-
+-	FD_ZERO(&fds);
++	struct pollfd pfd;
+ 
+         if(SSL_get_fd(ssl) == RFB_INVALID_SOCKET) {
+             errno = EBADF;
+             return -1;
+         }
+ 
+-	FD_SET(SSL_get_fd(ssl), &fds);
++	pfd.fd = SSL_get_fd(ssl);
++	pfd.events = for_writing ? POLLOUT : POLLIN;
++	pfd.revents = 0;
+ 
+-	tv.tv_sec = ms / 1000;
+-	tv.tv_usec = (ms % 1000) * 1000;
+-	
+-	r = select (SSL_get_fd(ssl) + 1, &fds, NULL, NULL, &tv); 
+-
+-	return r;
++	return poll(&pfd, 1, ms < 0 ? -1 : ms);
+ }
+ 
+ 
+@@ -449,13 +451,14 @@ open_ssl_connection (rfbClient *client, int sockfd, rfbBool anonTLS, rfbCredenti
+     if (n != 1) 
+     {
+       int ready;
++      int ssl_error;
+       long verify_res;
+ 
+-      switch(SSL_get_error(ssl, n))
++      switch(ssl_error = SSL_get_error(ssl, n))
+           {
+           case SSL_ERROR_WANT_READ:
+           case SSL_ERROR_WANT_WRITE:
+-              ready = sock_read_ready(ssl, 1000);
++              ready = sock_ready(ssl, ssl_error == SSL_ERROR_WANT_WRITE, 1000);
+ 
+               if (ready == -1) {
+                   ERR_clear_error();
+@@ -791,7 +794,19 @@ WriteToTLS(rfbClient* client, const char *buf, unsigned int n)
+     if (ret < 0)
+     {
+       errno = ssl_error_to_errno(ssl_error);
+-      if (errno == EAGAIN || errno == EWOULDBLOCK) continue;
++      if (errno == EAGAIN || errno == EWOULDBLOCK)
++      {
++        /* The socket is non-blocking, so this means that it has no room:
++           wait for it, as WriteToRFBServer does, rather than retrying at
++           once. Should OpenSSL want to read instead, what arrives may go to
++           a ReadFromTLS in another thread, so that wait is short. */
++        int for_writing = ssl_error == SSL_ERROR_WANT_WRITE;
++        if (sock_ready(client->tlsSession, for_writing, for_writing ? -1 : 100) >= 0
++            || errno == EINTR)
++          continue;
++        rfbClientLog("Error writing to TLS: %s.\n", strerror(errno));
++        return -1;
++      }
+       rfbClientLog("Error writing to TLS: -\n");
+       return -1;
+     }
