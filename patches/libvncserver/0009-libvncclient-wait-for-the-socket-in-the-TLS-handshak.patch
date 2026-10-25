@@ -1,4 +1,4 @@
-From 95eeb9771a0ce61a5ddafed7ee8c9bca17a36c58 Mon Sep 17 00:00:00 2001
+From 3ad9da92c6b9f7874bf840b94e80abdfb370beb7 Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Sun, 25 Oct 2026 17:55:06 -0400
 Subject: [PATCH 9/9] libvncclient: wait for the socket in the TLS handshake
@@ -19,10 +19,22 @@ callback in between, and shutting the socket down still ends a wait at
 once.
 
 diff --git a/src/libvncclient/tls_gnutls.c b/src/libvncclient/tls_gnutls.c
-index 0d4cc77..6782860 100644
+index 0d4cc77..3731eda 100644
 --- a/src/libvncclient/tls_gnutls.c
 +++ b/src/libvncclient/tls_gnutls.c
-@@ -406,9 +406,9 @@ InitializeTLSSession(rfbClient* client, rfbBool anonTLS)
+@@ -22,6 +22,11 @@
+ #include <gnutls/x509.h>
+ #include <rfb/rfbclient.h>
+ #include <errno.h>
++#ifdef WIN32
++#define poll WSAPoll
++#else
++#include <poll.h>
++#endif
+ #include "tls.h"
+ 
+ 
+@@ -406,9 +411,9 @@ InitializeTLSSession(rfbClient* client, rfbBool anonTLS)
    /* No deadline on the handshake, because the certificate check inside it
       asks a person: GetX509CertFingerprintMismatchDecision is called from the
       verify callback, and any timeout that covers the handshake also covers
@@ -35,7 +47,7 @@ index 0d4cc77..6782860 100644
    gnutls_handshake_set_timeout((gnutls_session_t)client->tlsSession,
                                 GNUTLS_INDEFINITE_TIMEOUT);
  
-@@ -436,6 +436,38 @@ SetTLSAnonCredential(rfbClient* client)
+@@ -436,6 +441,36 @@ SetTLSAnonCredential(rfbClient* client)
    return TRUE;
  }
  
@@ -45,22 +57,20 @@ index 0d4cc77..6782860 100644
 +
 +/* Waits until the socket can be read or written, whichever gnutls was
 +   interrupted doing. FALSE when the wait failed, with errno set: to
-+   ETIMEDOUT when nothing happened for TLS_HANDSHAKE_WAIT_MS. */
++   ETIMEDOUT when nothing happened for TLS_HANDSHAKE_WAIT_MS. poll() rather
++   than select(), which cannot take a descriptor of FD_SETSIZE or above. */
 +static rfbBool
 +WaitForTLSSocket(rfbClient* client)
 +{
-+  fd_set fds;
-+  struct timeval tv;
++  struct pollfd pfd;
 +  int ret;
-+  const int writing = gnutls_record_get_direction((gnutls_session_t)client->tlsSession);
 +
++  pfd.fd = client->sock;
++  pfd.events = gnutls_record_get_direction((gnutls_session_t)client->tlsSession) ? POLLOUT : POLLIN;
 +  while (1)
 +  {
-+    FD_ZERO(&fds);
-+    FD_SET(client->sock, &fds);
-+    tv.tv_sec = TLS_HANDSHAKE_WAIT_MS / 1000;
-+    tv.tv_usec = (TLS_HANDSHAKE_WAIT_MS % 1000) * 1000;
-+    ret = select(client->sock + 1, writing ? NULL : &fds, writing ? &fds : NULL, NULL, &tv);
++    pfd.revents = 0;
++    ret = poll(&pfd, 1, TLS_HANDSHAKE_WAIT_MS);
 +    if (ret > 0) return TRUE;
 +    if (ret == 0)
 +    {
@@ -74,7 +84,7 @@ index 0d4cc77..6782860 100644
  static rfbBool
  HandshakeTLS(rfbClient* client)
  {
-@@ -443,6 +475,19 @@ HandshakeTLS(rfbClient* client)
+@@ -443,6 +478,19 @@ HandshakeTLS(rfbClient* client)
  
    while ((ret = gnutls_handshake((gnutls_session_t)client->tlsSession)) < 0)
    {
