@@ -150,4 +150,17 @@ else()
             ${CMAKE_DL_LIBS} pthread)
 
     vento_backend_probe(vento_realvnc realvnc_probe.cxx)
+
+    # Tests for the hosting layer's resolver wrappers (realvnc_test.cxx), over
+    # libc-shim's own resolver.
+    if(VENTO_PROBES)
+        add_executable(vento_realvnc_test realvnc_test.cxx)
+        remotedesktop_warnings(vento_realvnc_test)
+        target_compile_features(vento_realvnc_test PRIVATE cxx_std_17)
+        target_include_directories(vento_realvnc_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/host")
+        target_include_directories(vento_realvnc_test SYSTEM PRIVATE
+                "${THIRD_PARTY}/libc-shim/include")
+        target_link_libraries(vento_realvnc_test PRIVATE libc-shim)
+        add_test(NAME vento_realvnc_test COMMAND vento_realvnc_test)
+    endif()
 endif()

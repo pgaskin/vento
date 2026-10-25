@@ -21,8 +21,8 @@
 #   cmake --build build/scratch/host
 #   build/scratch/host/libvnc/vento_libvnc_probe HOST:1 --password ... --out shot.ppm
 #
-# Options: -DVENTO_PROBES=ON builds the four probes (and FreeRDP's tests,
-# which `ctest` runs), off by default so that the Linux client's build of this
+# Options: -DVENTO_PROBES=ON builds the four probes (and FreeRDP's and
+# RealVNC's tests, which `ctest` runs), off by default so that the Linux client's build of this
 # tree compiles none of them; -DSTRICT_WARNINGS=ON makes a warning in our own
 # sources an error, as `scripts/check-warnings.sh` does for the Android build;
 # CMAKE_BUILD_TYPE defaults to RelWithDebInfo, since the decoders are slow at
@@ -153,7 +153,8 @@ include(platform/linux/cmake/openssl.cmake)
 # this one cache, which is why every option a tree reads is forced in its
 # module rather than left to a default.
 # With the probes, `ctest` in the build tree runs the tests a module has
-# beside its probe (so far FreeRDP's, freerdp_test.c).
+# beside its probe (so far FreeRDP's, freerdp_test.c, and RealVNC's,
+# realvnc_test.cxx).
 if(VENTO_PROBES)
     enable_testing()
 endif()

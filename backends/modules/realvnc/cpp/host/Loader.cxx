@@ -17,6 +17,7 @@
 #include <libc_shim.h>
 #include <mcpelauncher/linker.h>
 
+#include "Gai.h"
 #include "Host.h"
 #include "Looper.h"
 
@@ -80,6 +81,8 @@ std::unordered_map<std::string, void *> libcSymbols() {
     libc["setrlimit"] = (void *) &setrlimit;
     libc["__readlink_chk"] = (void *) &readlinkChk;
     libc["__cxa_atexit"] = (void *) &noAtexit;
+    // The shim's resolver returns glibc's error codes (see Gai.h).
+    wrapResolver(libc);
     return libc;
 }
 
