@@ -477,7 +477,7 @@ One commit per upstream, after review, by the lead:
   because its connect wait used `POLLIN`, which broke a server's reverse
   connection to a repeater; `0010` waits for `POLLOUT`. Should upstream take
   a `poll()` change of its own, check the connect wait's direction.
-- **tigervnc** master ed951a41, reporting 1.16.80; six patches (the PAM one
+- **tigervnc** master ed951a41, reporting 1.16.80; seven patches (the PAM one
   dropped, and the libav context's pixel format fix with that context). The
   client API is upstream's after their October 2026 cleanup: `writer()` is
   protected, so pointer events and layouts go through `sendPointerEvent` and
@@ -491,6 +491,10 @@ One commit per upstream, after review, by the lead:
   `vncviewer/CConn.cxx`; audio is offered wherever there is an output, the
   `Audio` row is where the session's Enable switch starts, and it plays on
   vento's sound output through `vento/audio.h`'s table (`VentoAudio.h`).
+  `0007` checks the socket with `poll()` in `FdInStream`/`FdOutStream` where
+  `select()` overflowed its `fd_set` at descriptor 1024 or above (Windows
+  keeps `select()`); the shim's loop also polls for `POLLOUT` while the
+  socket's stream holds unsent output.
   Builds `common/` only, with `config.h` written by our
   CMake and, on Android, an empty `pthread` target for the link.
 - **freerdp** 3.32.2; one patch, `0001`, codec/h264: `WITH_H264_EXTERNAL`,

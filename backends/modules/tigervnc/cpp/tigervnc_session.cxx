@@ -1691,11 +1691,16 @@ void Session::run() {
             // TLS is the decrypted one and not the socket's.
             const bool buffered = !paused && !starved && conn->getInStream()->hasData(1);
             if (!buffered) {
+                // Output the flush above left behind is sent from the top of
+                // the loop once the socket has room, so wait for that too,
+                // paused or not.
+                const bool unsent = sock->outStream().hasBufferedData();
                 struct pollfd fds[2];
                 int n = 0;
                 fds[n++] = {wake_[0], POLLIN, 0};
-                if (!paused) {
-                    fds[n++] = {sock->getFd(), POLLIN, 0};
+                if (!paused || unsent) {
+                    fds[n++] = {sock->getFd(),
+                                (short) ((paused ? 0 : POLLIN) | (unsent ? POLLOUT : 0)), 0};
                 }
                 const int timeout = core::Timer::checkTimeouts();
                 const int r = poll(fds, n, timeout > 0 ? timeout : -1);
@@ -1708,7 +1713,7 @@ void Session::run() {
                         // the doorbell, and nothing in it
                     }
                 }
-                if (n < 2 || (fds[1].revents & (POLLIN | POLLERR | POLLHUP)) == 0) {
+                if (n < 2 || paused || (fds[1].revents & (POLLIN | POLLERR | POLLHUP)) == 0) {
                     continue;
                 }
             }

@@ -1,0 +1,144 @@
+From c71d3d95aa1b98652e978a646b9a48c552a95d89 Mon Sep 17 00:00:00 2001
+From: "Claude Opus 5.5" <noreply@anthropic.com>
+Date: Sun, 25 Oct 2026 19:05:37 -0400
+Subject: [PATCH 7/7] rdr: check the socket with poll() rather than select()
+
+FdInStream::readFd() and FdOutStream::writeFd() ask select() whether
+the descriptor is ready before every recv() and send(). select() takes
+an fd_set, a bitmap of FD_SETSIZE (1024) bits, so a descriptor of 1024
+or above is set past its end: with glibc the kernel then reads and
+writes back bits of the caller's stack, and with _FORTIFY_SOURCE or on
+bionic FD_SET aborts. With the socket at descriptor 1102, a client
+crashed in CConnection::processMsg() after the first read.
+
+Use poll() with the same zero timeout. An error or a hangup counts as
+ready, as select() reported it, so recv() or send() reports it. Windows
+keeps select(), whose fd_set is a list of sockets with no limit on their
+values.
+
+diff --git a/common/rdr/FdInStream.cxx b/common/rdr/FdInStream.cxx
+index 08bf6501..28247537 100644
+--- a/common/rdr/FdInStream.cxx
++++ b/common/rdr/FdInStream.cxx
+@@ -31,6 +31,7 @@
+ #else
+ #include <sys/types.h>
+ #include <sys/socket.h>
++#include <poll.h>
+ #include <unistd.h>
+ #define errorNumber errno
+ #endif
+@@ -70,16 +71,18 @@ bool FdInStream::fillBuffer()
+ // readFd() reads up to the given length in bytes from the
+ // file descriptor into a buffer. Zero is
+ // returned if no bytes can be read. Otherwise it returns the number of bytes read.  It
+-// never attempts to recv() unless select() indicates that the fd is readable -
++// never attempts to recv() unless poll() indicates that the fd is readable -
+ // this means it can be used on an fd which has been set non-blocking.  It also
+-// has to cope with the annoying possibility of both select() and recv()
+-// returning EINTR.
++// has to cope with the annoying possibility of both poll() and recv()
++// returning EINTR. poll() rather than select(), whose fd_set cannot hold
++// an fd of FD_SETSIZE or above, except on Windows, where it can.
+ //
+ 
+ size_t FdInStream::readFd(uint8_t* buf, size_t len)
+ {
+   int n;
+   do {
++#ifdef _WIN32
+     fd_set fds;
+     struct timeval tv;
+ 
+@@ -88,10 +91,24 @@ size_t FdInStream::readFd(uint8_t* buf, size_t len)
+     FD_ZERO(&fds);
+     FD_SET(fd, &fds);
+     n = select(fd+1, &fds, nullptr, nullptr, &tv);
++#else
++    // An error or a hangup counts as readable, as with select(), so
++    // that recv() reports it
++    struct pollfd pfd = {fd, POLLIN, 0};
++    n = poll(&pfd, 1, 0);
++    if (n > 0 && (pfd.revents & POLLNVAL)) {
++      n = -1;
++      errno = EBADF;
++    }
++#endif
+   } while (n < 0 && errorNumber == EINTR);
+ 
+   if (n < 0)
++#ifdef _WIN32
+     throw core::socket_error("select", errorNumber);
++#else
++    throw core::socket_error("poll", errorNumber);
++#endif
+ 
+   if (n == 0)
+     return 0;
+diff --git a/common/rdr/FdOutStream.cxx b/common/rdr/FdOutStream.cxx
+index 416926c1..3e1b860f 100644
+--- a/common/rdr/FdOutStream.cxx
++++ b/common/rdr/FdOutStream.cxx
+@@ -36,6 +36,7 @@
+ #include <sys/socket.h>
+ #include <netinet/in.h>
+ #include <netinet/tcp.h>
++#include <poll.h>
+ #define errorNumber errno
+ #endif
+ 
+@@ -95,10 +96,11 @@ bool FdOutStream::flushBuffer()
+ //
+ // writeFd() writes up to the given length in bytes from the given
+ // buffer to the file descriptor. It returns the number of bytes written.  It
+-// never attempts to send() unless select() indicates that the fd is writable
++// never attempts to send() unless poll() indicates that the fd is writable
+ // - this means it can be used on an fd which has been set non-blocking.  It
+-// also has to cope with the annoying possibility of both select() and send()
+-// returning EINTR.
++// also has to cope with the annoying possibility of both poll() and send()
++// returning EINTR. poll() rather than select(), whose fd_set cannot hold
++// an fd of FD_SETSIZE or above, except on Windows, where it can.
+ //
+ 
+ size_t FdOutStream::writeFd(const uint8_t* data, size_t length)
+@@ -106,6 +108,7 @@ size_t FdOutStream::writeFd(const uint8_t* data, size_t length)
+   int n;
+ 
+   do {
++#ifdef _WIN32
+     fd_set fds;
+     struct timeval tv;
+ 
+@@ -114,16 +117,30 @@ size_t FdOutStream::writeFd(const uint8_t* data, size_t length)
+     FD_ZERO(&fds);
+     FD_SET(fd, &fds);
+     n = select(fd+1, nullptr, &fds, nullptr, &tv);
++#else
++    // An error or a hangup counts as writable, as with select(), so
++    // that send() reports it
++    struct pollfd pfd = {fd, POLLOUT, 0};
++    n = poll(&pfd, 1, 0);
++    if (n > 0 && (pfd.revents & POLLNVAL)) {
++      n = -1;
++      errno = EBADF;
++    }
++#endif
+   } while (n < 0 && errorNumber == EINTR);
+ 
+   if (n < 0)
++#ifdef _WIN32
+     throw core::socket_error("select", errorNumber);
++#else
++    throw core::socket_error("poll", errorNumber);
++#endif
+ 
+   if (n == 0)
+     return 0;
+ 
+   do {
+-    // select only guarantees that you can write SO_SNDLOWAT without
++    // poll only guarantees that you can write SO_SNDLOWAT without
+     // blocking, which is normally 1. Use MSG_DONTWAIT to avoid
+     // blocking, when possible.
+ #ifndef MSG_DONTWAIT
