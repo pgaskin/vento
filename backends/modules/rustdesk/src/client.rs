@@ -30,7 +30,7 @@
 use std::collections::HashMap;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
-use std::sync::mpsc::{Sender, channel};
+use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -894,8 +894,19 @@ impl Client {
         if !agreed {
             return Err(Error::Cancelled);
         }
+        // **A login without a password is a request to the far end's user**,
+        // who is shown an accept dialog for it, and the peer sends nothing
+        // back until they answer. It never answers "Empty Password", although
+        // RustDesk's client still handles one. RustDesk's client sends that
+        // login and asks for the password at the same time, so that either
+        // answer gets the session in; so does this one.
         let mut password = config.password.clone().unwrap_or_default();
         self.send_login(config, &hash, &password);
+        if password.is_empty() {
+            log::info!("no password to send: asking for one, while the peer asks its user");
+            password = self.ask_password(handler)?;
+            self.send_login(config, &hash, &password);
+        }
         reader.set_timeout(Some(IDLE_TIMEOUT))?;
 
         let mut decoder: Option<Current> = None;
@@ -940,23 +951,25 @@ impl Client {
                             self.offer_sound(&audio);
                         }
                     }
-                    // Both password errors are answered on the same connection:
-                    // RustDesk's client prompts again and sends another
-                    // `LoginRequest` rather than reconnecting, and the peer
-                    // waits for exactly that.
-                    Some(login_response::Union::Error(why))
-                        if why == "Wrong Password" || why == "Empty Password" =>
-                    {
-                        log::info!("the peer wants a password ({why})");
-                        match handler.credentials(false).map(|c| c.password) {
-                            Some(answer) => {
-                                password = answer;
-                                self.send_login(config, &hash, &password);
-                            }
-                            None => return Err(Error::Cancelled),
+                    Some(login_response::Union::Error(why)) => match login_error(&why) {
+                        // Answered on the same connection: RustDesk's client
+                        // prompts again and sends another `LoginRequest`
+                        // rather than reconnecting, and the peer waits for
+                        // exactly that.
+                        LoginError::Password => {
+                            log::info!("the peer wants a password ({why})");
+                            password = self.ask_password(handler)?;
+                            self.send_login(config, &hash, &password);
                         }
-                    }
-                    Some(login_response::Union::Error(why)) => return Err(Error::Refused(why)),
+                        // A peer that takes no password: its user accepts or
+                        // declines the session, and it says nothing more
+                        // until then. RustDesk's client shows a wait for this
+                        // rather than an error.
+                        LoginError::Wait => {
+                            log::info!("the peer waits for its user to accept the session ({why})");
+                        }
+                        LoginError::Fatal => return Err(Error::Refused(why)),
+                    },
                     None => {}
                 },
                 message::Union::VideoFrame(frame) => {
@@ -1400,6 +1413,24 @@ impl Client {
         }
     }
 
+    /// Asks for the password, again for an empty answer, which the peer
+    /// would count as a wrong password (RustDesk's client sends the hash of
+    /// the empty string for one). The keep-alive runs meanwhile: the peer
+    /// drops a connection quiet for thirty seconds, and a prompt can stay
+    /// open longer.
+    fn ask_password(&self, handler: &mut dyn Handler) -> Result<String> {
+        let alive = self.keep_alive();
+        let answer = loop {
+            match handler.credentials(false) {
+                Some(given) if given.password.is_empty() => continue,
+                Some(given) => break Ok(given.password),
+                None => break Err(Error::Cancelled),
+            }
+        };
+        alive.stop();
+        answer
+    }
+
     fn send_login(&self, config: &Config, hash: &Hash, password: &str) {
         let mut login = LoginRequest::new();
         // **The address, not a name.** The peer refuses a login whose username
@@ -1770,15 +1801,13 @@ impl Client {
         message.set_test_delay(delay);
         let bytes = message.write_to_bytes().unwrap_or_default();
         let out = self.out.lock().unwrap().clone();
-        let stop = Arc::new(AtomicBool::new(false));
-        let flag = Arc::clone(&stop);
+        let (stop, stopped) = channel::<()>();
         let thread = std::thread::Builder::new()
             .name("rustdesk-keepalive".into())
             .spawn(move || {
                 let Some(out) = out else { return };
-                while !flag.load(Ordering::Relaxed) {
-                    std::thread::sleep(KEEP_ALIVE_EVERY);
-                    if flag.load(Ordering::Relaxed) || out.send(bytes.clone()).is_err() {
+                while let Err(RecvTimeoutError::Timeout) = stopped.recv_timeout(KEEP_ALIVE_EVERY) {
+                    if out.send(bytes.clone()).is_err() {
                         break;
                     }
                 }
@@ -1825,19 +1854,21 @@ impl runtime::Client for Client {
     }
 }
 
-/// The thread behind [`Client::keep_alive`], stopped explicitly rather than on
-/// drop: it is stopped once the answer has arrived and the login comes next,
-/// and a `Drop` that joins the sleeping thread would delay the login for the
-/// rest of the sleep.
+/// The thread behind [`Client::keep_alive`]. Stopping wakes it from its
+/// wait and joins it, so that it lets go of its sender to the writer thread
+/// at once: a session that ends while it sleeps waits for the writer, and the
+/// writer waits for every sender.
 struct KeepAlive {
-    stop: Arc<AtomicBool>,
+    stop: Sender<()>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl KeepAlive {
     fn stop(self) {
-        self.stop.store(true, Ordering::Relaxed);
-        drop(self.thread);
+        drop(self.stop);
+        if let Some(thread) = self.thread {
+            let _ = thread.join();
+        }
     }
 }
 
@@ -2010,6 +2041,28 @@ fn unzstd(data: &[u8], limit: usize) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// What a `LoginResponse` error asks of this end.
+enum LoginError {
+    /// A password, or another one: prompt and log in again.
+    Password,
+    /// Nothing: the peer's user is being asked to accept the session.
+    Wait,
+    /// The session is over, for the reason given.
+    Fatal,
+}
+
+/// The peer's login errors by their text, which is all the protocol has for
+/// them (`LOGIN_MSG_*` in RustDesk's `client.rs`). "Empty Password" is in
+/// that list but sent by no released server; it is taken as asking for a
+/// password, as RustDesk's client takes it.
+fn login_error(why: &str) -> LoginError {
+    match why {
+        "Wrong Password" | "Empty Password" => LoginError::Password,
+        "No Password Access" => LoginError::Wait,
+        _ => LoginError::Fatal,
+    }
+}
+
 /// `sha256(sha256(password ++ salt) ++ challenge)`. RustDesk's client stores
 /// the inner hash, so its saved passwords are salted per peer. This app does
 /// not, since it has one password store for every backend.
@@ -2111,6 +2164,150 @@ mod tests {
         second.challenge = "fedcba".into();
         assert_ne!(digest, login_hash("PASSword1", &second));
         assert!(login_hash("", &hash).is_empty());
+    }
+
+    /// Answers each password prompt from a list, cancelling once it runs out,
+    /// and counts the prompts.
+    struct Answers {
+        given: Vec<&'static str>,
+        asked: usize,
+    }
+    impl Handler for Answers {
+        fn connected(&mut self, _width: usize, _height: usize) {}
+        fn desktop_size(&mut self, _width: usize, _height: usize) {}
+        fn damaged(&mut self, _x: usize, _y: usize, _width: usize, _height: usize) {}
+        fn frame_end(&mut self) {}
+        fn cursor(&mut self, _p: &[u32], _w: usize, _h: usize, _hx: i32, _hy: i32) {}
+        fn clipboard(&mut self, _text: &str) {}
+        fn credentials(&mut self, needs_user: bool) -> Option<runtime::Credentials> {
+            assert!(!needs_user);
+            self.asked += 1;
+            let password = self.given.get(self.asked - 1)?.to_string();
+            Some(runtime::Credentials {
+                password,
+                ..Default::default()
+            })
+        }
+        fn trust(&mut self, _fingerprint: &str) -> bool {
+            false
+        }
+    }
+
+    /// Runs a session's login against a peer that sends its `Hash` and then
+    /// `said`, all of it before the session starts (the socket holds it), and
+    /// returns how the session ended, the password digest of each login
+    /// sent, and how many times the handler was asked for a password.
+    fn log_in(
+        password: Option<&str>,
+        said: &[Message],
+        answers: &[&'static str],
+    ) -> (Result<()>, Vec<Vec<u8>>, usize) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let near = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (far, _) = listener.accept().unwrap();
+        let (_, mut peer, _) = wire::split(far, Arc::default()).unwrap();
+        let mut hash = Message::new();
+        hash.set_hash(challenge());
+        peer.send(&hash).unwrap();
+        for message in said {
+            peer.send(message).unwrap();
+        }
+
+        let (mut reader, _, _) = wire::split(near, Arc::default()).unwrap();
+        let client = Client::new(Arc::new(video::NoDecoders));
+        let (out, sent) = channel::<Vec<u8>>();
+        *client.out.lock().unwrap() = Some(out);
+        let config = Config {
+            address: String::new(),
+            reach: Reach::Direct,
+            password: password.map(String::from),
+            connect_timeout: Duration::from_secs(1),
+            my_name: String::new(),
+            platform: Platform::Linux,
+            quality: Quality::Balanced,
+            fps: 0,
+            codec: PreferredCodec::Auto,
+            lock_after: false,
+            audio: None,
+            sound: false,
+        };
+        let mut handler = Answers {
+            given: answers.to_vec(),
+            asked: 0,
+        };
+        let ended = client.session(&mut reader, &config, None, &mut handler);
+        let logins = sent
+            .try_iter()
+            .filter_map(|bytes| match Message::parse_from_bytes(&bytes).ok()?.union {
+                Some(message::Union::LoginRequest(login)) => Some(login.password.to_vec()),
+                _ => None,
+            })
+            .collect();
+        (ended, logins, handler.asked)
+    }
+
+    fn challenge() -> Hash {
+        let mut hash = Hash::new();
+        hash.salt = "salt".into();
+        hash.challenge = "challenge".into();
+        hash
+    }
+
+    fn login_error_message(why: &str) -> Message {
+        let mut response = crate::protos::message::LoginResponse::new();
+        response.set_error(why.into());
+        let mut message = Message::new();
+        message.set_login_response(response);
+        message
+    }
+
+    fn close_reason(why: &str) -> Message {
+        let mut misc = Misc::new();
+        misc.set_close_reason(why.into());
+        let mut message = Message::new();
+        message.set_misc(misc);
+        message
+    }
+
+    /// With no password, the peer answers an empty login with nothing (its
+    /// user is shown an accept dialog), so the password is asked for at
+    /// once rather than waited for, and sent in a second login on the same
+    /// connection. An empty answer is asked again rather than sent.
+    #[test]
+    fn without_a_password_one_is_asked_for_after_the_empty_login() {
+        let (ended, logins, asked) = log_in(None, &[close_reason("done")], &["", "secret"]);
+        assert!(matches!(ended, Err(Error::Refused(why)) if why == "done"));
+        assert_eq!(logins, vec![Vec::new(), login_hash("secret", &challenge())]);
+        assert_eq!(asked, 2);
+
+        let (ended, logins, asked) = log_in(None, &[close_reason("done")], &[]);
+        assert!(matches!(ended, Err(Error::Cancelled)));
+        assert_eq!(logins, vec![Vec::new()]);
+        assert_eq!(asked, 1);
+    }
+
+    /// A wrong password is asked for again and sent on the same connection;
+    /// "No Password Access" (a peer whose user accepts by clicking) is a
+    /// wait rather than an ending; any other login error ends the session
+    /// with the peer's words.
+    #[test]
+    fn the_peers_login_errors_ask_wait_or_end() {
+        let said = [
+            login_error_message("Wrong Password"),
+            login_error_message("No Password Access"),
+            close_reason("done"),
+        ];
+        let (ended, logins, asked) = log_in(Some("wrong"), &said, &["right"]);
+        assert!(matches!(ended, Err(Error::Refused(why)) if why == "done"));
+        assert_eq!(
+            logins,
+            vec![login_hash("wrong", &challenge()), login_hash("right", &challenge())]
+        );
+        assert_eq!(asked, 1);
+
+        let (ended, _, asked) = log_in(Some("pw"), &[login_error_message("Offline")], &[]);
+        assert!(matches!(ended, Err(Error::Refused(why)) if why == "Offline"));
+        assert_eq!(asked, 0);
     }
 
     /// The Security row names the key exchange version picked, which is 0
