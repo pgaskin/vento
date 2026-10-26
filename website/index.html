@@ -147,6 +147,35 @@
     .hero-meta span {
       white-space: nowrap;
     }
+    .platform {
+      margin-top: clamp(2rem, 5vw, 2.75rem);
+      max-width: 36rem;
+      padding: .75rem .75rem .75rem 1rem;
+      border-radius: .625rem;
+      background: var(--surface);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .625rem 1rem;
+    }
+    .platform div {
+      flex: 1 1 16rem;
+    }
+    .platform h2 {
+      font-size: .875rem;
+      color: var(--fg);
+    }
+    .platform p {
+      margin: .125rem 0 0;
+      color: var(--muted);
+      font-size: .8125rem;
+      line-height: 1.5;
+    }
+    .platform .btn {
+      flex: none;
+      padding: .45em 1em;
+      font-size: .8125rem;
+    }
     section {
       padding-block: clamp(4rem, 9vw, 6.75rem);
     }
@@ -165,8 +194,25 @@
       font-size: clamp(1rem, 2vw, 1.125rem);
       text-wrap: pretty;
     }
-    .features {
+    .feature-group {
+      margin-top: clamp(2.75rem, 6vw, 4rem);
+    }
+    h2+.feature-group {
       margin-top: 3.25rem;
+    }
+    .feature-group>h3 {
+      margin-inline: -.75rem;
+      padding: .375rem .75rem;
+      border-radius: .5rem;
+      background: var(--surface);
+      font-size: .8125rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .features {
+      margin-top: 1.75rem;
       display: grid;
       gap: clamp(2rem, 4.5vw, 3.25rem) clamp(1.75rem, 5vw, 3.75rem);
       grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
@@ -382,113 +428,163 @@
           <span>arm64 and x86_64</span>
           <span>GPL-3.0</span>
         </p>
+        <div class="platform">
+          <div>
+            <h2>Desktop app</h2>
+            <p>
+              Vento is also available for Linux (currently x86_64 only) with
+              native Wayland/X11 support.
+            </p>
+          </div>
+          <a class="btn btn-ghost" href="https://github.com/pgaskin/vento/releases/latest/download/vento-x86_64-linux-gnu.tar.gz">Download</a>
+        </div>
       </div>
     </div>
     <section id="features">
       <div class="wrap">
         <h2>Features</h2>
-        <div class="features">
-          <div class="feature">
-            <h3>Touchpad-style controls</h3>
-            <p>
-              Tap to click, two or three fingers to right or middle click,
-              double-tap then drag to drag, two fingers to scroll, and pinch to
-              zoom. You can also fling the cursor.
-            </p>
+        <div class="feature-group">
+          <div class="features">
+            <div class="feature">
+              <h3>Multiple backends</h3>
+              <p>
+                Multiple client implementations for VNC, RDP and SPICE are
+                included and can be set per-connection.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Hardware acceleration</h3>
+              <p>
+                Video is decoded using the GPU where supported (H.264 with
+                FreeRDP and TigerVNC, H.264/H.265/VP8/VP9/AV1 with RustDesk).
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Stablity</h3>
+              <p>
+                I use this myself daily, and put a lot of work into ensuring
+                it's stable, efficient, and robust. I've also contributed to
+                other projects in this area.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Clipboard</h3>
+              <p>
+                Copied text is sent to and from the remote machine. Each direction
+                can be turned off separately.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Audio</h3>
+              <p>Supports playing audio from the server where supported.</p>
+            </div>
+            <div class="feature">
+              <h3>Open source</h3>
+              <p>
+                GPL-3.0, no ads, no tracking, and reproducible builds. The
+                <a href="https://github.com/pgaskin/vento/tree/master/control">control
+                library</a> is MIT so it can be used in other apps.
+              </p>
+            </div>
           </div>
-          <div class="feature">
-            <h3>Accuracy assists</h3>
-            <p>
-              Improved precision for slow motion, axis locking, adaptive
-              acceleration, and hovering.
-            </p>
+        </div>
+        <div class="feature-group">
+          <h3>Android</h3>
+          <div class="features">
+            <div class="feature">
+              <h3>Touchpad-style controls</h3>
+              <p>
+                Tap to click, two or three fingers to right or middle click,
+                double-tap then drag to drag, two fingers to scroll, and pinch to
+                zoom. You can also fling the cursor.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Accuracy assists</h3>
+              <p>
+                Improved precision for slow motion, axis locking, adaptive
+                acceleration, and hovering.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Keyboard and mouse</h3>
+              <p>
+                Physical keyboards and mice are supported, with proper modifier
+                and layout handling. The extension keyboard provides keys missing
+                on soft keyboards.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>IME fixes</h3>
+              <p>
+                Workarounds for composition and newline bugs in various Android
+                IMEs.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Multi-window</h3>
+              <p>
+                Sessions can be opened in multiple windows, side by side with each
+                other or another app.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Material Design 3</h3>
+              <p>
+                Follows the system colors and the light/dark theme.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Saved credentials</h3>
+              <p>
+                Saved passwords are encrypted with AES-256-GCM by a
+                hardware-backed keystore. Server fingerprints are also stored and
+                verified.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Import and export</h3>
+              <p>
+                Connections and settings can be exported and imported, with or
+                without saved passwords.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Playground</h3>
+              <p>
+                A fake desktop for testing input and adjusting the control
+                settings without a server.
+              </p>
+            </div>
           </div>
-          <div class="feature">
-            <h3>Keyboard and mouse</h3>
-            <p>
-              Physical keyboards and mice are supported, with proper modifier
-              and layout handling. The extension keyboard provides keys missing
-              on soft keyboards.
-            </p>
-          </div>
-          <div class="feature">
-            <h3>IME fixes</h3>
-            <p>
-              Workarounds for composition and newline bugs in various Android
-              IMEs.
-            </p>
-          </div>
-          <div class="feature">
-            <h3>Multiple backends</h3>
-            <p>
-              Multiple open-source libraries for VNC, RDP and SPICE are
-              included. Each connection can use a different one.
-            </p>
-          </div>
-          <div class="feature">
-            <h3>Hardware acceleration</h3>
-            <p>
-              H.264 is decoded by the device where the server supports it, with
-              the FreeRDP and TigerVNC client backends. RustDesk also supports
-              H.265, VP8, VP9 and AV1.
-            </p>
-          </div>
-          <div class="feature">
-            <h3>Multi-window</h3>
-            <p>
-              Sessions can be opened in multiple windows, side by side with each
-              other or another app.
-            </p>
-          </div>
-          <div class="feature">
-            <h3>Material Design 3</h3>
-            <p>
-              Follows the system colors and the light/dark theme.
-            </p>
-          </div>
-          <div class="feature">
-            <h3>Saved credentials</h3>
-            <p>
-              Saved passwords are encrypted with AES-256-GCM by a
-              hardware-backed keystore. Server fingerprints are also stored and
-              verified.
-            </p>
-          </div>
-          <div class="feature">
-            <h3>Desktop previews</h3>
-            <p>
-              Connection cards show the last state of the desktop. The previews
-              are stored encrypted, and can be disabled.
-            </p>
-          </div>
-          <div class="feature">
-            <h3>Clipboard</h3>
-            <p>
-              Copied text is sent to and from the remote machine. Each direction
-              can be turned off separately.
-            </p>
-          </div>
-          <div class="feature">
-            <h3>Import and export</h3>
-            <p>
-              Connections and settings can be exported and imported, with or
-              without saved passwords.
-            </p>
-          </div>
-          <div class="feature">
-            <h3>Playground</h3>
-            <p>
-              A fake desktop for testing input and adjusting the control
-              settings without a server.
-            </p>
-          </div>
-          <div class="feature">
-            <h3>Open source</h3>
-            <p>
-              GPL-3.0, no ads, no tracking, and reproducible builds. The
-              <a href="https://github.com/pgaskin/vento/tree/master/control">control
-              library</a> is MIT so it can be used in other apps.
-            </p>
+        </div>
+        <div class="feature-group">
+          <h3>Linux</h3>
+          <div class="features">
+            <div class="feature">
+              <h3>Native app</h3>
+              <p>No Java, Electron, or anything like that. GPU-rendered, low-latency, and resource-efficient.</p>
+            </div>
+            <div class="feature">
+              <h3>X11/Wayland</h3>
+              <p>First-class display protocol support with input grabbing, clipboard, window management, etc.</p>
+            </div>
+            <div class="feature">
+              <h3>Automatic input grabbing</h3>
+              <p>Keyboard shortcuts and relative pointer motion just work.</p>
+            </div>
+            <div class="feature">
+              <h3>Multi-monitor pop-out</h3>
+              <p>Where supported by the protocol and server.</p>
+            </div>
+            <div class="feature">
+              <h3>Unobtrusive toolbar</h3>
+              <p>Does not take up desktop space, and is completely hidden (but still accessible) in fullscreen</p>
+            </div>
+            <div class="feature">
+              <h3>Self-contained builds</h3>
+              <p>Only requires glibc.</p>
+            </div>
           </div>
         </div>
       </div>
