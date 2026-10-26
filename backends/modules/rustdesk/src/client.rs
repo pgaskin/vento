@@ -70,6 +70,12 @@ pub const VERSION: &str = "1.5.0";
 /// stream out of sync, with nothing to resynchronise on.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// The connecting screen's status while the far end's user is shown its
+/// accept dialog: for a login without a password, a wrong one, or any login
+/// to a peer that takes none ("No Password Access"). Upstream's client says
+/// "Please wait for the remote side to accept your session request...".
+const WAITING_FOR_ACCEPT: &str = "Waiting for the remote user to accept the session…";
+
 /// How often to send something while a prompt is on screen; must be well
 /// under the thirty seconds of silence the peer allows.
 const KEEP_ALIVE_EVERY: Duration = Duration::from_secs(8);
@@ -904,6 +910,9 @@ impl Client {
         self.send_login(config, &hash, &password);
         if password.is_empty() {
             log::info!("no password to send: asking for one, while the peer asks its user");
+            // Before the prompt, which covers the connecting screen and shows
+            // the status itself.
+            handler.status(Some(WAITING_FOR_ACCEPT));
             password = self.ask_password(handler)?;
             self.send_login(config, &hash, &password);
         }
@@ -956,8 +965,11 @@ impl Client {
                         // prompts again and sends another `LoginRequest`
                         // rather than reconnecting, and the peer waits for
                         // exactly that.
+                        // The peer shows its accept dialog for a wrong
+                        // password too, so the wait goes on meanwhile.
                         LoginError::Password => {
                             log::info!("the peer wants a password ({why})");
+                            handler.status(Some(WAITING_FOR_ACCEPT));
                             password = self.ask_password(handler)?;
                             self.send_login(config, &hash, &password);
                         }
@@ -967,6 +979,7 @@ impl Client {
                         // rather than an error.
                         LoginError::Wait => {
                             log::info!("the peer waits for its user to accept the session ({why})");
+                            handler.status(Some(WAITING_FOR_ACCEPT));
                         }
                         LoginError::Fatal => return Err(Error::Refused(why)),
                     },
@@ -2167,10 +2180,11 @@ mod tests {
     }
 
     /// Answers each password prompt from a list, cancelling once it runs out,
-    /// and counts the prompts.
+    /// and counts the prompts. `said` is each prompt and status, in order.
     struct Answers {
         given: Vec<&'static str>,
         asked: usize,
+        said: Vec<String>,
     }
     impl Handler for Answers {
         fn connected(&mut self, _width: usize, _height: usize) {}
@@ -2179,9 +2193,13 @@ mod tests {
         fn frame_end(&mut self) {}
         fn cursor(&mut self, _p: &[u32], _w: usize, _h: usize, _hx: i32, _hy: i32) {}
         fn clipboard(&mut self, _text: &str) {}
+        fn status(&mut self, text: Option<&str>) {
+            self.said.push(format!("status {text:?}"));
+        }
         fn credentials(&mut self, needs_user: bool) -> Option<runtime::Credentials> {
             assert!(!needs_user);
             self.asked += 1;
+            self.said.push("password?".into());
             let password = self.given.get(self.asked - 1)?.to_string();
             Some(runtime::Credentials {
                 password,
@@ -2196,12 +2214,13 @@ mod tests {
     /// Runs a session's login against a peer that sends its `Hash` and then
     /// `said`, all of it before the session starts (the socket holds it), and
     /// returns how the session ended, the password digest of each login
-    /// sent, and how many times the handler was asked for a password.
+    /// sent, and how many times the handler was asked for a password, with
+    /// the prompts and statuses in order.
     fn log_in(
         password: Option<&str>,
         said: &[Message],
         answers: &[&'static str],
-    ) -> (Result<()>, Vec<Vec<u8>>, usize) {
+    ) -> (Result<()>, Vec<Vec<u8>>, usize, Vec<String>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let near = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (far, _) = listener.accept().unwrap();
@@ -2234,6 +2253,7 @@ mod tests {
         let mut handler = Answers {
             given: answers.to_vec(),
             asked: 0,
+            said: Vec::new(),
         };
         let ended = client.session(&mut reader, &config, None, &mut handler);
         let logins = sent
@@ -2243,7 +2263,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        (ended, logins, handler.asked)
+        (ended, logins, handler.asked, handler.said)
     }
 
     fn challenge() -> Hash {
@@ -2275,12 +2295,12 @@ mod tests {
     /// connection. An empty answer is asked again rather than sent.
     #[test]
     fn without_a_password_one_is_asked_for_after_the_empty_login() {
-        let (ended, logins, asked) = log_in(None, &[close_reason("done")], &["", "secret"]);
+        let (ended, logins, asked, _) = log_in(None, &[close_reason("done")], &["", "secret"]);
         assert!(matches!(ended, Err(Error::Refused(why)) if why == "done"));
         assert_eq!(logins, vec![Vec::new(), login_hash("secret", &challenge())]);
         assert_eq!(asked, 2);
 
-        let (ended, logins, asked) = log_in(None, &[close_reason("done")], &[]);
+        let (ended, logins, asked, _) = log_in(None, &[close_reason("done")], &[]);
         assert!(matches!(ended, Err(Error::Cancelled)));
         assert_eq!(logins, vec![Vec::new()]);
         assert_eq!(asked, 1);
@@ -2297,7 +2317,7 @@ mod tests {
             login_error_message("No Password Access"),
             close_reason("done"),
         ];
-        let (ended, logins, asked) = log_in(Some("wrong"), &said, &["right"]);
+        let (ended, logins, asked, _) = log_in(Some("wrong"), &said, &["right"]);
         assert!(matches!(ended, Err(Error::Refused(why)) if why == "done"));
         assert_eq!(
             logins,
@@ -2305,9 +2325,31 @@ mod tests {
         );
         assert_eq!(asked, 1);
 
-        let (ended, _, asked) = log_in(Some("pw"), &[login_error_message("Offline")], &[]);
+        let (ended, _, asked, _) = log_in(Some("pw"), &[login_error_message("Offline")], &[]);
         assert!(matches!(ended, Err(Error::Refused(why)) if why == "Offline"));
         assert_eq!(asked, 0);
+    }
+
+    /// The far end's user is shown an accept dialog for a login without a
+    /// password, a wrong one, and any login to a peer that takes none, so
+    /// each sets the status: the first before the prompt, which shows it.
+    #[test]
+    fn a_wait_for_the_far_ends_user_is_the_status() {
+        let waiting = format!("status {:?}", Some(WAITING_FOR_ACCEPT));
+        let (_, _, _, said) = log_in(None, &[close_reason("done")], &["secret"]);
+        assert_eq!(said, [waiting.as_str(), "password?"]);
+
+        let wrong = [login_error_message("Wrong Password"), close_reason("done")];
+        let (_, _, _, said) = log_in(Some("wrong"), &wrong, &[]);
+        assert_eq!(said, [waiting.as_str(), "password?"]);
+
+        let click = [login_error_message("No Password Access"), close_reason("done")];
+        let (_, _, _, said) = log_in(Some("pw"), &click, &[]);
+        assert_eq!(said, [waiting.as_str()]);
+
+        // A password taken at once says nothing.
+        let (_, _, _, said) = log_in(Some("pw"), &[close_reason("done")], &[]);
+        assert!(said.is_empty());
     }
 
     /// The Security row names the key exchange version picked, which is 0
