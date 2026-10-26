@@ -6,6 +6,8 @@ package net.pgaskin.remotedesktop;
 import android.app.Activity;
 import android.content.DialogInterface;
 import android.text.InputType;
+import android.view.ContextThemeWrapper;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -55,6 +57,12 @@ final class PromptDialogs implements Prompt.Handler {
     private final Host host;
     /** Whether there is a saved connection to store a password on. */
     private final boolean mayRemember;
+    /**
+     * The connecting screen's status line, which a credentials dialog covers
+     * and so shows as its message, and the open dialog's view for it.
+     */
+    private String status;
+    private TextView statusView;
 
     PromptDialogs(Activity activity, Dialogs.Tracker dialogs, Host host, boolean mayRemember) {
         this.activity = activity;
@@ -63,12 +71,40 @@ final class PromptDialogs implements Prompt.Handler {
         this.mayRemember = mayRemember;
     }
 
+    /**
+     * What the connection is waiting for, or null: shown in an open
+     * credentials dialog at once, and in the next one.
+     */
+    void status(String text) {
+        status = text;
+        if (statusView != null) {
+            showStatus(statusView);
+        }
+    }
+
+    private void showStatus(TextView view) {
+        view.setText(status);
+        view.setVisibility(status != null ? View.VISIBLE : View.GONE);
+    }
+
     @Override
     public void credentials(Prompt.Credentials prompt) {
         final LinearLayout form = new LinearLayout(activity);
         form.setOrientation(LinearLayout.VERTICAL);
         final int pad = Dialogs.padding(activity);
         form.setPadding(pad, Dialogs.dp(activity, 8), pad, 0);
+
+        // The status line, as the dialog's message: built in the message's
+        // style rather than set as one, since a dialog created without a
+        // message has no view to show one that arrives later.
+        final TextView line = new TextView(
+                new ContextThemeWrapper(activity, R.style.ThemeOverlay_RemoteDesktop_Dialog), null, 0,
+                com.google.android.material.R.style.MaterialAlertDialog_Material3_Body_Text);
+        final LinearLayout.LayoutParams lineAt = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lineAt.bottomMargin = Dialogs.dp(activity, 16);
+        form.addView(line, lineAt);
+        showStatus(line);
 
         if (prompt.instructions != null && !prompt.instructions.isEmpty()) {
             final TextView note = new TextView(activity);
@@ -97,6 +133,7 @@ final class PromptDialogs implements Prompt.Handler {
             form.addView(remember);
         }
 
+        statusView = line;
         show(Dialogs.builder(activity)
                 .setTitle(prompt.address != null && !prompt.address.isEmpty()
                         ? prompt.address : activity.getString(R.string.prompt_credentials_title))
@@ -199,7 +236,12 @@ final class PromptDialogs implements Prompt.Handler {
     private void show(AlertDialog.Builder builder, Prompt prompt) {
         final AlertDialog dialog = builder.create();
         dialog.setOnCancelListener((DialogInterface d) -> decline(prompt));
-        dialogs.track(dialog);
+        final TextView line = prompt instanceof Prompt.Credentials ? statusView : null;
+        dialogs.track(dialog, d -> {
+            if (statusView == line) {
+                statusView = null;
+            }
+        });
         dialog.show();
     }
 

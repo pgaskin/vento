@@ -67,6 +67,16 @@ pub trait Handler {
     /// RFB's `Bell`; no other protocol sends one.
     fn bell(&mut self) {}
 
+    /// What the connection is waiting for while it connects, as a short
+    /// sentence for the connecting screen, or `None` to clear it: a far end
+    /// whose user has to accept the session, a server asking its user, a
+    /// retry. Only for a wait long enough to read. The latest one stands
+    /// until replaced, and the screen drops it once the session connects or
+    /// ends, so a backend clears it only when a wait ends without either.
+    fn status(&mut self, text: Option<&str>) {
+        let _ = text;
+    }
+
     /// What the far end's clipboard now holds, as text.
     fn clipboard(&mut self, text: &str);
 

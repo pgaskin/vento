@@ -196,6 +196,13 @@ typedef struct vento_callbacks {
        refused the user name or password, and otherwise gives the reason in
        the library's words. */
     void (*closed)(void *user, const char *detail);
+    /* What the connection is waiting for while it connects, as a short
+       sentence for the connecting screen: a server asking its user to accept
+       the connection, a retry. NULL or "" clears it. Only for a wait long
+       enough to read; the platform drops it once the session connects or
+       closes. After `closed` in the table only because members are appended
+       at its end; like every other callback it comes before `closed`. */
+    void (*status)(void *user, const char *text);
 } vento_callbacks;
 
 /* The `closed` detail for a user name or password the server refused. The

@@ -104,6 +104,10 @@ impl Handler for Bridge {
         self.events.bell();
     }
 
+    fn status(&mut self, text: Option<&str>) {
+        self.events.status(text);
+    }
+
     fn clipboard(&mut self, text: &str) {
         self.events.clipboard(text);
     }
@@ -237,6 +241,7 @@ mod tests {
         }
         fn pointer_mode(&self, _relative: bool) {}
         fn bell(&self) {}
+        fn status(&self, _text: Option<&str>) {}
         fn clipboard(&self, _text: &str) {}
         fn credentials_needed(&self, needs_user: bool) {
             self.say(format!("credentials? {needs_user}"));

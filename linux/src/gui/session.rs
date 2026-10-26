@@ -312,6 +312,9 @@ pub struct Session {
     attention: bool,
     /// Something to tell in the main window, and until when.
     notice: Option<(String, Instant)>,
+    /// What the connection is waiting for (`Event::Status`), shown under
+    /// "Connecting to" and in a prompt; dropped once it connects or ends.
+    status: Option<String>,
 }
 
 impl Session {
@@ -425,6 +428,7 @@ impl Session {
             prompting: false,
             attention: false,
             notice: None,
+            status: None,
         })
     }
 
@@ -553,6 +557,7 @@ impl Session {
                     if let Event::DesktopSize { .. } = event {
                         log::info!("desktop size now {width}×{height}");
                     }
+                    self.status = None;
                     if let Some(old) = self.desktop.take() {
                         old.free(ctx);
                     }
@@ -616,7 +621,18 @@ impl Session {
                         }
                     }
                 }
+                // Only while connecting: the connecting screen and the prompts
+                // over it are where it is shown.
+                Event::Status(text) => {
+                    if self.mailbox.state() == State::Connecting {
+                        if let Some(text) = &text {
+                            log::info!("status: {text}");
+                        }
+                        self.status = text;
+                    }
+                }
                 Event::Closed { detail } => {
+                    self.status = None;
                     // An ending that was asked for needs no telling, whatever
                     // words the library closed with.
                     self.closed = Some(if self.disconnecting.is_some() { String::new() } else { detail });
@@ -1478,6 +1494,15 @@ impl Session {
                     ui.label("Disconnecting…");
                 } else {
                     ui.label(format!("Connecting to {}…", self.request.address));
+                    if let Some(status) = &self.status {
+                        // Wrapped at the connection dialog's width, centred
+                        // line by line, with a margin in a narrower window.
+                        let width = (ui.available_width() - 32.0).min(super::dialog::WIDTH);
+                        ui.scope(|ui| {
+                            ui.set_max_width(width);
+                            ui.add(egui::Label::new(status).wrap().halign(egui::Align::Center));
+                        });
+                    }
                     ui.add_space(8.0);
                     if ui.button("Cancel").clicked() {
                         self.disconnect();
@@ -1583,7 +1608,14 @@ impl Session {
         let Some(prompt) = self.prompts.front().cloned() else {
             return;
         };
-        let answer = prompts::show(ctx, &prompt, &mut self.form, &self.request.address, &self.request.user);
+        let answer = prompts::show(
+            ctx,
+            &prompt,
+            &mut self.form,
+            &self.request.address,
+            self.status.as_deref(),
+            &self.request.user,
+        );
         if let Some(answer) = answer {
             self.prompts.pop_front();
             match answer {

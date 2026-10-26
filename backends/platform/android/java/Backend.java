@@ -85,6 +85,16 @@ public interface Backend {
         void bell();
 
         /**
+         * Main thread. What the connection is waiting for while it connects
+         * (a far end whose user has to accept the session, a retry), as a
+         * line under "Connecting to …", or null to clear it. Only meaningful
+         * in {@code CONNECTING}: a screen drops it on {@code CONNECTED} and
+         * {@code CLOSED}. A default, since only some backends have one.
+         */
+        default void status(String text) {
+        }
+
+        /**
          * Main thread. Whether the far end's sound is playing: from its first
          * sound until its last stream closes, which a backend does a couple of
          * seconds after the sound ends. Whether a sound switch is shown comes

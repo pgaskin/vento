@@ -805,6 +805,7 @@ struct Outlet {
     cursor: JMethodID,
     pointer_mode: JMethodID,
     bell: JMethodID,
+    status: JMethodID,
     sound: JMethodID,
     clipboard: JMethodID,
     credentials_needed: JMethodID,
@@ -849,6 +850,7 @@ impl Outlet {
             cursor: id(env, jni_str!("onCursor"), jni_sig!("([IIIIIJ)V"))?,
             pointer_mode: id(env, jni_str!("onPointerMode"), jni_sig!("(Z)V"))?,
             bell: id(env, jni_str!("onBell"), jni_sig!("()V"))?,
+            status: id(env, jni_str!("onStatus"), jni_sig!("(Ljava/lang/String;)V"))?,
             sound: id(env, jni_str!("onSound"), jni_sig!("(IZZZ)V"))?,
             clipboard: id(env, jni_str!("onClipboard"), jni_sig!("(Ljava/lang/String;)V"))?,
             credentials_needed: id(env, jni_str!("onCredentialsNeeded"), jni_sig!("(ZLjava/lang/String;)V"))?,
@@ -965,6 +967,11 @@ impl Outlet {
                 }
                 Event::PointerMode { relative } => self.call(env, self.pointer_mode, &[jvalue { z: relative }]),
                 Event::Bell => self.call(env, self.bell, &[]),
+                // Null clears it.
+                Event::Status(text) => match text {
+                    Some(text) => self.text(env, self.status, &text),
+                    None => self.call(env, self.status, &[jvalue { l: std::ptr::null_mut() }]),
+                },
                 // The state the session screen shows its sound switch from:
                 // what it does (0 none, 1 mute, 2 enable, as
                 // `VENTO_AUDIO_SWITCH_*`), whether the far end is asked for its

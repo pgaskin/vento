@@ -118,6 +118,12 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
         void status(Backend.State state, String detail);
 
         /**
+         * What the connection is waiting for while it connects, a line under
+         * the status, or null for none: {@link Backend.Listener#status}.
+         */
+        void statusLine(String text);
+
+        /**
          * The first frame of this session's desktop is on screen.
          *
          * <p>The earliest moment the tap regions can be explained over the
@@ -477,6 +483,11 @@ public final class SessionView extends View implements ZoomSink, CursorControlle
     @Override
     public void bell() {
         performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+    }
+
+    @Override
+    public void status(String text) {
+        host.statusLine(text);
     }
 
     @Override

@@ -337,7 +337,10 @@ public final class SessionActivity extends Activity
 
     private View statusPanel;
     private TextView statusText;
+    private TextView statusLine;
     private View statusActions;
+    /** The backend's status line, shown under the status while connecting. */
+    private String statusLineText;
     private View scrim;
     private View loading;
 
@@ -346,6 +349,7 @@ public final class SessionActivity extends Activity
         scrim = findViewById(R.id.scrim);
         statusPanel = findViewById(R.id.status_panel);
         statusText = findViewById(R.id.status_text);
+        statusLine = findViewById(R.id.status_line);
         statusActions = findViewById(R.id.status_actions);
         loading = findViewById(R.id.loading);
         findViewById(R.id.reconnect).setOnClickListener(v -> panelReconnect());
@@ -364,12 +368,37 @@ public final class SessionActivity extends Activity
         final Session.Status s = Session.Status.of(this, state, detail);
         final int panel = s.text().isEmpty() ? View.GONE : View.VISIBLE;
         statusText.setText(s.text());
+        // Only while connecting: an ended session's message is the reason it
+        // ended, and the wait it was in no longer matters.
+        if ((s.ended() || !s.working()) && statusLineText != null) {
+            statusLineText = null;
+            prompts.status(null);
+        }
+        showStatusLine();
         statusPanel.setVisibility(panel);
         scrim.setVisibility(panel);
         // Only once the session has ended. A session still connecting has
         // nothing to reconnect and no log to show yet.
         statusActions.setVisibility(s.ended() ? View.VISIBLE : View.GONE);
         loading.setVisibility(s.working() ? View.VISIBLE : View.GONE);
+    }
+
+    @Override
+    public void statusLine(String text) {
+        statusLineText = text == null || text.isEmpty() ? null : text;
+        showStatusLine();
+        // The prompt covers the panel, so it shows the line as well.
+        if (prompts != null) {
+            prompts.status(statusLineText);
+        }
+    }
+
+    private void showStatusLine() {
+        if (statusLine == null) {
+            return;
+        }
+        statusLine.setText(statusLineText);
+        statusLine.setVisibility(statusLineText != null ? View.VISIBLE : View.GONE);
     }
 
     /** The session key, so a second screen for the same target re-attaches. */

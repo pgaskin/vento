@@ -159,6 +159,8 @@ public final class Session implements Backend.Listener, Prompt.Handler {
 
     private Backend.State state = Backend.State.IDLE;
     private String detail;
+    /** The backend's status line while connecting, or null. */
+    private String statusLine;
     private int desktopW, desktopH;
     private Bitmap cursor;
     private int cursorHotX, cursorHotY;
@@ -322,6 +324,9 @@ public final class Session implements Backend.Listener, Prompt.Handler {
             detail = null;
         }
         v.state(state, detail);
+        if (statusLine != null) {
+            v.status(statusLine);
+        }
         flushPrompts();
     }
 
@@ -556,6 +561,10 @@ public final class Session implements Backend.Listener, Prompt.Handler {
         // before connecting (RealVNC's core reports generating a key) is not
         // why the session ended an hour later.
         detail = s == Backend.State.CONNECTED ? null : d;
+        // Only while connecting; the screen drops its copy itself.
+        if (s == Backend.State.CONNECTED || s == Backend.State.CLOSED) {
+            statusLine = null;
+        }
         view.state(s, d);
         // The service watches the set of sessions and counts only alive ones,
         // so the last session ending stops it. Deliberately not close(): the
@@ -601,6 +610,17 @@ public final class Session implements Backend.Listener, Prompt.Handler {
     public void bell() {
         assertMain("bell");
         view.bell();
+    }
+
+    /** Kept for a screen that attaches while it is up. */
+    @Override
+    public void status(String text) {
+        assertMain("status");
+        if (closed || state == Backend.State.CONNECTED || state == Backend.State.CLOSED) {
+            return;
+        }
+        statusLine = text == null || text.isEmpty() ? null : text;
+        view.status(statusLine);
     }
 
     @Override

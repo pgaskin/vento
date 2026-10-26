@@ -585,6 +585,8 @@ mod host {
                     say(&format!("pointer_mode {}", if *relative { "relative" } else { "absolute" }))
                 }
                 Event::Bell => say("bell"),
+                Event::Status(Some(text)) => say(&format!("status: {text}")),
+                Event::Status(None) => say("status cleared"),
                 Event::Sound(sound) => {
                     let before = self.sound.replace(*sound);
                     if (sound.switch, sound.enabled, sound.muted) != (before.switch, before.enabled, before.muted) {

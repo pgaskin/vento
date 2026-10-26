@@ -32,6 +32,9 @@ pub trait Callbacks: Send + Sync {
     fn cursor(&self, pixels: &[u32], width: usize, height: usize, hot_x: i32, hot_y: i32);
     fn pointer_mode(&self, relative: bool);
     fn bell(&self);
+    /// What the connection is waiting for, or `None` to clear it; see
+    /// [`Handler::status`](crate::Handler::status).
+    fn status(&self, text: Option<&str>);
     fn clipboard(&self, text: &str);
     /// Credentials are wanted; answered through
     /// [`Runner::answer_credentials`](crate::Runner::answer_credentials).

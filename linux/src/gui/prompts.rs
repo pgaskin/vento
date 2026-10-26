@@ -149,14 +149,22 @@ impl Form {
 pub const WIDTH: f32 = 380.0;
 
 /// Draws `prompt` as a modal and returns its answer on the frame it is
-/// given. `address` titles the dialogs that are about the far end; `user`
-/// is what the credentials form starts with.
-pub fn show(ctx: &egui::Context, prompt: &Prompt, form: &mut Form, address: &str, user: &str) -> Option<Answer> {
+/// given. `address` titles the dialogs that are about the far end, with the
+/// connecting screen's `status` under it, since the modal covers the screen;
+/// `user` is what the credentials form starts with.
+pub fn show(
+    ctx: &egui::Context,
+    prompt: &Prompt,
+    form: &mut Form,
+    address: &str,
+    status: Option<&str>,
+    user: &str,
+) -> Option<Answer> {
     form.prepare(prompt, user);
     let modal = Modal::new(Id::new("prompt")).show(ctx, |ui| {
         ui.set_width(WIDTH);
         match prompt {
-            Prompt::Credentials { needs_user } => credentials(ui, form, address, *needs_user),
+            Prompt::Credentials { needs_user } => credentials(ui, form, address, status, *needs_user),
             Prompt::Trust {
                 fingerprint,
                 identity,
@@ -164,22 +172,31 @@ pub fn show(ctx: &egui::Context, prompt: &Prompt, form: &mut Form, address: &str
             } => {
                 // The phone's trust prompt: encrypted, the fingerprint as
                 // the signature, and no catchphrase.
-                identity_prompt(ui, form, address, *identity, Encryption::Encrypted, fingerprint, "", matching_address)
-                    .map(|(accept, remember)| Answer::Pin {
+                identity_prompt(
+                    ui,
+                    form,
+                    (address, status),
+                    *identity,
+                    Encryption::Encrypted,
+                    fingerprint,
+                    "",
+                    matching_address,
+                )
+                .map(|(accept, remember)| Answer::Pin {
                         accept,
                         remember,
                         fingerprint: fingerprint.clone(),
                     })
             }
             Prompt::Unverified { why } => {
-                heading(ui, "Connect anyway?", address);
+                heading(ui, "Connect anyway?", address, status);
                 ui.label("This server could not be verified.");
                 ui.add_space(6.0);
                 ui.label(why);
                 yes_no(ui, "Continue", "Cancel", true).map(Answer::Trust)
             }
             Prompt::Question { title, text } => {
-                heading(ui, if title.is_empty() { "Question" } else { title }, address);
+                heading(ui, if title.is_empty() { "Question" } else { title }, address, status);
                 ui.label(text);
                 yes_no(ui, "Continue", "Cancel", true).map(Answer::Trust)
             }
@@ -189,8 +206,17 @@ pub fn show(ctx: &egui::Context, prompt: &Prompt, form: &mut Form, address: &str
                 signature,
                 catchphrase,
                 matching_address,
-            } => identity_prompt(ui, form, address, *identity, *encryption, signature, catchphrase, matching_address)
-                .map(|(accept, remember)| Answer::Security { accept, remember }),
+            } => identity_prompt(
+                ui,
+                form,
+                (address, status),
+                *identity,
+                *encryption,
+                signature,
+                catchphrase,
+                matching_address,
+            )
+            .map(|(accept, remember)| Answer::Security { accept, remember }),
             Prompt::Message {
                 text,
                 severity,
@@ -203,7 +229,7 @@ pub fn show(ctx: &egui::Context, prompt: &Prompt, form: &mut Form, address: &str
                     Severity::Warning => "Warning",
                     Severity::Error => "Error",
                 };
-                heading(ui, title, address);
+                heading(ui, title, address, status);
                 ui.label(text);
                 let confirm = if confirm_label.is_empty() {
                     "OK"
@@ -251,10 +277,14 @@ pub fn show(ctx: &egui::Context, prompt: &Prompt, form: &mut Form, address: &str
     None
 }
 
-fn heading(ui: &mut Ui, title: &str, address: &str) {
+/// The title, and under it the address and the connecting screen's status.
+fn heading(ui: &mut Ui, title: &str, address: &str, status: Option<&str>) {
     ui.heading(title);
     if !address.is_empty() {
         ui.label(RichText::new(address).weak());
+    }
+    if let Some(status) = status {
+        ui.label(status);
     }
     ui.add_space(8.0);
 }
@@ -267,14 +297,14 @@ fn heading(ui: &mut Ui, title: &str, address: &str) {
 fn identity_prompt(
     ui: &mut Ui,
     form: &mut Form,
-    address: &str,
+    (address, status): (&str, Option<&str>),
     identity: Identity,
     encryption: Encryption,
     signature: &str,
     catchphrase: &str,
     matching_address: &str,
 ) -> Option<(bool, bool)> {
-    heading(ui, "Connect anyway?", address);
+    heading(ui, "Connect anyway?", address, status);
     // OK, PRESHARED and ARD say nothing: this prompt is up because something
     // else about the connection is worth asking about.
     let why = match identity {
@@ -317,8 +347,8 @@ fn identity_prompt(
 
 /// Only the fields the scheme actually has: a scheme with no user name gets
 /// no box for one, since the answer would go nowhere.
-fn credentials(ui: &mut Ui, form: &mut Form, address: &str, needs_user: bool) -> Option<Answer> {
-    heading(ui, "Authentication", address);
+fn credentials(ui: &mut Ui, form: &mut Form, address: &str, status: Option<&str>, needs_user: bool) -> Option<Answer> {
+    heading(ui, "Authentication", address, status);
     let mut submit = false;
     if needs_user {
         ui.label("Username");
@@ -421,7 +451,7 @@ mod tests {
         let mut frame = |input, prompt: Option<&Prompt>| {
             let mut answered = None;
             let mut out = ctx.run_ui(input, |ui| {
-                answered = prompt.and_then(|p| show(ui.ctx(), p, &mut form, "far", ""));
+                answered = prompt.and_then(|p| show(ui.ctx(), p, &mut form, "far", None, ""));
             });
             out.textures_delta.clear();
             answered

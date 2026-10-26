@@ -730,6 +730,18 @@ public final class NativeBackend implements Backend {
         });
     }
 
+    /** The connecting screen's status line; null clears it. */
+    void onStatus(String text) {
+        if (text != null) {
+            Log.i(tag, "status: " + text);
+        }
+        main.post(() -> {
+            if (listener != null && !dead) {
+                listener.status(text);
+            }
+        });
+    }
+
     void onClipboard(String text) {
         if (text == null) {
             return;

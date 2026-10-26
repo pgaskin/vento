@@ -76,6 +76,19 @@
             android:textSize="14dp"
             tools:ignore="SpUsage" />
 
+        <!-- What the connection is waiting for, under the address it is
+             connecting to, in the same style: shown only while connecting,
+             and only when the backend says. -->
+        <TextView
+            android:id="@+id/status_line"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:textColor="@color/session_ink"
+            android:textSize="14dp"
+            android:visibility="gone"
+            tools:ignore="SpUsage" />
+
         <!-- The panel is as wide as the message, which is wider than the two
              buttons; without the gravity they sit under its start. -->
         <LinearLayout

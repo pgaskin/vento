@@ -21,7 +21,8 @@
 //! desktop's size, since rectangles of one size do not apply to the next.
 //!
 //! Events that describe current state (the cursor's shape, the pointer mode,
-//! the far end's clipboard, whether its sound is playing) are likewise kept
+//! the far end's clipboard, whether its sound is playing, the connecting
+//! screen's status) are likewise kept
 //! only as the latest unread one of each kind, so a window that stopped
 //! reading finds only a few events waiting, however long it stopped for.
 //!
@@ -232,6 +233,10 @@ pub enum Event {
     /// is playing. A window shows its sound switch from this, so a session
     /// whose far end sends no sound has none.
     Sound(Sound),
+    /// What the connection is waiting for while it connects, for a second
+    /// line on the connecting screen, or `None` to clear it. A window drops
+    /// it on `Connected` and `Closed`.
+    Status(Option<String>),
     /// Terminal, and the last event a session sends. `detail` is empty for a
     /// requested disconnect.
     Closed { detail: String },
@@ -249,7 +254,11 @@ impl Event {
     fn is_state(&self) -> bool {
         matches!(
             self,
-            Event::Cursor(_) | Event::PointerMode { .. } | Event::Clipboard(_) | Event::Sound(_)
+            Event::Cursor(_)
+                | Event::PointerMode { .. }
+                | Event::Clipboard(_)
+                | Event::Sound(_)
+                | Event::Status(_)
         )
     }
 }
@@ -346,7 +355,7 @@ impl Mailbox {
             let mut inner = self.inner.lock().unwrap();
             // Checked under the lock that queues `Closed`, or a sound checked
             // just before `Closed` arrived could be queued after it.
-            if matches!(event, Event::Sound(_)) && inner.state == State::Closed {
+            if matches!(event, Event::Sound(_) | Event::Status(_)) && inner.state == State::Closed {
                 return;
             }
             match &event {
@@ -546,6 +555,13 @@ impl Mailbox {
         self.push(Event::Clipboard(text.to_string()));
     }
 
+    /// The connecting screen's status; an empty text clears it, as `None`
+    /// does. Dropped once the session has closed, like a sound.
+    pub fn on_status(&self, text: Option<&str>) {
+        let text = text.filter(|t| !t.is_empty()).map(str::to_string);
+        self.push(Event::Status(text));
+    }
+
     pub fn on_credentials_needed(&self, needs_user: bool) {
         self.push(Event::CredentialsNeeded { needs_user });
     }
@@ -632,6 +648,10 @@ impl runtime::Callbacks for Feed {
 
     fn bell(&self) {
         self.0.on_bell();
+    }
+
+    fn status(&self, text: Option<&str>) {
+        self.0.on_status(text);
     }
 
     fn clipboard(&self, text: &str) {
@@ -859,6 +879,31 @@ mod tests {
             }
             assert_eq!(last, Some(Event::Closed { detail: String::new() }));
         }
+    }
+
+    #[test]
+    fn the_status_is_the_latest_unread_and_never_after_the_end() {
+        let mailbox = Mailbox::new(None);
+        let status = |text: &str| Event::Status(Some(text.to_string()));
+        mailbox.on_status(Some("first"));
+        mailbox.on_credentials_needed(false);
+        mailbox.on_status(Some("second"));
+        // An unread one is replaced, and the new one is queued in its place
+        // at the back.
+        assert_eq!(mailbox.take(), Some(Event::CredentialsNeeded { needs_user: false }));
+        assert_eq!(mailbox.take(), Some(status("second")));
+        // Read, so the next is queued as it comes; empty clears, as None.
+        mailbox.on_status(Some("third"));
+        assert_eq!(mailbox.take(), Some(status("third")));
+        mailbox.on_status(Some(""));
+        assert_eq!(mailbox.take(), Some(Event::Status(None)));
+        mailbox.on_status(Some("waiting"));
+        mailbox.on_closed("gone");
+        mailbox.on_status(None);
+        mailbox.on_status(Some("too late"));
+        assert_eq!(mailbox.take(), Some(status("waiting")));
+        assert_eq!(mailbox.take(), Some(Event::Closed { detail: "gone".into() }));
+        assert_eq!(mailbox.take(), None);
     }
 
     #[test]

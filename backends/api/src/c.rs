@@ -139,6 +139,12 @@ extern "C" fn cb_bell(user: *mut c_void) {
     unsafe { mailbox(user) }.on_bell();
 }
 
+/// NULL and "" both clear the status: `string` makes NULL empty, and the
+/// mailbox takes empty as `None`.
+extern "C" fn cb_status(user: *mut c_void, text: *const c_char) {
+    unsafe { mailbox(user) }.on_status(Some(&unsafe { string(text) }));
+}
+
 extern "C" fn cb_clipboard(user: *mut c_void, utf8: *const c_char) {
     unsafe { mailbox(user) }.on_clipboard(&unsafe { string(utf8) });
 }
@@ -224,6 +230,7 @@ fn callbacks(user: *mut c_void) -> ffi::vento_callbacks {
         security_needed: Some(cb_security_needed),
         message: Some(cb_message),
         closed: Some(cb_closed),
+        status: Some(cb_status),
     }
 }
 

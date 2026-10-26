@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 
 /// The dialog's width, its frame included, in points, where the window has
 /// room for it.
-const WIDTH: f32 = 520.0;
+pub const WIDTH: f32 = 520.0;
 
 /// Its least width, in a window too narrow for [`WIDTH`]: the connection
 /// panel's, which the window's minimum size is made for.

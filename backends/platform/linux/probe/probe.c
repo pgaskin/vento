@@ -138,6 +138,14 @@ static void cbBell(void *user) {
     say(user, "bell");
 }
 
+static void cbStatus(void *user, const char *text) {
+    if (text && text[0]) {
+        say(user, "status: %s", text);
+    } else {
+        say(user, "status cleared");
+    }
+}
+
 static void cbClipboard(void *user, const char *utf8) {
     say(user, "clipboard %zu bytes: \"%.60s\"%s", strlen(utf8), utf8,
         strlen(utf8) > 60 ? "..." : "");
@@ -484,6 +492,7 @@ int vento_probe_run(const vento_probe *o, vento_probe_create create, void *confi
             .security_needed = cbSecurityNeeded,
             .message = cbMessage,
             .closed = cbClosed,
+            .status = cbStatus,
     };
 
     say(&p, "create");
