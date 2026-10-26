@@ -77,7 +77,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalPosition;
 use winit::event::{DeviceEvent, DeviceId, ElementState, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, EventLoopProxy};
-use winit::window::{UserAttentionType, Window, WindowAttributes, WindowId};
+use winit::window::{Icon, UserAttentionType, Window, WindowAttributes, WindowId};
 
 /// A connection to open, as the command line or the dialog describes one.
 #[derive(Clone)]
@@ -428,6 +428,17 @@ fn min_size(style: &egui::Style) -> winit::dpi::LogicalSize<f32> {
     winit::dpi::LogicalSize::new(width.ceil(), MIN_HEIGHT)
 }
 
+/// The window icon, `metadata/icon.png` as `build.rs` decodes and scales it:
+/// square, 8-bit RGBA rows.
+const ICON: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon.rgba"));
+
+/// [`ICON`] as winit takes it. X11 shows it (`_NET_WM_ICON`); winit sets
+/// nothing on Wayland, where the compositor looks the icon up by app ID.
+fn window_icon() -> Icon {
+    let side = (ICON.len() / 4).isqrt() as u32;
+    Icon::from_rgba(ICON.to_vec(), side, side).expect("build.rs writes a square RGBA icon")
+}
+
 enum Screen {
     Dialog(Dialog),
     Session(Box<Session>),
@@ -658,9 +669,9 @@ impl App {
         window.request_redraw();
     }
 
-    /// Opens a window as `viewport`, with a surface on the shared device
-    /// (made now, for the first window, with the adapter chosen to suit its
-    /// surface).
+    /// Opens a window as `viewport`, with the window icon and a surface on
+    /// the shared device (made now, for the first window, with the adapter
+    /// chosen to suit its surface).
     fn add_window(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -668,7 +679,7 @@ impl App {
         viewport: ViewportId,
     ) -> Result<WindowId, String> {
         let window = event_loop
-            .create_window(attributes)
+            .create_window(attributes.with_window_icon(Some(window_icon())))
             .map_err(|e| format!("cannot create the window: {e}"))?;
         let window = Arc::new(window);
         let surface = match &self.gpu {
@@ -1775,6 +1786,12 @@ impl Gpu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_icon_is_128_square() {
+        assert_eq!(ICON.len(), 128 * 128 * 4);
+        window_icon();
+    }
 
     /// Which of `events` (`Some(true)` a press, `Some(false)` a release,
     /// `None` a move) each frame reads, given all at once.

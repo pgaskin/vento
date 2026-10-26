@@ -100,6 +100,9 @@ bytemuck = "1"
 # Runs `backends/CMakeLists.txt` with VENTO_SHARED on, which is how the C
 # backends are built; `build.rs` says where the libraries land.
 cmake = "0.1"
+# Decodes the window icon, `metadata/icon.png`, into the raw RGBA the binary
+# embeds (see `build.rs`).
+png = "0.18"
 
 [dev-dependencies]
 # For the test that every toolbar symbol is in the bundled font (icons.rs).

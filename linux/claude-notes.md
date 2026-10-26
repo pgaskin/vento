@@ -85,6 +85,11 @@ clients, and what differs between them is each client's own code.
   **`src/cli.rs`** — the command line's GNU-style splitting, the help text
   and the version shown, the formatting of the help's `backends:` section
   and of `--list`, and `--probe`'s spec, with tests.
+- **`metadata/icon.png`** — the window icon, a copy of the app's
+  (`app/fastlane/metadata/android/en-US/images/icon.png`, 512×512), which
+  `build.rs` decodes, scales to 112×112, rounds at the corners (radius 20%
+  of the side) and sets over a soft drop shadow in a 128×128 RGBA image for
+  `gui/mod.rs` to embed (see [Display servers](#display-servers)).
 
 ## Building and running
 
@@ -1517,6 +1522,15 @@ is chosen at run time rather than by a cfg: the keyboard shortcuts (Wayland's
 inhibitor, one per window, or X11's keyboard grab, one for the client, moved to
 whichever of its windows has the focus), the pointer capture, and the native
 cursor's alpha.
+
+Every window (the dialog's, a session's, a pop-out) is opened with the window
+icon. On X11 winit sets it as `_NET_WM_ICON`, one 128×128 image (64 KiB of
+property data a window; the 512×512 original would be 1 MiB), which the
+window manager and task switchers scale. On Wayland winit 0.30 sets no
+icon (it does not speak the staging `xdg_toplevel_icon_v1`), and the
+compositor looks one up by the window's app ID in a desktop file. The client sets no app ID (winit sets one only from
+`with_name`) and installs no desktop file, so a Wayland compositor shows its
+generic icon.
 
 The dependency choice: winit, egui-winit and egui-wgpu are driven directly
 rather than through eframe, because eframe wraps away the things this window
