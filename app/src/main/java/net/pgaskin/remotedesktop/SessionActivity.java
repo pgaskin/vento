@@ -32,6 +32,7 @@ import net.pgaskin.remotedesktop.backend.Backends;
 import net.pgaskin.remotedesktop.control.input.TapRegions;
 import net.pgaskin.remotedesktop.session.SessionView;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -163,6 +164,9 @@ public final class SessionActivity extends Activity
      * thread), so it also runs the two calls {@link #onStart} would have made.
      */
     private void start(String address, String backendId) {
+        if (awaitingMicrophone(connectionOptions(), () -> start(address, backendId))) {
+            return;
+        }
         try {
             session = openOrAttach(address);
         } catch (Throwable t) {
@@ -407,6 +411,25 @@ public final class SessionActivity extends Activity
                 : Sessions.keyForAddress(address);
     }
 
+    /** What the connection asks for, as saved or as given on the command line. */
+    private Map<String, String> connectionOptions() {
+        return connection != null ? Options.forConnection(this, connection) : optionsFromIntent();
+    }
+
+    /**
+     * The requested options, except that a microphone the phone has not been
+     * allowed to use is off: a refusal is a session without one, not no session.
+     */
+    private Map<String, String> sessionOptions() {
+        final Map<String, String> options = connectionOptions();
+        if (!microphoneWanted(options) || microphoneGranted()) {
+            return options;
+        }
+        final Map<String, String> without = new HashMap<>(options);
+        without.put(MICROPHONE_OPTION, "false");
+        return without;
+    }
+
     private Session openOrAttach(String address) {
         final Session live = Sessions.byKey(sessionKey(address));
         if (live != null && !live.isClosed()) {
@@ -416,8 +439,7 @@ public final class SessionActivity extends Activity
         // address from the command line gets the backend's settings plus the
         // options extra. The application context, because the backend outlives
         // this activity.
-        final Map<String, String> options = connection != null
-                ? Options.forConnection(this, connection) : optionsFromIntent();
+        final Map<String, String> options = sessionOptions();
         final Backend backend = Backends.create(getApplicationContext(), backendId(), address,
                 connection != null ? connection.userName() : getIntent().getStringExtra("user"),
                 connection != null ? connection.password()
@@ -445,6 +467,51 @@ public final class SessionActivity extends Activity
         if (session != null && address != null && !session.matches(
                 c != null ? Sessions.keyFor(c.id()) : Sessions.keyForAddress(address))) {
             recreate();
+        }
+    }
+
+    /** The backend option that sends the microphone, by the key the catalog gives it. */
+    private static final String MICROPHONE_OPTION = "Microphone";
+    private static final int REQUEST_MICROPHONE = 2;
+
+    /** Asked once per window, so a refusal does not come back on every connect. */
+    private boolean askedForMicrophone;
+    /** What to do once the microphone question has been answered. */
+    private Runnable afterMicrophone;
+
+    private boolean microphoneWanted(Map<String, String> options) {
+        return "true".equals(options.get(MICROPHONE_OPTION));
+    }
+
+    private boolean microphoneGranted() {
+        return checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED;
+    }
+
+    /**
+     * The capture device opens with the connection, so a connection that wants
+     * the microphone waits for the answer. Returns true when it is waiting, and
+     * then {@code then} runs once the answer is in, whichever it was.
+     */
+    private boolean awaitingMicrophone(Map<String, String> options, Runnable then) {
+        if (!microphoneWanted(options) || microphoneGranted() || askedForMicrophone) {
+            return false;
+        }
+        askedForMicrophone = true;
+        afterMicrophone = then;
+        requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO},
+                REQUEST_MICROPHONE);
+        return true;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_MICROPHONE && afterMicrophone != null) {
+            final Runnable then = afterMicrophone;
+            afterMicrophone = null;
+            then.run();
         }
     }
 

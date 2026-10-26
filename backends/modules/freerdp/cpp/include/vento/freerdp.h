@@ -32,6 +32,10 @@ typedef struct vento_freerdp_config {
     const char *graphics;    /* "gfx", "gfx-novideo", "rfx" or "bitmap" */
     const char *experience;  /* "full", "balanced" or "plain" */
     const char *sound;       /* "off", "local" or "remote"; see `audio` */
+    /* Send the near end's microphone (the audin channel, through the library's
+       OpenSL ES device, so Android only). The app checks RECORD_AUDIO first,
+       since the capture device cannot be opened without it. */
+    bool microphone;
     int scale;               /* 100, 140 or 180; anything else is taken as 100 */
     int width, height;       /* the desktop asked for, per monitor */
     int monitors;

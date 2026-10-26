@@ -159,6 +159,14 @@ pub static OPTIONS: &[Spec] = &[
         ],
     ),
     bool(
+        "Microphone",
+        "Microphone",
+        "Send this phone's microphone to the remote machine. Android asks for permission before connecting.",
+        false,
+        Scope::Connection,
+        false,
+    ),
+    bool(
         "Compression",
         "Compression",
         "Enable connection-level compression. Uses less bandwidth, but more CPU.",
@@ -193,6 +201,7 @@ mod tests {
                 "Graphics",
                 "Experience",
                 "Sound",
+                "Microphone",
                 "Compression",
                 "ViewOnly"
             ]

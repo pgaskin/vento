@@ -125,16 +125,21 @@ set(WITH_H264_EXTERNAL ON CACHE BOOL "" FORCE)
 # (it is built regardless of these options), and a session with sound off or
 # played on the remote machine uses it. None of the sound libraries the others
 # would link (PulseAudio and the fifteen libraries behind it, ALSA, OSS, sndio,
-# OpenSL ES, AAudio) is looked for. The microphone channel's devices go with
-# them, which loses nothing: the channel is built but never loaded.
+# OpenSL ES, AAudio) is looked for, except OpenSL ES on Android, which is the
+# microphone's: the library has no capture device of ours, and the channel
+# only loads (and the device only opens) when the session asks for the
+# microphone. Its playback device is built with it but never named, so sound
+# still goes through ours.
 #
 # AAC and Opus from the server are decoded by the platform's decoders in the
 # same table, so the library's DSP only handles PCM and is built without
 # FFmpeg (`WITH_DSP_FFMPEG`) on both platforms: the device claims those formats
 # itself and receives the packets unchanged.
-foreach(off WITH_PULSE WITH_ALSA WITH_OSS WITH_SNDIO WITH_OPENSLES WITH_AAUDIO WITH_DSP_FFMPEG)
+foreach(off WITH_PULSE WITH_ALSA WITH_OSS WITH_SNDIO WITH_AAUDIO WITH_DSP_FFMPEG)
     set(${off} OFF CACHE BOOL "" FORCE)
 endforeach()
+
+set(WITH_OPENSLES ${ANDROID} CACHE BOOL "" FORCE)
 
 if(ANDROID)
     # No FFmpeg on Android, so the codec libraries are turned off explicitly.

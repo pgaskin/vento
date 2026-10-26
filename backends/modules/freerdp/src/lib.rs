@@ -111,6 +111,7 @@ fn create(c: &Connect) -> Result<std::sync::Arc<dyn Backend>, String> {
         graphics: graphics.as_ptr(),
         experience: experience.as_ptr(),
         sound: sound.as_ptr(),
+        microphone: o.bool("Microphone"),
         scale: scale(o),
         width: width as i32,
         height: height as i32,
