@@ -251,10 +251,14 @@ fn main() {
         .compile("vento_video");
     // libavcodec and its dependencies, in static link order, from its own
     // pkg-config file: dav1d and libavutil after it, the libva shim after
-    // that, and the system's libm, libdl and threads. (Not libatomic, which
-    // FFmpeg's configure added wherever it was installed until
-    // patches/ffmpeg/0001.)
+    // that, and the system's libm, libdl and threads. Not libatomic: FFmpeg's
+    // configure names it wherever it is installed, needed or not, and on
+    // the targets built here (native atomics) nothing is taken from it. The
+    // C backends' CMake link of the same libraries does not name it either.
     for lib in static_libs(&prefix, "libavcodec") {
+        if lib == "atomic" {
+            continue;
+        }
         if prefix.join("lib").join(format!("lib{lib}.a")).is_file() {
             println!("cargo:rustc-link-lib=static={lib}");
         } else {

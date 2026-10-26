@@ -55,8 +55,9 @@ builds for every desktop decoder (the Rust ones, which TigerVNC's and
 FreeRDP's H.264 and FreeRDP's AAC and Opus sound go through too, and
 FreeRDP's scaling, which links libswscale alone), each pinned at a release
 tag. FFmpeg moves
-to a newer release's tag with `patches/ffmpeg/` rebased onto it; the decoders it
-is configured with are `DECODERS` and `HWACCELS` in that build script, so a
+to a newer release's tag, unpatched (its configure names libatomic wherever it
+is installed, and that build script leaves it out of the link); the decoders
+it is configured with are `DECODERS` and `HWACCELS` in that build script, so a
 consumer that starts using another codec adds it there. Proven by the desktop
 crate's fixture tests (`tests/decode.rs` for the video, `tests/sound.rs` for
 AAC and Opus), the RustDesk probe with each codec, the TigerVNC H.264 and

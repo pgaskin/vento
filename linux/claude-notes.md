@@ -314,10 +314,10 @@ instance of it made with fontTools (unfilled, weight 400, grade 0, optical
 size 24; `src/gui/icons.rs` has the command), 1.4 MB of the binary. FFmpeg is
 linked statically into the binary and the TigerVNC and FreeRDP libraries, as
 configured LGPL 2.1 or later (no `--enable-gpl`, no `--enable-nonfree`;
-`third_party/ffmpeg/COPYING.LGPLv2.1`), with one patch of ours to its
-configure (`patches/ffmpeg/`); dav1d, inside it, is BSD-2-Clause
-(`third_party/dav1d/COPYING`). FFmpeg is compiled against libva's headers,
-which are MIT (`third_party/libva/COPYING`), and the libva shim is ours;
+`third_party/ffmpeg/COPYING.LGPLv2.1`), unmodified; dav1d, inside it, is
+BSD-2-Clause (`third_party/dav1d/COPYING`). FFmpeg is compiled against
+libva's headers, which are MIT (`third_party/libva/COPYING`), and the libva
+shim is ours;
 libva is not linked. libjpeg-turbo is linked statically into the libvnc and
 TigerVNC libraries (the IJG License, with the Modified BSD and zlib licences
 for parts of it: `third_party/libjpeg-turbo/LICENSE.md`; its TurboJPEG API,
