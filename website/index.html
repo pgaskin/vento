@@ -161,7 +161,7 @@
     .platform div {
       flex: 1 1 16rem;
     }
-    .platform h2 {
+    .platform :is(h2, h3) {
       font-size: .875rem;
       color: var(--fg);
     }
@@ -236,9 +236,8 @@
       grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
     }
     .backend {
-      padding: 1.25rem 1.375rem 1.375rem;
-      border: 1px solid var(--line);
-      border-radius: .875rem;
+      padding: 1rem 1.25rem 1.125rem;
+      border-radius: .625rem;
       background: var(--surface);
     }
     .backend h3 {
@@ -263,26 +262,26 @@
       font-size: .9375rem;
       line-height: 1.55;
     }
-    .addon {
-      margin-top: clamp(1.75rem, 4vw, 2.5rem);
-      padding-top: clamp(1.75rem, 4vw, 2.5rem);
-      border-top: 1px solid var(--line);
+    .platform.addon {
+      max-width: 48rem;
+      padding: 1rem 1rem 1rem 1.25rem;
+    }
+    .backends+.addon {
+      margin-top: clamp(2.75rem, 6vw, 3.5rem);
+    }
+    .addon+.addon {
+      margin-top: 1rem;
     }
     .addon h3 {
       font-size: 1.0625rem;
       font-weight: 700;
-      color: var(--accent-dim);
     }
     .addon p {
-      margin: .625rem 0 0;
-      max-width: 62ch;
-      color: var(--muted);
+      margin-top: .25rem;
       font-size: .9375rem;
       line-height: 1.55;
     }
     .addon .btn {
-      margin-top: 1.25rem;
-      padding: .6em 1.25em;
       font-size: .9375rem;
     }
     .shots {
@@ -662,21 +661,25 @@
             </p>
           </div>
         </div>
-        <div class="addon">
-          <h3>RealVNC plugin</h3>
-          <p>
-            The RealVNC backend is a separate APK since RealVNC's client library
-            is proprietary and can't be redistributed. The standalone plugin
-            does not contain the client library either, and you will need to
-            provide a RealVNC APK (e.g., from APKMirror) to use it.
-          </p>
+        <div class="platform addon">
+          <div>
+            <h3>RealVNC plugin</h3>
+            <p>
+              The RealVNC backend is a separate APK since RealVNC's client library
+              is proprietary and can't be redistributed. The standalone plugin
+              does not contain the client library either, and you will need to
+              provide a RealVNC APK (e.g., from APKMirror) to use it.
+            </p>
+          </div>
           <a class="btn btn-ghost" href="https://github.com/pgaskin/vento/releases/latest/download/vento-rvnc.apk">Download</a>
         </div>
-        <div class="addon">
-          <h3>RustDesk plugin</h3>
-          <p>
-            The RustDesk backend is also available as separate APK.
-          </p>
+        <div class="platform addon">
+          <div>
+            <h3>RustDesk plugin</h3>
+            <p>
+              The RustDesk backend is also available as separate APK.
+            </p>
+          </div>
           <a class="btn btn-ghost" href="https://github.com/pgaskin/vento/releases/latest/download/vento-rustdesk.apk">Download</a>
         </div>
       </div>
