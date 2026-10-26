@@ -53,6 +53,12 @@ jobs:
               if (!fs.existsSync(`plugins/${name}/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`)) fail(`missing changelog for the ${name} plugin's versionCode ${versionCode}`)
               if (!assets[name]) fail(`the ${name} plugin has no release asset name`)
             }
+            const linuxVersion = fs.readFileSync('linux/Cargo.toml', 'utf8').match(/^version = "([^"]+)"/m)?.[1]
+            if (!linuxVersion) fail('missing version in linux/Cargo.toml')
+            else if (linuxVersion !== `0.0.${versionCode}`) fail(`linux/Cargo.toml's version (${linuxVersion}) does not match versionCode (${versionCode}), expected 0.0.${versionCode}`)
+            const linuxLockVersion = fs.readFileSync('linux/Cargo.lock', 'utf8').match(/^name = "vento"\nversion = "([^"]+)"/m)?.[1]
+            if (!linuxLockVersion) fail('missing vento package in linux/Cargo.lock')
+            else if (linuxLockVersion !== linuxVersion) fail(`linux/Cargo.lock's vento version (${linuxLockVersion}) does not match linux/Cargo.toml's (${linuxVersion})`)
             core.setOutput('name', versionName)
             core.setOutput('code', versionCode)
             core.setOutput('tag', tag)
@@ -121,6 +127,11 @@ jobs:
           check plugins/realvnc/build/outputs/apk/release/realvnc-release-unsigned.apk vento-rvnc.apk
           check plugins/rustdesk/build/outputs/apk/release/rustdesk-release-unsigned.apk vento-rustdesk.apk
 
+      - run: git -C third_party/mcpelauncher-linker submodule update --init --depth 1 # for realvnc's host half
+      - run: docker build -f linux/Dockerfile --output type=local,dest=dist/vento .
+      - run: test "$(dist/vento/vento --version)" = "vento v${{ steps.version.outputs.name }}"
+      - run: tar -C dist --sort=name --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w -czf "vento-v${{ steps.version.outputs.name }}-x86_64-linux-gnu.tar.gz" vento
+
       - name: Create release
         id: create-release
         if: github.event_name != 'workflow_dispatch'
@@ -140,7 +151,7 @@ jobs:
               draft: true,
             })
             core.setOutput('id', id)
-      - name: Upload release asset
+      - name: Upload Android release assets
         if: github.event_name != 'workflow_dispatch'
         uses: actions/github-script@v9
         with:
@@ -155,3 +166,18 @@ jobs:
                 name: name,
               })
             }
+      - name: Upload Linux release assets
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/github-script@v9
+        with:
+          retries: 3
+          script: |
+            const versionName = ${{ toJSON(steps.version.outputs.name) }}
+            const name = `vento-v${versionName}-x86_64-linux-gnu.tar.gz`
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ toJSON(steps.create-release.outputs.id) }},
+              data: require('fs').readFileSync(name),
+              name: name,
+            })
