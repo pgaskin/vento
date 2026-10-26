@@ -1,4 +1,4 @@
-From b866783df45099a0d88945786aa4fda72e8546bb Mon Sep 17 00:00:00 2001
+From 1f9c3b2cefd105927bd5daf3b56c3bb4845abd1b Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Thu, 15 Oct 2026 13:55:39 -0400
 Subject: [PATCH 4/7] wayland: keep the custom cursor's buffer when it is set
@@ -21,12 +21,12 @@ previous cursor stays.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 diff --git a/src/changelog/unreleased.md b/src/changelog/unreleased.md
-index 9a60855..aa9e18c 100644
+index 58e7313..328c351 100644
 --- a/src/changelog/unreleased.md
 +++ b/src/changelog/unreleased.md
 @@ -48,3 +48,4 @@ changelog entry.
  
- - On X11, fix a wheel that arrives as button presses (XTEST, Xvnc, xrdp) scrolling twice per notch.
+ - On X11, mouse scroll button events no longer cause duplicated `WindowEvent::MouseWheel` events.
  - On X11, fix a panic in `Window::inner_size` and other getters when another client destroyed the window.
 +- On Wayland, fix `Window::set_cursor` copying a custom cursor into a new buffer when it is already the window's cursor, and panicking when the buffer could not be allocated.
 diff --git a/src/platform_impl/linux/wayland/types/cursor.rs b/src/platform_impl/linux/wayland/types/cursor.rs

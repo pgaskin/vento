@@ -1,4 +1,4 @@
-From 2c6341fb89fcfd33e8f41a852d69c08c697cd043 Mon Sep 17 00:00:00 2001
+From 8f87d4a76e7a95c133a40666bc38a727246b0d68 Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Fri, 16 Oct 2026 03:35:18 -0400
 Subject: [PATCH 6/7] x11: list RandR 1.5 monitors, not CRTCs
@@ -33,7 +33,7 @@ of a size, so that a monitor's own size gives its scale factor.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 diff --git a/src/changelog/unreleased.md b/src/changelog/unreleased.md
-index 57cd023..4e19539 100644
+index 9b1f363..f5e747b 100644
 --- a/src/changelog/unreleased.md
 +++ b/src/changelog/unreleased.md
 @@ -50,3 +50,4 @@ changelog entry.

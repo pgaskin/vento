@@ -1,4 +1,4 @@
-From 870108d04887dbb49fd2835e0147c37c492887a3 Mon Sep 17 00:00:00 2001
+From fd57daf24412df20c6eeb89ef802ecd73436b069 Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Fri, 16 Oct 2026 03:36:48 -0400
 Subject: [PATCH 7/7] x11: list the monitors again when xrandr --setmonitor
@@ -22,7 +22,7 @@ look at the list then finds nothing changed.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 diff --git a/src/changelog/unreleased.md b/src/changelog/unreleased.md
-index 4e19539..dec232a 100644
+index f5e747b..c35b2ec 100644
 --- a/src/changelog/unreleased.md
 +++ b/src/changelog/unreleased.md
 @@ -51,3 +51,4 @@ changelog entry.
@@ -31,7 +31,7 @@ index 4e19539..dec232a 100644
  - On X11, list the RandR 1.5 monitors (those of `xrandr --listmonitors`, which the window manager goes by) where the server has them, rather than one per CRTC, so that `Fullscreen::Borderless` reaches each monitor of a screen split with `xrandr --setmonitor`.
 +- On X11, list the monitors again when `xrandr --setmonitor` or `--delmonitor` changes them, which the server says with a `ConfigureNotify` on the root window and no RandR event.
 diff --git a/src/platform_impl/linux/x11/event_processor.rs b/src/platform_impl/linux/x11/event_processor.rs
-index bec52dc..3206d07 100644
+index 43cf288..7d6ba0a 100644
 --- a/src/platform_impl/linux/x11/event_processor.rs
 +++ b/src/platform_impl/linux/x11/event_processor.rs
 @@ -617,6 +617,12 @@ impl EventProcessor {

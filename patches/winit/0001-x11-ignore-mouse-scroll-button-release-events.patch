@@ -1,24 +1,16 @@
-From a04878021064da6130538845da928d29a366e629 Mon Sep 17 00:00:00 2001
-From: "Claude Opus 5.5" <noreply@anthropic.com>
-Date: Wed, 14 Oct 2026 23:53:39 -0400
-Subject: [PATCH 1/7] x11: a wheel notch that arrives as buttons is one notch
+From 4f4e28a2585666f41ff10018d428110333497a2e Mon Sep 17 00:00:00 2001
+From: Pavel Strakhov <ri@idzaaus.org>
+Date: Fri, 24 Oct 2025 12:07:10 +0100
+Subject: [PATCH 1/7] x11: ignore mouse scroll button release events
 
-XInput2 reports a wheel without smooth-scroll valuators as a press and
-a release of buttons 4 to 7 for every notch, and xinput2_button_input
-turned both into a MouseWheel, so every notch scrolled twice. A real
-wheel under libinput does not show it, since its buttons come flagged
-XIPointerEmulated and are dropped above; the wheels that do arrive as
-plain buttons are XTEST's (xdotool click 5) and those of the X servers
-behind VNC and RDP sessions (Xvnc, xrdp), which have no valuators to
-give.
+(cherry picked from commit 03dad26c43f91cf4c985fb0a7dafa8f3ef48b746)
 
-Only the press is a notch now, and the release is dropped, as the
-0.31 X11 backend does.
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Paths adjusted for v0.30.x: winit-x11/src/event_processor.rs is
+src/platform_impl/linux/x11/event_processor.rs there, and the changelog
+entry goes in src/changelog/unreleased.md under a new "Fixed" heading.
 
 diff --git a/src/changelog/unreleased.md b/src/changelog/unreleased.md
-index f3a0f6d..9f1e1b5 100644
+index f3a0f6d..b4e3827 100644
 --- a/src/changelog/unreleased.md
 +++ b/src/changelog/unreleased.md
 @@ -39,3 +39,7 @@ The migration guide could reference other migration examples in the current
@@ -28,12 +20,12 @@ index f3a0f6d..9f1e1b5 100644
 +
 +### Fixed
 +
-+- On X11, fix a wheel that arrives as button presses (XTEST, Xvnc, xrdp) scrolling twice per notch.
++- On X11, mouse scroll button events no longer cause duplicated `WindowEvent::MouseWheel` events.
 diff --git a/src/platform_impl/linux/x11/event_processor.rs b/src/platform_impl/linux/x11/event_processor.rs
-index 79f5c11..3c8d352 100644
+index 79f5c11..7cda6f4 100644
 --- a/src/platform_impl/linux/x11/event_processor.rs
 +++ b/src/platform_impl/linux/x11/event_processor.rs
-@@ -1080,16 +1080,24 @@ impl EventProcessor {
+@@ -1080,16 +1080,19 @@ impl EventProcessor {
              // those. In practice, even clicky scroll wheels appear to be reported by
              // evdev (and XInput2 in turn) as axis motion, so we don't otherwise
              // special-case these button presses.
@@ -45,11 +37,6 @@ index 79f5c11..3c8d352 100644
 -                    6 => MouseScrollDelta::LineDelta(1.0, 0.0),
 -                    7 => MouseScrollDelta::LineDelta(-1.0, 0.0),
 -                    _ => unreachable!(),
-+            //
-+            // A wheel button is pressed and released for every notch, so only the press is a
-+            // notch: one that went on both, as this did, scrolled twice as far as the wheel
-+            // was turned for every wheel that does arrive as buttons (XTEST, and the X servers
-+            // of VNC and RDP sessions, which have no valuators to give).
 +            4..=7 => match state {
 +                ElementState::Pressed => WindowEvent::MouseWheel {
 +                    device_id,

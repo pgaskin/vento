@@ -1677,8 +1677,8 @@ handles.
 - **A wheel notch is one notch.** A wheel without smooth-scroll valuators
   comes as a press and a release of buttons 4–7 per notch, and winit 0.30
   made a wheel event of both, so each notch went to the far end twice; it
-  makes one of the press only with `patches/winit/0001`, as winit's next
-  X11 backend does. A real wheel under libinput was not affected (its
+  makes one of the press only with `patches/winit/0001`, upstream's
+  03dad26c from the 0.31 X11 backend cherry-picked onto 0.30. A real wheel under libinput was not affected (its
   buttons are flagged emulated and dropped, the valuators read instead);
   XTEST's were, and those of an X server that is itself a remote session
   (Xvnc, xrdp). On the rig, `xdotool click 5` three times and `click 4`

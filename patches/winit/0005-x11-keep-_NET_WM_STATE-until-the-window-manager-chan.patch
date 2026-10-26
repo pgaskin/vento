@@ -1,4 +1,4 @@
-From aa34a4b4496b5103abf362fa95343b2669c0baf6 Mon Sep 17 00:00:00 2001
+From 087f4707c60daf52a53d767db552da7d026fc83e Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Thu, 15 Oct 2026 13:59:27 -0400
 Subject: [PATCH 5/7] x11: keep _NET_WM_STATE until the window manager changes
@@ -22,16 +22,16 @@ from events.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 diff --git a/src/changelog/unreleased.md b/src/changelog/unreleased.md
-index aa9e18c..57cd023 100644
+index 328c351..9b1f363 100644
 --- a/src/changelog/unreleased.md
 +++ b/src/changelog/unreleased.md
 @@ -49,3 +49,4 @@ changelog entry.
- - On X11, fix a wheel that arrives as button presses (XTEST, Xvnc, xrdp) scrolling twice per notch.
+ - On X11, mouse scroll button events no longer cause duplicated `WindowEvent::MouseWheel` events.
  - On X11, fix a panic in `Window::inner_size` and other getters when another client destroyed the window.
  - On Wayland, fix `Window::set_cursor` copying a custom cursor into a new buffer when it is already the window's cursor, and panicking when the buffer could not be allocated.
 +- On X11, `Window::is_minimized` and `Window::is_maximized` no longer make a round trip to the X server on every call; `_NET_WM_STATE` is kept until a `PropertyNotify` says it changed.
 diff --git a/src/platform_impl/linux/x11/event_processor.rs b/src/platform_impl/linux/x11/event_processor.rs
-index 3c8d352..bec52dc 100644
+index 7cda6f4..43cf288 100644
 --- a/src/platform_impl/linux/x11/event_processor.rs
 +++ b/src/platform_impl/linux/x11/event_processor.rs
 @@ -857,6 +857,10 @@ impl EventProcessor {

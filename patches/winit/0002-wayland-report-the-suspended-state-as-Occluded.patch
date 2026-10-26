@@ -1,4 +1,4 @@
-From 3f04797391ad3baefc8122b6d4f384030ec63409 Mon Sep 17 00:00:00 2001
+From b20b92a08da1c914fc6d2c491e25c39885fb17cd Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Thu, 15 Oct 2026 13:39:09 -0400
 Subject: [PATCH 2/7] wayland: report the suspended state as Occluded
@@ -20,7 +20,7 @@ that does not send the state never occludes the window, as before.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 diff --git a/src/changelog/unreleased.md b/src/changelog/unreleased.md
-index 9f1e1b5..33caa05 100644
+index b4e3827..dc63bc3 100644
 --- a/src/changelog/unreleased.md
 +++ b/src/changelog/unreleased.md
 @@ -40,6 +40,10 @@ changelog entry.
@@ -33,7 +33,7 @@ index 9f1e1b5..33caa05 100644
 +
  ### Fixed
  
- - On X11, fix a wheel that arrives as button presses (XTEST, Xvnc, xrdp) scrolling twice per notch.
+ - On X11, mouse scroll button events no longer cause duplicated `WindowEvent::MouseWheel` events.
 diff --git a/src/event.rs b/src/event.rs
 index 4e01420..a416674 100644
 --- a/src/event.rs

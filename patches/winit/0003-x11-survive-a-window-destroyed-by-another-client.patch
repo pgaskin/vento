@@ -1,4 +1,4 @@
-From 994e0718fe5443487c72d16d4e20e642f6da29ee Mon Sep 17 00:00:00 2001
+From 9e79596e3421b13e44b202e77ef290c6085e494f Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Thu, 15 Oct 2026 13:46:45 -0400
 Subject: [PATCH 3/7] x11: survive a window destroyed by another client
@@ -23,13 +23,13 @@ Destroyed that follows is unchanged.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 diff --git a/src/changelog/unreleased.md b/src/changelog/unreleased.md
-index 33caa05..9a60855 100644
+index dc63bc3..58e7313 100644
 --- a/src/changelog/unreleased.md
 +++ b/src/changelog/unreleased.md
 @@ -47,3 +47,4 @@ changelog entry.
  ### Fixed
  
- - On X11, fix a wheel that arrives as button presses (XTEST, Xvnc, xrdp) scrolling twice per notch.
+ - On X11, mouse scroll button events no longer cause duplicated `WindowEvent::MouseWheel` events.
 +- On X11, fix a panic in `Window::inner_size` and other getters when another client destroyed the window.
 diff --git a/src/platform_impl/linux/x11/util/geometry.rs b/src/platform_impl/linux/x11/util/geometry.rs
 index 63ec564..77016e0 100644
