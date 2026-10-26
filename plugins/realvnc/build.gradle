@@ -21,8 +21,8 @@ android {
         // Checked for equality against the app's before this APK's dex is
         // loaded: the `:backends` interfaces the two share have no stability
         // guarantee across releases, so they ship together.
-        versionCode 6
-        versionName "6"
+        versionCode 7
+        versionName "7"
 
         // Where the build of this add-on for another version of the app is, and
         // the key the file there is signed with: meta-data in this APK's

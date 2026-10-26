@@ -27,8 +27,8 @@ android {
         // Checked for equality against the app's before this APK's dex is
         // loaded: the interface between the two is a set of Java interfaces
         // with no stability guarantee between releases, so they ship together.
-        versionCode 6
-        versionName "6"
+        versionCode 7
+        versionName "7"
 
         // Where to find the build of this add-on for another version of the
         // app, and the certificate that file is signed with: meta-data in this

@@ -1,0 +1,8 @@
+* Update protocol to RustDesk 1.5.0.
+* Support RustDesk 1.5.0's new key exchange mechanism.
+* Support audio playback.
+* Show hint in password prompt when waiting for the remote user to accept the connection.
+* Support IPv6 rendezvous and relay servers.
+* Fix VP9 and AV1 colours.
+* Improve cursor image caching.
+* Various minor improvements, optimizations, and bugfixes.

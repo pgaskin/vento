@@ -5030,7 +5030,7 @@ dependencies = [
 
 [[package]]
 name = "vento"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "ash",
  "bytemuck",

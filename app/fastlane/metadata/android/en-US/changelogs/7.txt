@@ -1,0 +1,18 @@
+* Reduce audio latency.
+* Add audio toggle to panel.
+* Improve connection status messages.
+* Show the audio format and whether video is decoded in hardware in the info panel.
+* Various minor improvements, optimizations, and bugfixes.
+* SPICE: Support audio playback.
+* SPICE: Support the back and forward mouse buttons.
+* LibVNC/TigerVNC: Ask about trusted certificates with valid signatures too.
+* FreeRDP/IronRDP: Fix logging in with a Microsoft account email.
+* FreeRDP: Support AAC and Opus audio.
+* IronRDP: Add experimental EGFX support.
+* IronRDP: Support audio playback.
+* TigerVNC: Update to ed951a41.
+* FreeRDP: Update to 3.32.2.
+* FreeRDP: Update OpenSSL to 3.5.9.
+* IronRDP: Update to e899a826.
+* IronRDP: Update sspi to 0.23.0.
+* SPICE: Update ryll to 0.3.0.

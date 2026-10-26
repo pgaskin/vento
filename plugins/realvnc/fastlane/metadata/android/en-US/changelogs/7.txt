@@ -1,0 +1,2 @@
+* Make logs less noisy.
+* Improve connection progress message layout.

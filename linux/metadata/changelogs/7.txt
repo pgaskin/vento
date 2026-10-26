@@ -1,0 +1,9 @@
+* Initial release.
+* Native X11 and Wayland support including keyboard grabbing, cursor, clipboard, window management, etc.
+* Audio (PipeWire, ALSA).
+* Optional hardware video decoding (VAAPI).
+* Command-line connection options.
+* Self-contained release builds (only needs glibc).
+* Fit, fill, and auto scaling, plus dynamic resolution support.
+* Multi-monitor pop-out windows.
+* Supports all backends.
