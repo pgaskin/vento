@@ -7,18 +7,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    environment:
-      name: release
-      deployment: false
+  version:
+    name: Version
     runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.version.outputs.name }}
+      code: ${{ steps.version.outputs.code }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          submodules: true
 
       - name: Check version
         id: version
@@ -63,6 +63,34 @@ jobs:
             core.setOutput('code', versionCode)
             core.setOutput('tag', tag)
 
+  linux:
+    name: Linux
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - run: git -C third_party/mcpelauncher-linker submodule update --init --depth 1 # for realvnc's host half
+      - run: docker build -f linux/Dockerfile --output type=local,dest=dist/vento .
+      - run: test "$(dist/vento/vento --version)" = "vento v${{ needs.version.outputs.name }}"
+      - run: tar -C dist --sort=name --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w -czf "vento-v${{ needs.version.outputs.name }}-x86_64-linux-gnu.tar.gz" vento
+      - uses: actions/upload-artifact@v7
+        with:
+          path: vento-v${{ needs.version.outputs.name }}-x86_64-linux-gnu.tar.gz
+          archive: false
+          retention-days: 1
+          if-no-files-found: error
+
+  android:
+    name: Android
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
       - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
@@ -77,6 +105,92 @@ jobs:
       - run: rustup toolchain install # install the toolchain pinned by rust-toolchain.toml
       - run: cargo install cargo-ndk@4.1.2
       - run: ./gradlew :app:assembleRelease :plugins:realvnc:assembleRelease :plugins:rustdesk:assembleRelease
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-release-unsigned
+          path: |
+            app/build/outputs/apk/release/app-release-unsigned.apk
+            plugins/realvnc/build/outputs/apk/release/realvnc-release-unsigned.apk
+            plugins/rustdesk/build/outputs/apk/release/rustdesk-release-unsigned.apk
+          retention-days: 1
+          if-no-files-found: error
+
+  android-rebuild:
+    name: Android (rebuild)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          # must match app/build.gradle's Java toolchain and F-Droid's
+          # buildserver JDK: javac's lambda naming (and thus the dex) differs
+          # between JDK <=21 and 22+, so a mismatch breaks reproducibility.
+          java-version: '21'
+          cache: gradle
+      - run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses; ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager 'cmake;3.30.5' 'ndk;28.2.13676358' 'build-tools;36.0.0'
+      - run: ./patch.sh -n
+      - run: ./gradlew :backends:fetchCryptoSources
+      - run: rustup toolchain install # install the toolchain pinned by rust-toolchain.toml
+      - run: cargo install cargo-ndk@4.1.2
+      - name: Rebuild at a different path
+        # Rebuild from a copy at a different absolute path (a reproducible build
+        # must not depend on the checkout location). The release job compares
+        # it with the android job's build.
+        run: |
+          set -euo pipefail
+          rebuild=/tmp/vento-rebuild-at-a-different-path
+          rsync -a --delete \
+            --exclude='/target/' \
+            --exclude='build/' \
+            --exclude='.cxx/' \
+            --exclude='.gradle/' \
+            ./ "$rebuild/"
+          ( cd "$rebuild" && ./gradlew --no-daemon :app:assembleRelease :plugins:realvnc:assembleRelease :plugins:rustdesk:assembleRelease )
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-release-unsigned-rebuild
+          path: |
+            /tmp/vento-rebuild-at-a-different-path/app/build/outputs/apk/release/app-release-unsigned.apk
+            /tmp/vento-rebuild-at-a-different-path/plugins/realvnc/build/outputs/apk/release/realvnc-release-unsigned.apk
+            /tmp/vento-rebuild-at-a-different-path/plugins/rustdesk/build/outputs/apk/release/rustdesk-release-unsigned.apk
+          retention-days: 1
+          if-no-files-found: error
+
+  release:
+    environment:
+      name: release
+      deployment: false
+    needs: [version, linux, android, android-rebuild]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: android-release-unsigned
+      - uses: actions/download-artifact@v8
+        with:
+          name: android-release-unsigned-rebuild
+          path: rebuild
+      - uses: actions/download-artifact@v8
+        with:
+          name: vento-v${{ needs.version.outputs.name }}-x86_64-linux-gnu.tar.gz
+      - run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses; ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager 'build-tools;36.0.0'
+
+      - name: Verify reproducible build
+        run: |
+          set -euo pipefail
+          for apk in app/build/outputs/apk/release/app-release-unsigned.apk \
+                     plugins/realvnc/build/outputs/apk/release/realvnc-release-unsigned.apk \
+                     plugins/rustdesk/build/outputs/apk/release/rustdesk-release-unsigned.apk; do
+            go run scripts/check-reproducible.go "$apk" "rebuild/$apk"
+          done
 
       - name: Write keystore
         run: echo "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
@@ -102,35 +216,12 @@ jobs:
           $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs vento-rvnc.apk
           $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs vento-rustdesk.apk
 
-      - name: Verify reproducible build
-        # Rebuild from a copy at a different absolute path (a reproducible build
-        # must not depend on the checkout location), then confirm both the two
-        # independent unsigned builds and the signed APK we're about to publish
-        # reproduce.
+      - name: Verify reproducible signed APKs
         run: |
           set -euo pipefail
-          rebuild=/tmp/vento-rebuild-at-a-different-path
-          rsync -a --delete \
-            --exclude='/target/' \
-            --exclude='build/' \
-            --exclude='.cxx/' \
-            --exclude='.gradle/' \
-            ./ "$rebuild/"
-          ( cd "$rebuild" && ./gradlew --no-daemon :app:assembleRelease :plugins:realvnc:assembleRelease :plugins:rustdesk:assembleRelease )
-          check() {
-            # the two independent builds must be bit-for-bit identical
-            go run scripts/check-reproducible.go "$1" "$rebuild/$1"
-            # the signed APK must reproduce from that build (differing only in the signature)
-            go run scripts/check-reproducible.go "$2" "$rebuild/$1"
-          }
-          check app/build/outputs/apk/release/app-release-unsigned.apk Vento.apk
-          check plugins/realvnc/build/outputs/apk/release/realvnc-release-unsigned.apk vento-rvnc.apk
-          check plugins/rustdesk/build/outputs/apk/release/rustdesk-release-unsigned.apk vento-rustdesk.apk
-
-      - run: git -C third_party/mcpelauncher-linker submodule update --init --depth 1 # for realvnc's host half
-      - run: docker build -f linux/Dockerfile --output type=local,dest=dist/vento .
-      - run: test "$(dist/vento/vento --version)" = "vento v${{ steps.version.outputs.name }}"
-      - run: tar -C dist --sort=name --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w -czf "vento-v${{ steps.version.outputs.name }}-x86_64-linux-gnu.tar.gz" vento
+          go run scripts/check-reproducible.go Vento.apk rebuild/app/build/outputs/apk/release/app-release-unsigned.apk
+          go run scripts/check-reproducible.go vento-rvnc.apk rebuild/plugins/realvnc/build/outputs/apk/release/realvnc-release-unsigned.apk
+          go run scripts/check-reproducible.go vento-rustdesk.apk rebuild/plugins/rustdesk/build/outputs/apk/release/rustdesk-release-unsigned.apk
 
       - name: Create release
         id: create-release
@@ -139,8 +230,8 @@ jobs:
         with:
           retries: 3
           script: |
-            const tag = ${{ toJSON(steps.version.outputs.tag) }}
-            const versionCode = ${{ toJSON(steps.version.outputs.code) }}
+            const tag = ${{ toJSON(needs.version.outputs.tag) }}
+            const versionCode = ${{ toJSON(needs.version.outputs.code) }}
             const {data: {id: id}} = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -172,7 +263,7 @@ jobs:
         with:
           retries: 3
           script: |
-            const versionName = ${{ toJSON(steps.version.outputs.name) }}
+            const versionName = ${{ toJSON(needs.version.outputs.name) }}
             const name = `vento-v${versionName}-x86_64-linux-gnu.tar.gz`
             await github.rest.repos.uploadReleaseAsset({
               owner: context.repo.owner,
