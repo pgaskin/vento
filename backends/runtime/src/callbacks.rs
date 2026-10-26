@@ -39,6 +39,10 @@ pub trait Callbacks: Send + Sync {
     /// Credentials are wanted; answered through
     /// [`Runner::answer_credentials`](crate::Runner::answer_credentials).
     fn credentials_needed(&self, needs_user: bool);
+    /// The session took back its credentials question
+    /// ([`Handler::credentials_or_withdrawn`](crate::Handler::credentials_or_withdrawn)):
+    /// the prompt is to close without an answer, since none is wanted now.
+    fn prompt_withdrawn(&self);
     /// A trust decision is wanted; answered through
     /// [`Runner::answer_trust`](crate::Runner::answer_trust).
     fn trust_needed(&self, fingerprint: &str);

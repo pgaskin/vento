@@ -129,6 +129,20 @@ impl Reader {
     pub fn set_timeout(&self, timeout: Option<std::time::Duration>) -> std::io::Result<()> {
         self.sock.set_read_timeout(timeout)
     }
+
+    /// Whether a frame has begun to arrive within `timeout`, reading none of
+    /// it: a reader that has to stop now and then can wait with this rather
+    /// than with a timed-out read, which would lose part of a frame. True at
+    /// the end of the stream too, for the read to report. Leaves `timeout`
+    /// as the socket's read timeout.
+    pub fn arriving(&self, timeout: std::time::Duration) -> std::io::Result<bool> {
+        self.sock.set_read_timeout(Some(timeout))?;
+        match self.sock.peek(&mut [0u8; 1]) {
+            Ok(_) => Ok(true),
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
 }
 
 impl Writer {

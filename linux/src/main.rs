@@ -615,6 +615,7 @@ mod host {
                 Event::CredentialsNeeded { needs_user } => {
                     say(&format!("credentials_needed (user {})", if *needs_user { "wanted" } else { "not wanted" }))
                 }
+                Event::PromptWithdrawn => say("prompt withdrawn"),
                 Event::TrustNeeded { fingerprint } => say(&format!("trust_needed {fingerprint}")),
                 Event::Unverified { why } => say(&format!("unverified: {why}")),
                 Event::Question { title, text } => say(&format!("question {title:?}: {text}")),

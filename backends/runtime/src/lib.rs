@@ -40,7 +40,7 @@ pub mod tls;
 
 pub use callbacks::Callbacks;
 pub use client::Client;
-pub use handler::{Credentials, Handler};
+pub use handler::{Asked, Credentials, Handler, Withdraw};
 pub use hangup::Hangup;
 pub use runner::{Bridge, Runner};
 pub use slot::Slot;

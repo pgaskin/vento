@@ -198,6 +198,10 @@ pub enum Event {
     /// Credentials are needed; answered through `answer_credentials`.
     /// `needs_user` is false for a scheme without user names.
     CredentialsNeeded { needs_user: bool },
+    /// The session took back its `CredentialsNeeded`: the prompt closes
+    /// without an answer, since none is wanted now. Only RustDesk does,
+    /// when the far end's user accepts the session while it is open.
+    PromptWithdrawn,
     /// An unverified certificate, by SHA-256 fingerprint as
     /// `openssl x509 -fingerprint -sha256` prints it; answered through
     /// `answer_trust`.
@@ -566,6 +570,10 @@ impl Mailbox {
         self.push(Event::CredentialsNeeded { needs_user });
     }
 
+    pub fn on_prompt_withdrawn(&self) {
+        self.push(Event::PromptWithdrawn);
+    }
+
     pub fn on_trust_needed(&self, fingerprint: &str) {
         self.push(Event::TrustNeeded {
             fingerprint: fingerprint.to_string(),
@@ -660,6 +668,10 @@ impl runtime::Callbacks for Feed {
 
     fn credentials_needed(&self, needs_user: bool) {
         self.0.on_credentials_needed(needs_user);
+    }
+
+    fn prompt_withdrawn(&self) {
+        self.0.on_prompt_withdrawn();
     }
 
     fn trust_needed(&self, fingerprint: &str) {

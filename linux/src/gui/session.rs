@@ -638,6 +638,16 @@ impl Session {
                     self.closed = Some(if self.disconnecting.is_some() { String::new() } else { detail });
                 }
                 Event::TrustNeeded { fingerprint } => self.trust_needed(fingerprint),
+                // Closed without an answer: the session no longer wants one.
+                Event::PromptWithdrawn => {
+                    if let Some(i) = self.prompts.iter().position(|p| matches!(p, Prompt::Credentials { .. })) {
+                        log::info!("the credentials prompt is withdrawn");
+                        self.prompts.remove(i);
+                        if i == 0 {
+                            self.form.reset();
+                        }
+                    }
+                }
                 other if self.settings.trust && self.trust_answered(&other) => {}
                 other => {
                     if let Some(prompt) = Prompt::from_event(&other) {

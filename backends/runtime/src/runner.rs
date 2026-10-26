@@ -18,7 +18,7 @@
 
 use crate::callbacks::Callbacks;
 use crate::client::Client;
-use crate::handler::{Credentials, Handler};
+use crate::handler::{Asked, Credentials, Handler, Withdraw};
 use crate::slot::Slot;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -113,8 +113,28 @@ impl Handler for Bridge {
     }
 
     fn credentials(&mut self, needs_user: bool) -> Option<Credentials> {
+        self.credentials.begin();
         self.events.credentials_needed(needs_user);
         self.credentials.wait()
+    }
+
+    /// An answer and a withdrawal that cross are settled by the slot: the
+    /// first one there stands. An answer that loses is dropped when the
+    /// next question begins.
+    fn credentials_or_withdrawn(&mut self, needs_user: bool, withdraw: &Withdraw) -> Asked<Credentials> {
+        if withdraw.fired() {
+            return Asked::Withdrawn;
+        }
+        self.credentials.begin();
+        let slot = Arc::clone(&self.credentials);
+        withdraw.arm(move || slot.withdraw());
+        self.events.credentials_needed(needs_user);
+        let asked = self.credentials.wait_asked();
+        withdraw.disarm();
+        if matches!(asked, Asked::Withdrawn) {
+            self.events.prompt_withdrawn();
+        }
+        asked
     }
 
     fn trust(&mut self, fingerprint: &str) -> bool {
@@ -246,6 +266,9 @@ mod tests {
         fn credentials_needed(&self, needs_user: bool) {
             self.say(format!("credentials? {needs_user}"));
         }
+        fn prompt_withdrawn(&self) {
+            self.say("withdrawn".into());
+        }
         fn trust_needed(&self, fingerprint: &str) {
             self.say(format!("trust? {fingerprint}"));
         }
@@ -332,6 +355,69 @@ mod tests {
         }));
         assert_eq!(next(&rx), "connected 2x6");
         assert_eq!(next(&rx), "closed \"\"");
+        session.destroy();
+    }
+
+    /// A protocol whose credentials question the test takes back, through
+    /// the handle it is given, and which then reports how it ended.
+    struct Withdrawer {
+        withdraw: Withdraw,
+    }
+
+    impl Client for Withdrawer {
+        type Config = ();
+        type Error = Ending;
+        const NAME: &'static str = "withdrawer";
+
+        fn run(&self, _config: &(), handler: &mut dyn Handler) -> Result<(), Ending> {
+            loop {
+                match handler.credentials_or_withdrawn(false, &self.withdraw) {
+                    Asked::Answered(given) => handler.connected(given.password.len(), 0),
+                    Asked::Cancelled => return Err(Ending::Refused("cancelled".into())),
+                    Asked::Withdrawn => return Err(Ending::Refused("withdrawn".into())),
+                }
+            }
+        }
+
+        fn close(&self) {}
+
+        fn closed_on_request(_error: &Ending) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn a_withdrawn_question_closes_its_prompt_and_drops_a_late_answer() {
+        let (tx, rx) = channel();
+        let withdraw = Withdraw::new();
+        let client = Arc::new(Withdrawer {
+            withdraw: withdraw.clone(),
+        });
+        let session = Runner::start(client, (), Bridge::new(Recorder(Mutex::new(tx))));
+        assert_eq!(next(&rx), "credentials? false");
+        session.answer_credentials(Some(Credentials {
+            password: "abc".into(),
+            ..Credentials::default()
+        }));
+        assert_eq!(next(&rx), "connected 3x0");
+        assert_eq!(next(&rx), "credentials? false");
+        withdraw.fire();
+        assert_eq!(next(&rx), "withdrawn");
+        assert_eq!(next(&rx), "closed \"refused: withdrawn\"");
+        // Too late: nothing is asking, and nothing changes.
+        session.answer_credentials(None);
+        session.destroy();
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn a_question_withdrawn_before_it_is_asked_is_never_put() {
+        let (tx, rx) = channel();
+        let withdraw = Withdraw::new();
+        withdraw.fire();
+        let client = Arc::new(Withdrawer { withdraw });
+        let session = Runner::start(client, (), Bridge::new(Recorder(Mutex::new(tx))));
+        assert_eq!(next(&rx), "closed \"refused: withdrawn\"");
         session.destroy();
     }
 

@@ -30,7 +30,8 @@ import net.pgaskin.remotedesktop.backend.Prompt;
  *
  * <p>Every prompt must be answered, since the connection does not progress
  * until it is, so a dismissal counts as a no, and {@link Session} queues
- * prompts that arrive while no screen is showing.
+ * prompts that arrive while no screen is showing. A prompt the backend
+ * withdraws is closed without an answer.
  */
 final class PromptDialogs implements Prompt.Handler {
 
@@ -236,6 +237,8 @@ final class PromptDialogs implements Prompt.Handler {
     private void show(AlertDialog.Builder builder, Prompt prompt) {
         final AlertDialog dialog = builder.create();
         dialog.setOnCancelListener((DialogInterface d) -> decline(prompt));
+        // Dismissed rather than cancelled, so that nothing declines it.
+        prompt.whenWithdrawn(dialog::dismiss);
         final TextView line = prompt instanceof Prompt.Credentials ? statusView : null;
         dialogs.track(dialog, d -> {
             if (statusView == line) {

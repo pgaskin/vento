@@ -27,7 +27,7 @@
 //!   Nothing signals the wait: the login succeeds, and the desktop never
 //!   arrives.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
@@ -52,7 +52,7 @@ use crate::rendezvous;
 use crate::wire::{self, Traffic};
 use runtime::media::audio::decode::Codec as SoundCodec;
 use runtime::media::audio::{Format, Outputs, Player};
-use runtime::{Handler, Hangup};
+use runtime::{Asked, Handler, Hangup};
 use runtime::media::video::{self, Codec, Decoded, Decoders, GpuPicture, Hardware};
 
 /// RustDesk's default direct-access port, `RENDEZVOUS_PORT + 2`.
@@ -75,6 +75,10 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// to a peer that takes none ("No Password Access"). Upstream's client says
 /// "Please wait for the remote side to accept your session request...".
 const WAITING_FOR_ACCEPT: &str = "Waiting for the remote user to accept the session…";
+
+/// How long the reader waits for a message to begin arriving while a password
+/// prompt is open, before it looks again whether the prompt was answered.
+const PROMPT_POLL: Duration = Duration::from_millis(100);
 
 /// How often to send something while a prompt is on screen; must be well
 /// under the thirty seconds of silence the peer allows.
@@ -906,15 +910,19 @@ impl Client {
         // RustDesk's client still handles one. RustDesk's client sends that
         // login and asks for the password at the same time, so that either
         // answer gets the session in; so does this one.
-        let mut password = config.password.clone().unwrap_or_default();
+        // What the peer sent while a prompt was open, for the loop below to
+        // take before it reads again.
+        let mut early = VecDeque::new();
+        let password = config.password.clone().unwrap_or_default();
         self.send_login(config, &hash, &password);
         if password.is_empty() {
             log::info!("no password to send: asking for one, while the peer asks its user");
             // Before the prompt, which covers the connecting screen and shows
             // the status itself.
             handler.status(Some(WAITING_FOR_ACCEPT));
-            password = self.ask_password(handler)?;
-            self.send_login(config, &hash, &password);
+            if let Prompted::Password(password) = self.ask_password(reader, handler, &mut early)? {
+                self.send_login(config, &hash, &password);
+            }
         }
         reader.set_timeout(Some(IDLE_TIMEOUT))?;
 
@@ -934,7 +942,7 @@ impl Client {
         let mut sound_permitted = true;
 
         loop {
-            let message = match reader.message::<Message>() {
+            let message = match early.pop_front().unwrap_or_else(|| reader.message::<Message>()) {
                 Ok(m) => m,
                 Err(e) if timed_out(&e) => return Err(Error::Silent),
                 Err(e) => return Err(Error::Io(e)),
@@ -970,8 +978,9 @@ impl Client {
                         LoginError::Password => {
                             log::info!("the peer wants a password ({why})");
                             handler.status(Some(WAITING_FOR_ACCEPT));
-                            password = self.ask_password(handler)?;
-                            self.send_login(config, &hash, &password);
+                            if let Prompted::Password(password) = self.ask_password(reader, handler, &mut early)? {
+                                self.send_login(config, &hash, &password);
+                            }
                         }
                         // A peer that takes no password: its user accepts or
                         // declines the session, and it says nothing more
@@ -1018,23 +1027,7 @@ impl Client {
                         self.clipboard_arrived(clip, handler);
                     }
                 }
-                message::Union::TestDelay(delay) => {
-                    if !delay.from_client {
-                        // The round trip comes with it: `last_delay` is what
-                        // the peer measured from the previous exchange, so a
-                        // client that echoes promptly learns its latency
-                        // without measuring it.
-                        if delay.last_delay > 0 {
-                            self.round_trip.store(delay.last_delay as u64, Ordering::Relaxed);
-                        }
-                        // Echoed **unchanged**. Setting the flag here would
-                        // turn one message a second into a busy loop between
-                        // the two ends.
-                        let mut out = Message::new();
-                        out.set_test_delay(delay);
-                        self.send(out);
-                    }
-                }
+                message::Union::TestDelay(delay) => self.test_delay(delay),
                 message::Union::MessageBox(box_) => {
                     log::info!("message box: [{}] {} {}", box_.msgtype, box_.title, box_.text);
                 }
@@ -1426,22 +1419,122 @@ impl Client {
         }
     }
 
+    /// The peer's timing message, about once a second.
+    fn test_delay(&self, delay: TestDelay) {
+        if delay.from_client {
+            return;
+        }
+        // The round trip comes with it: `last_delay` is what the peer
+        // measured from the previous exchange, so a client that echoes
+        // promptly learns its latency without measuring it.
+        if delay.last_delay > 0 {
+            self.round_trip.store(delay.last_delay as u64, Ordering::Relaxed);
+        }
+        // Echoed **unchanged**. Setting the flag here would turn one message
+        // a second into a busy loop between the two ends.
+        let mut out = Message::new();
+        out.set_test_delay(delay);
+        self.send(out);
+    }
+
     /// Asks for the password, again for an empty answer, which the peer
     /// would count as a wrong password (RustDesk's client sends the hash of
     /// the empty string for one). The keep-alive runs meanwhile: the peer
     /// drops a connection quiet for thirty seconds, and a prompt can stay
     /// open longer.
-    fn ask_password(&self, handler: &mut dyn Handler) -> Result<String> {
+    ///
+    /// **The connection is read while the prompt is open**, as RustDesk's
+    /// client does, since the far end's user can answer first: their accept
+    /// (the peer's `PeerInfo`) makes the password pointless, and so does "No
+    /// Password Access" from a peer that takes none. Either withdraws the
+    /// prompt, as does anything that ends the session. What is read is kept
+    /// in `early`, in order, for the session's loop; the timing messages are
+    /// answered at once.
+    fn ask_password(
+        &self,
+        reader: &mut wire::Reader,
+        handler: &mut dyn Handler,
+        early: &mut VecDeque<std::io::Result<Message>>,
+    ) -> Result<Prompted> {
         let alive = self.keep_alive();
-        let answer = loop {
-            match handler.credentials(false) {
-                Some(given) if given.password.is_empty() => continue,
-                Some(given) => break Ok(given.password),
-                None => break Err(Error::Cancelled),
+        let withdraw = runtime::Withdraw::new();
+        let answered = AtomicBool::new(false);
+        let answer = std::thread::scope(|scope| {
+            let listening = std::thread::Builder::new()
+                .name("rustdesk-prompt".into())
+                .spawn_scoped(scope, || self.read_during_prompt(reader, &withdraw, &answered));
+            let answer = loop {
+                match handler.credentials_or_withdrawn(false, &withdraw) {
+                    Asked::Answered(given) if given.password.is_empty() => continue,
+                    Asked::Answered(given) => break Ok(Prompted::Password(given.password)),
+                    Asked::Cancelled => break Err(Error::Cancelled),
+                    Asked::Withdrawn => {
+                        log::info!("the password prompt is withdrawn: the peer answered first");
+                        break Ok(Prompted::Withdrawn);
+                    }
+                }
+            };
+            answered.store(true, Ordering::Release);
+            match listening {
+                Ok(listening) => early.extend(listening.join().unwrap_or_default()),
+                Err(e) => log::warn!("not reading the connection during the prompt: {e}"),
             }
-        };
+            answer
+        });
         alive.stop();
+        reader.set_timeout(Some(IDLE_TIMEOUT))?;
         answer
+    }
+
+    /// The reader's side of [`ask_password`](Self::ask_password): until the
+    /// prompt is answered, or the peer sends something that answers it.
+    /// A message is read only once it has begun to arrive, so that stopping
+    /// never leaves part of one read and the rest for the session's loop.
+    fn read_during_prompt(
+        &self,
+        reader: &mut wire::Reader,
+        withdraw: &runtime::Withdraw,
+        answered: &AtomicBool,
+    ) -> Vec<std::io::Result<Message>> {
+        let mut read = Vec::new();
+        while !answered.load(Ordering::Acquire) {
+            match reader.arriving(PROMPT_POLL) {
+                Ok(false) => continue,
+                Ok(true) => {}
+                Err(e) => {
+                    read.push(Err(e));
+                    withdraw.fire();
+                    break;
+                }
+            }
+            let message = match reader.set_timeout(Some(IDLE_TIMEOUT)).and_then(|()| reader.message::<Message>()) {
+                Ok(message) => message,
+                Err(e) => {
+                    read.push(Err(e));
+                    withdraw.fire();
+                    break;
+                }
+            };
+            let ends_the_prompt = match &message.union {
+                Some(message::Union::TestDelay(delay)) => {
+                    self.test_delay(delay.clone());
+                    continue;
+                }
+                Some(message::Union::LoginResponse(response)) => match &response.union {
+                    Some(login_response::Union::PeerInfo(_)) => true,
+                    Some(login_response::Union::Error(why)) => !matches!(login_error(why), LoginError::Password),
+                    None => false,
+                },
+                Some(message::Union::Misc(misc)) => matches!(misc.union, Some(misc::Union::CloseReason(_))),
+                _ => false,
+            };
+            read.push(Ok(message));
+            if ends_the_prompt {
+                withdraw.fire();
+                break;
+            }
+        }
+        read
     }
 
     fn send_login(&self, config: &Config, hash: &Hash, password: &str) {
@@ -1867,6 +1960,13 @@ impl runtime::Client for Client {
     }
 }
 
+/// What a password prompt came to: a password to log in with, or nothing to
+/// send, since the peer answered first.
+enum Prompted {
+    Password(String),
+    Withdrawn,
+}
+
 /// The thread behind [`Client::keep_alive`]. Stopping wakes it from its
 /// wait and joins it, so that it lets go of its sender to the writer thread
 /// at once: a session that ends while it sleeps waits for the writer, and the
@@ -2196,6 +2296,20 @@ mod tests {
         fn status(&mut self, text: Option<&str>) {
             self.said.push(format!("status {text:?}"));
         }
+        /// Answers whether or not the peer has said something meanwhile,
+        /// since what the peer sends here is in the socket before the
+        /// session starts, and how much of it is read while the prompt is
+        /// open is up to the threads.
+        fn credentials_or_withdrawn(
+            &mut self,
+            needs_user: bool,
+            _withdraw: &runtime::Withdraw,
+        ) -> Asked<runtime::Credentials> {
+            match self.credentials(needs_user) {
+                Some(given) => Asked::Answered(given),
+                None => Asked::Cancelled,
+            }
+        }
         fn credentials(&mut self, needs_user: bool) -> Option<runtime::Credentials> {
             assert!(!needs_user);
             self.asked += 1;
@@ -2350,6 +2464,152 @@ mod tests {
         // A password taken at once says nothing.
         let (_, _, _, said) = log_in(Some("pw"), &[close_reason("done")], &[]);
         assert!(said.is_empty());
+    }
+
+    /// Leaves the password prompt open until the session withdraws it, and
+    /// says so; tells `opened` each time a prompt opens.
+    struct Unanswered {
+        opened: Sender<()>,
+        said: Vec<String>,
+    }
+    impl Handler for Unanswered {
+        fn connected(&mut self, width: usize, height: usize) {
+            self.said.push(format!("connected {width}x{height}"));
+        }
+        fn desktop_size(&mut self, _width: usize, _height: usize) {}
+        fn damaged(&mut self, _x: usize, _y: usize, _width: usize, _height: usize) {}
+        fn frame_end(&mut self) {}
+        fn cursor(&mut self, _p: &[u32], _w: usize, _h: usize, _hx: i32, _hy: i32) {}
+        fn clipboard(&mut self, _text: &str) {}
+        fn status(&mut self, text: Option<&str>) {
+            self.said.push(format!("status {text:?}"));
+        }
+        fn credentials(&mut self, _needs_user: bool) -> Option<runtime::Credentials> {
+            unreachable!("asked through credentials_or_withdrawn")
+        }
+        fn credentials_or_withdrawn(
+            &mut self,
+            _needs_user: bool,
+            withdraw: &runtime::Withdraw,
+        ) -> Asked<runtime::Credentials> {
+            self.said.push("password?".into());
+            let (fired, wait) = channel();
+            withdraw.arm(move || {
+                let _ = fired.send(());
+            });
+            let _ = self.opened.send(());
+            let withdrawn = wait.recv_timeout(Duration::from_secs(5)).is_ok();
+            withdraw.disarm();
+            if withdrawn {
+                self.said.push("withdrawn".into());
+                Asked::Withdrawn
+            } else {
+                Asked::Cancelled
+            }
+        }
+        fn trust(&mut self, _fingerprint: &str) -> bool {
+            false
+        }
+    }
+
+    /// A session without a password against a peer that sends `then` once
+    /// the password prompt is open: how it ended, the password digest of
+    /// each login sent, and what the handler was told.
+    fn answered_by_the_peer(then: Vec<Message>) -> (Result<()>, Vec<Vec<u8>>, Vec<String>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let near = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (far, _) = listener.accept().unwrap();
+        let (_, mut peer, _) = wire::split(far, Arc::default()).unwrap();
+        let mut hash = Message::new();
+        hash.set_hash(challenge());
+        peer.send(&hash).unwrap();
+        let (opened, open) = channel();
+        let peer = std::thread::spawn(move || {
+            open.recv_timeout(Duration::from_secs(5)).expect("a prompt");
+            // Timing messages first: answered while the prompt is up, and
+            // not the prompt's business.
+            let mut delay = TestDelay::new();
+            delay.time = 1;
+            let mut timing = Message::new();
+            timing.set_test_delay(delay);
+            peer.send(&timing).unwrap();
+            for message in &then {
+                peer.send(message).unwrap();
+            }
+            peer
+        });
+
+        let (mut reader, _, _) = wire::split(near, Arc::default()).unwrap();
+        let client = Client::new(Arc::new(video::NoDecoders));
+        let (out, sent) = channel::<Vec<u8>>();
+        *client.out.lock().unwrap() = Some(out);
+        let config = Config {
+            address: String::new(),
+            reach: Reach::Direct,
+            password: None,
+            connect_timeout: Duration::from_secs(1),
+            my_name: String::new(),
+            platform: Platform::Linux,
+            quality: Quality::Balanced,
+            fps: 0,
+            codec: PreferredCodec::Auto,
+            lock_after: false,
+            audio: None,
+            sound: false,
+        };
+        let mut handler = Unanswered {
+            opened,
+            said: Vec::new(),
+        };
+        let ended = client.session(&mut reader, &config, None, &mut handler);
+        let _peer = peer.join().unwrap();
+        let mut echoed = false;
+        let logins = sent
+            .try_iter()
+            .filter_map(|bytes| match Message::parse_from_bytes(&bytes).ok()?.union {
+                Some(message::Union::LoginRequest(login)) => Some(login.password.to_vec()),
+                Some(message::Union::TestDelay(delay)) if !delay.from_client => {
+                    echoed = true;
+                    None
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(echoed, "the peer's timing message is answered during the prompt");
+        (ended, logins, handler.said)
+    }
+
+    /// The far end's user can answer before the password prompt is: an
+    /// accept (`PeerInfo`) starts the session and "No Password Access"
+    /// leaves only the wait, and either takes the prompt back with no
+    /// second login sent. So does an ending, which comes with its reason.
+    #[test]
+    fn the_peer_answering_first_withdraws_the_password_prompt() {
+        let waiting = format!("status {:?}", Some(WAITING_FOR_ACCEPT));
+
+        let mut display = crate::protos::message::DisplayInfo::new();
+        display.width = 640;
+        display.height = 480;
+        let mut peer = PeerInfo::new();
+        peer.displays.push(display);
+        let mut response = crate::protos::message::LoginResponse::new();
+        response.set_peer_info(peer);
+        let mut accepted = Message::new();
+        accepted.set_login_response(response);
+        let (ended, logins, said) = answered_by_the_peer(vec![accepted, close_reason("done")]);
+        assert!(matches!(ended, Err(Error::Refused(why)) if why == "done"));
+        assert_eq!(logins, vec![Vec::<u8>::new()]);
+        assert_eq!(said, [waiting.as_str(), "password?", "withdrawn", "connected 640x480"]);
+
+        let (ended, logins, said) =
+            answered_by_the_peer(vec![login_error_message("No Password Access"), close_reason("done")]);
+        assert!(matches!(ended, Err(Error::Refused(why)) if why == "done"));
+        assert_eq!(logins, vec![Vec::<u8>::new()]);
+        assert_eq!(said, [waiting.as_str(), "password?", "withdrawn", waiting.as_str()]);
+
+        let (ended, _, said) = answered_by_the_peer(vec![close_reason("gone")]);
+        assert!(matches!(ended, Err(Error::Refused(why)) if why == "gone"));
+        assert_eq!(said, [waiting.as_str(), "password?", "withdrawn"]);
     }
 
     /// The Security row names the key exchange version picked, which is 0

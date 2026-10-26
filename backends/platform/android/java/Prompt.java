@@ -23,7 +23,8 @@ public abstract sealed class Prompt {
 
     /**
      * Called on the main thread. Each method receives a prompt that must
-     * eventually be answered or {@link Prompt#cancel cancelled}, exactly once.
+     * eventually be answered or {@link Prompt#cancel cancelled}, exactly once,
+     * unless the backend {@link Prompt#withdraw withdraws} it first.
      */
     public interface Handler {
 
@@ -36,6 +37,8 @@ public abstract sealed class Prompt {
 
     // Answering twice is a protocol error at the far end.
     private final AtomicBoolean answered = new AtomicBoolean();
+    private boolean withdrawn;
+    private Runnable onWithdrawn;
 
     public final String address; // being connected to, for a dialog to name
 
@@ -50,6 +53,38 @@ public abstract sealed class Prompt {
 
     /** Give up on the connection. Safe to call twice; the second does nothing. */
     public abstract void cancel();
+
+    /**
+     * For a backend, on the main thread: the question is taken back, because
+     * the connection no longer needs an answer (a RustDesk peer whose user
+     * accepted the session while it asked for a password). It is closed
+     * without an answer, and an answer or a cancel after this does nothing.
+     * Does nothing once the prompt has been answered.
+     */
+    public final void withdraw() {
+        if (claim()) {
+            withdrawn = true;
+            final Runnable r = onWithdrawn;
+            onWithdrawn = null;
+            if (r != null) {
+                r.run();
+            }
+        }
+    }
+
+    /** Main thread. Whether the backend {@link #withdraw withdrew} this prompt. */
+    public final boolean withdrawn() {
+        return withdrawn;
+    }
+
+    /**
+     * Main thread. What to do when the backend {@link #withdraw withdraws}
+     * this prompt, such as closing its dialog: replaces any earlier one, since
+     * whoever holds the prompt now is the one to close it.
+     */
+    public final void whenWithdrawn(Runnable r) {
+        onWithdrawn = r;
+    }
 
     /**
      * "Who are you?": a user name, a password, or both, depending on what the

@@ -659,6 +659,11 @@ public final class Session implements Backend.Listener, Prompt.Handler {
 
     private void queue(Prompt p) {
         pending.add(p);
+        // Until a screen shows it, which then decides what withdrawing does.
+        p.whenWithdrawn(() -> {
+            pending.remove(p);
+            Sessions.changed();
+        });
         flushPrompts();
     }
 

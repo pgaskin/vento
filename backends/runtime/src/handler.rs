@@ -3,6 +3,8 @@
 
 //! What a protocol thread tells the app, and the two things it asks.
 
+use std::sync::{Arc, Mutex};
+
 /// The answer to "who are you", for the schemes that ask.
 ///
 /// One shape for every protocol, which is the superset: RDP carries a domain,
@@ -15,6 +17,61 @@ pub struct Credentials {
     pub user: String,
     pub domain: String,
     pub password: String,
+}
+
+/// What a question that can be withdrawn came to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Asked<T> {
+    Answered(T),
+    /// The user gave up on the connection.
+    Cancelled,
+    /// The protocol took the question back through its [`Withdraw`].
+    Withdrawn,
+}
+
+/// The waiting handler's side of a [`Withdraw`].
+type Wake = Box<dyn Fn() + Send>;
+
+/// A protocol's way to take back a question it is blocked on, from another
+/// of its threads: the far end can make a password prompt pointless while it
+/// is open (a RustDesk peer whose user accepted the session). Fired once, it
+/// stays fired: a question asked with it afterwards is withdrawn at once.
+/// Cheap to clone; every clone is the same handle.
+#[derive(Clone, Default)]
+pub struct Withdraw(Arc<Mutex<(bool, Option<Wake>)>>);
+
+impl Withdraw {
+    pub fn new() -> Withdraw {
+        Withdraw::default()
+    }
+
+    /// Takes the question back. Safe from any thread, and more than once.
+    pub fn fire(&self) {
+        let mut state = self.0.lock().unwrap();
+        state.0 = true;
+        if let Some(wake) = &state.1 {
+            wake();
+        }
+    }
+
+    pub fn fired(&self) -> bool {
+        self.0.lock().unwrap().0
+    }
+
+    /// For a handler that is about to wait: `wake` is called when the handle
+    /// fires, at once if it already has, until [`disarm`](Self::disarm).
+    /// It runs under the handle's lock and must not block.
+    pub fn arm(&self, wake: impl Fn() + Send + 'static) {
+        let mut state = self.0.lock().unwrap();
+        if state.0 {
+            wake();
+        }
+        state.1 = Some(Box::new(wake));
+    }
+
+    pub fn disarm(&self) {
+        self.0.lock().unwrap().1 = None;
+    }
 }
 
 /// Everything a session tells the app, called from the protocol thread.
@@ -90,6 +147,21 @@ pub trait Handler {
     /// RDP carries them in the connection sequence and asks **before**
     /// anything is connected.
     fn credentials(&mut self, needs_user: bool) -> Option<Credentials>;
+
+    /// [`credentials`](Handler::credentials), for a question the protocol
+    /// may take back while it is open: when `withdraw` fires, the prompt is
+    /// closed without an answer and this returns [`Asked::Withdrawn`]. A
+    /// handler with no prompt to close (one that answers at once) can leave
+    /// the default, which asks as `credentials` does.
+    fn credentials_or_withdrawn(&mut self, needs_user: bool, withdraw: &Withdraw) -> Asked<Credentials> {
+        if withdraw.fired() {
+            return Asked::Withdrawn;
+        }
+        match self.credentials(needs_user) {
+            Some(credentials) => Asked::Answered(credentials),
+            None => Asked::Cancelled,
+        }
+    }
 
     /// The far end's identity, by fingerprint, before anything secret is sent:
     /// a TLS certificate for RFB, RDP and SPICE, the peer's long-term key for

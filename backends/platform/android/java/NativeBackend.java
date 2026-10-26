@@ -239,6 +239,8 @@ public final class NativeBackend implements Backend {
 
     private final String tag;
     private final Natives natives;
+    /** The last credentials question, for the session to withdraw. Main thread. */
+    private Prompt.Credentials asking;
     private final Hooks hooks;
     private final Handler main = new Handler(Looper.getMainLooper());
 
@@ -764,6 +766,7 @@ public final class NativeBackend implements Backend {
     void onCredentialsNeeded(boolean needsUserName, String user) {
         Log.i(tag, "credentials wanted (user name: " + needsUserName + ")");
         main.post(() -> {
+            asking = null;
             final Prompt.Handler h = prompts;
             final Prompt.Credentials prompt = new Prompt.Credentials(address,
                     hooks.credentialsHint(), needsUserName,
@@ -777,10 +780,26 @@ public final class NativeBackend implements Backend {
                     }
                 }
             };
+            asking = prompt;
             if (h == null) {
                 prompt.cancel();
             } else {
                 h.credentials(prompt);
+            }
+        });
+    }
+
+    /**
+     * The session took back its credentials question: the prompt is closed
+     * without an answer. Posted, like the question, so it follows it.
+     */
+    void onPromptWithdrawn() {
+        Log.i(tag, "the credentials prompt is withdrawn");
+        main.post(() -> {
+            final Prompt.Credentials prompt = asking;
+            asking = null;
+            if (prompt != null) {
+                prompt.withdraw();
             }
         });
     }

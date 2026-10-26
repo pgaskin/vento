@@ -6,7 +6,9 @@
 //!
 //! Every one of them owes an answer (the backend's thread is blocked until
 //! it gets one), so closing a dialog by any route is a no, and the session
-//! queues what arrives while one is already up. Nothing is written from here:
+//! queues what arrives while one is already up. The one exception is a
+//! credentials prompt the backend takes back (`Event::PromptWithdrawn`),
+//! which the session drops without answering. Nothing is written from here:
 //! a certificate is put as the phone's `NativeBackend.onTrustNeeded` puts it,
 //! with why it is being asked about and a *remember server* box, and the
 //! session hands the answer to `api::trust::answered`, which pins what was

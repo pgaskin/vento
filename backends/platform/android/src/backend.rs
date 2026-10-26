@@ -809,6 +809,7 @@ struct Outlet {
     sound: JMethodID,
     clipboard: JMethodID,
     credentials_needed: JMethodID,
+    prompt_withdrawn: JMethodID,
     trust_needed: JMethodID,
     unverified: JMethodID,
     question: JMethodID,
@@ -854,6 +855,7 @@ impl Outlet {
             sound: id(env, jni_str!("onSound"), jni_sig!("(IZZZ)V"))?,
             clipboard: id(env, jni_str!("onClipboard"), jni_sig!("(Ljava/lang/String;)V"))?,
             credentials_needed: id(env, jni_str!("onCredentialsNeeded"), jni_sig!("(ZLjava/lang/String;)V"))?,
+            prompt_withdrawn: id(env, jni_str!("onPromptWithdrawn"), jni_sig!("()V"))?,
             trust_needed: id(
                 env,
                 jni_str!("onTrustNeeded"),
@@ -1001,6 +1003,7 @@ impl Outlet {
                         &[jvalue { z: needs_user }, jvalue { l: user.as_raw() }],
                     )
                 }
+                Event::PromptWithdrawn => self.call(env, self.prompt_withdrawn, &[]),
                 Event::TrustNeeded { fingerprint } => self.trust_needed(env, &fingerprint),
                 Event::Unverified { why } => {
                     let key = env.new_string(&self.asks.pinned.key)?;
