@@ -33,6 +33,8 @@ android {
         // An ABI that one backend lacks would make System.loadLibrary fail for
         // that backend on devices of that ABI.
         ndk {
+            // x86_64 is in shippedAbis; lint reads the literal and not the value.
+            //noinspection ChromeOsAbiSupport
             abiFilters(*shippedAbis)
         }
     }
