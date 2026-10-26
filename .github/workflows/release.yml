@@ -109,10 +109,10 @@ jobs:
       - run: git -C third_party/mcpelauncher-linker submodule update --init --depth 1 # for realvnc's host half
       - run: docker build -f linux/Dockerfile --output type=local,dest=dist/vento .
       - run: test "$(dist/vento/vento --version)" = "vento v${{ needs.version.outputs.name }}"
-      - run: tar -C dist --sort=name --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w -czf "vento-v${{ needs.version.outputs.name }}-x86_64-linux-gnu.tar.gz" vento
+      - run: tar -C dist --sort=name --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w -czf vento-x86_64-linux-gnu.tar.gz vento
       - uses: actions/upload-artifact@v7
         with:
-          path: vento-v${{ needs.version.outputs.name }}-x86_64-linux-gnu.tar.gz
+          path: vento-x86_64-linux-gnu.tar.gz
           archive: false
           retention-days: 1
           if-no-files-found: error
@@ -216,7 +216,7 @@ jobs:
           path: rebuild
       - uses: actions/download-artifact@v8
         with:
-          name: vento-v${{ needs.version.outputs.name }}-x86_64-linux-gnu.tar.gz
+          name: vento-x86_64-linux-gnu.tar.gz
       - run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses; ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager 'build-tools;36.0.0'
 
       - name: Verify reproducible build
@@ -298,8 +298,7 @@ jobs:
         with:
           retries: 3
           script: |
-            const versionName = ${{ toJSON(needs.version.outputs.name) }}
-            const name = `vento-v${versionName}-x86_64-linux-gnu.tar.gz`
+            const name = 'vento-x86_64-linux-gnu.tar.gz'
             await github.rest.repos.uploadReleaseAsset({
               owner: context.repo.owner,
               repo: context.repo.repo,
