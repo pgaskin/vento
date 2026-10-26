@@ -341,6 +341,8 @@ public final class SessionActivity extends Activity
     private View statusActions;
     /** The backend's status line, shown under the status while connecting. */
     private String statusLineText;
+    /** Whether the panel keeps a line for the status line: while connecting. */
+    private boolean statusLineKept;
     private View scrim;
     private View loading;
 
@@ -374,6 +376,7 @@ public final class SessionActivity extends Activity
             statusLineText = null;
             prompts.status(null);
         }
+        statusLineKept = s.working();
         showStatusLine();
         statusPanel.setVisibility(panel);
         scrim.setVisibility(panel);
@@ -398,7 +401,11 @@ public final class SessionActivity extends Activity
             return;
         }
         statusLine.setText(statusLineText);
-        statusLine.setVisibility(statusLineText != null ? View.VISIBLE : View.GONE);
+        // Invisible rather than gone while connecting, so the panel, which is
+        // centred, does not move the address up and down as the line comes
+        // and goes. A status that wraps still makes it taller.
+        statusLine.setVisibility(statusLineText != null ? View.VISIBLE
+                : statusLineKept ? View.INVISIBLE : View.GONE);
     }
 
     /** The session key, so a second screen for the same target re-attaches. */

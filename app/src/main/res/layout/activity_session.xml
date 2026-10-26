@@ -78,7 +78,8 @@
 
         <!-- What the connection is waiting for, under the address it is
              connecting to, in the same style: shown only while connecting,
-             and only when the backend says. -->
+             and only when the backend says. Its line is kept empty while
+             connecting without one. -->
         <TextView
             android:id="@+id/status_line"
             android:layout_width="wrap_content"
