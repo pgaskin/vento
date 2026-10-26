@@ -219,9 +219,12 @@ under the host locale (`export LC_ALL=C`).
   the two borrowed VNC clients, a `NativeBackend.Hooks`. An upgrade that
   keeps the adapter's `Kind` building has nothing to change on that side.
 - TigerVNC's H.264 decoder context is the shim's own on both platforms
-  (`H264VentoDecoderContext`, selected by `H264_VENTO` in their factory; their
-  libav one is not built, `HAVE_LIBAV` unset), and hands each rectangle to
-  vento's video decoders through `vento/video.h`'s table. Its QEMU audio is
+  (`H264VentoDecoderContext`, made by the module's own definition of their
+  factory, `H264DecoderContext::createContext`, compiled into `rfbclient` in
+  place of their `H264DecoderContext.cxx`, which the module's CMakeLists takes
+  out of that target; their libav one is not built, `HAVE_LIBAV` unset), and
+  hands each rectangle to vento's video decoders through `vento/video.h`'s
+  table. Its QEMU audio is
   played on vento's sound output through `vento/audio.h`'s table
   (`VentoAudio.h`; AAudio on the phone, ALSA on the host, both behind
   `runtime::media::audio`'s queue), not their viewer's `AudioOutput`, which is
@@ -457,7 +460,7 @@ One commit per upstream, after review, by the lead:
   assembly, which it leaves on, a CA bundle path and a system priority
   file path.
 - **libvncserver** at upstream master; ten patches. No releases since
-  0.9.15. `0006` (as TigerVNC's `0006`) hands a certificate that verified
+  0.9.15. `0006` (as TigerVNC's `0005`) hands a certificate that verified
   against the system's authorities, and is for the name dialled, to
   `GetX509CertFingerprintMismatchDecision` too when it is installed, and
   `0007` one that verified for another name, which upstream refuses outright
@@ -478,8 +481,9 @@ One commit per upstream, after review, by the lead:
   because its connect wait used `POLLIN`, which broke a server's reverse
   connection to a repeater; `0010` waits for `POLLOUT`. Should upstream take
   a `poll()` change of its own, check the connect wait's direction.
-- **tigervnc** master ed951a41, reporting 1.16.80; seven patches (the PAM one
-  dropped, and the libav context's pixel format fix with that context). The
+- **tigervnc** master ed951a41, reporting 1.16.80; six patches (the PAM one
+  dropped, the libav context's pixel format fix with that context, and the
+  H.264 context's factory replaced from the module's CMakeLists). The
   client API is upstream's after their October 2026 cleanup: `writer()` is
   protected, so pointer events and layouts go through `sendPointerEvent` and
   `requestScreenLayout`, and `getUserPasswd` has no `secure`. Their `setPF`
@@ -492,7 +496,7 @@ One commit per upstream, after review, by the lead:
   `vncviewer/CConn.cxx`; audio is offered wherever there is an output, the
   `Audio` row is where the session's Enable switch starts, and it plays on
   vento's sound output through `vento/audio.h`'s table (`VentoAudio.h`).
-  `0007` checks the socket with `poll()` in `FdInStream`/`FdOutStream` where
+  `0006` checks the socket with `poll()` in `FdInStream`/`FdOutStream` where
   `select()` overflowed its `fd_set` at descriptor 1024 or above (Windows
   keeps `select()`); the shim's loop also polls for `POLLOUT` while the
   socket's stream holds unsent output.

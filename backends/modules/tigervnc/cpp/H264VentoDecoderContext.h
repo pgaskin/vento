@@ -9,8 +9,9 @@
 // client's FFmpeg, on VAAPI where the user chose it, and MediaCodec on
 // Android), so that TigerVNC's H.264 is decoded by the same code as RustDesk's
 // video on both platforms: one colour rule, one hardware path with one
-// fallback, and the same panel rows about it. Selected by `H264_VENTO`, the one
-// patch to their factory.
+// fallback, and the same panel rows about it. Made by their factory
+// (`H264DecoderContext::createContext`), which this build defines in place of
+// theirs, beside this class.
 //
 // Upstream's semantics are kept: a context per rectangle, made and reset by
 // their H264Decoder exactly as before (up to 64, the oldest dropped, a reset

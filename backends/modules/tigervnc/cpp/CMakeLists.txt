@@ -86,8 +86,9 @@ endif()
 # for, and it builds a viewer and a server this build does not need. So this
 # build takes `common/` on its own, sets the variables its sub-projects read,
 # and writes the config.h their sources include. Their build files need no
-# patch, and the only source change the build itself needs is the branch that
-# picks an H.264 decoder context (`patches/tigervnc/0001-*`).
+# patch, and neither do their sources for the build itself: the one file of
+# theirs that would need a change, the H.264 decoder context's factory, is
+# replaced by ours (below).
 set(VERSION "unknown")
 file(READ "${THIRD_PARTY}/tigervnc/CMakeLists.txt" _tigervnc_cmake)
 if(_tigervnc_cmake MATCHES "set\\(VERSION ([0-9][0-9.]*)\\)")
@@ -157,13 +158,12 @@ endif()
 # the Linux client's FFmpeg with its opt-in hardware decoding on a desktop).
 # Their `common/rfb/CMakeLists.txt` compiles the decoder itself whenever
 # HAVE_H264 is set and adds either of theirs only where it found FFmpeg or is
-# building for Windows, neither of which applies here; H264_VENTO selects
-# ours, and the six lines that do so are the one patch it needs. HAVE_LIBAV
-# stays unset, since it would compile FFmpeg's context (and with it a second
-# FFmpeg into this library), and so do the three results their build
-# compiles the libav context on, whatever a cache left behind.
+# building for Windows, neither of which applies here; their factory, which
+# picks one of the two, is replaced by ours below. HAVE_LIBAV stays unset,
+# since it would compile FFmpeg's context (and with it a second FFmpeg into
+# this library), and so do the three results their build compiles the libav
+# context on, whatever a cache left behind.
 set(HAVE_H264 1)
-add_definitions(-DH264_VENTO)
 foreach(lib AVCODEC AVUTIL SWSCALE)
     set(${lib}_FOUND FALSE)
 endforeach()
@@ -189,10 +189,10 @@ endif()
 # Their sub-projects put their own tree on the include path as
 # `${CMAKE_SOURCE_DIR}/common`, which under both the Gradle build and the host
 # root is a directory that does not exist: a stale -I and nothing worse, as
-# long as the real one is here. This directory goes on the path too, for the
-# H.264 branch of theirs that includes our context by name, and the neutral
-# headers for the table it calls through. libtool control files are for the
-# autotools half of their build, which is not used here.
+# long as the real one is here. This directory goes on the path too, and the
+# neutral headers for the tables the session and the H.264 context call
+# through. libtool control files are for the autotools half of their build,
+# which is not used here.
 include_directories("${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
         "${VENTO_BACKENDS}/api/include")
 include_directories(SYSTEM "${THIRD_PARTY}/tigervnc/common")
@@ -201,13 +201,22 @@ endmacro()
 add_subdirectory("${THIRD_PARTY}/tigervnc/common" tigervnc-common EXCLUDE_FROM_ALL)
 remotedesktop_vendored_warnings("${THIRD_PARTY}/tigervnc/common")
 
-# The H.264 context goes into their library, beside their own two, because
-# their factory names it: inside `rfbclient`, the reference resolves however
-# the library ends up linked (the Android shared library, the Linux client's,
-# or the static one a probe is built on, where an object of ours that only
-# their archive refers to would be dropped before it was looked for).
-# Compiled as a target of ours, with our warnings, and only its objects
-# handed over.
+# The H.264 context goes into their library, with the factory their
+# decoder calls (`H264DecoderContext::createContext`) and the base class's
+# destructor, which are all of their `H264DecoderContext.cxx` and are defined
+# beside our context in its place. Inside `rfbclient`, the reference resolves
+# however the library ends up linked (the Android shared library, the Linux
+# client's, or the static one a probe is built on, where an object of ours
+# that only their archive refers to would be dropped before it was looked
+# for). Compiled as a target of ours, with our warnings, and only its objects
+# handed over. Should their file be renamed or gain anything else, the
+# configure stops here or the link fails on a missing or duplicate symbol.
+get_target_property(_rfbclient_sources rfbclient SOURCES)
+if(NOT "H264DecoderContext.cxx" IN_LIST _rfbclient_sources)
+    message(FATAL_ERROR "rfbclient no longer compiles H264DecoderContext.cxx; check what replaces it")
+endif()
+list(REMOVE_ITEM _rfbclient_sources "H264DecoderContext.cxx")
+set_target_properties(rfbclient PROPERTIES SOURCES "${_rfbclient_sources}")
 add_library(vento_tigervnc_h264 OBJECT H264VentoDecoderContext.cxx)
 remotedesktop_warnings(vento_tigervnc_h264)
 target_sources(rfbclient PRIVATE $<TARGET_OBJECTS:vento_tigervnc_h264>)

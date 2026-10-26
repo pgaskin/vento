@@ -8,10 +8,10 @@
 // (`VentoAudio.h` beside this file), and H.264 is decoded by the platform's
 // own video decoders, passed the same way as `vento/video.h`'s table and
 // reached by the decoder context beside this file (`H264VentoDecoderContext`,
-// which `H264_VENTO` selects in their factory). On Android the rest is the
-// Rust adapter in the module's `src/`, linked into the same library, which
-// the JNI layer in `backends/platform/android` wraps, as it does every
-// backend.
+// which this build's own definition of their factory makes). On Android the
+// rest is the Rust adapter in the module's `src/`, linked into the same
+// library, which the JNI layer in `backends/platform/android` wraps, as it
+// does every backend.
 //
 // Five things here are the shim's rather than the library's, and each is forced
 // by what TigerVNC's client code does and does not do:

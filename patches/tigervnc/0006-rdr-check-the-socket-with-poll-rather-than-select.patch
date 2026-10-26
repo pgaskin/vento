@@ -1,7 +1,7 @@
-From c71d3d95aa1b98652e978a646b9a48c552a95d89 Mon Sep 17 00:00:00 2001
+From a6090aae0adcdbfe7d83863d89bf1c7d0db1cf3b Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Sun, 25 Oct 2026 19:05:37 -0400
-Subject: [PATCH 7/7] rdr: check the socket with poll() rather than select()
+Subject: [PATCH 6/6] rdr: check the socket with poll() rather than select()
 
 FdInStream::readFd() and FdOutStream::writeFd() ask select() whether
 the descriptor is ready before every recv() and send(). select() takes

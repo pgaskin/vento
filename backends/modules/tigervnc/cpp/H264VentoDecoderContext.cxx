@@ -30,6 +30,15 @@ constexpr std::chrono::milliseconds STATUS_EVERY{500};
 
 } // namespace
 
+// Their factory and the base class's destructor, in place of their
+// `H264DecoderContext.cxx`, which this build does not compile: every context
+// is ours.
+H264DecoderContext *H264DecoderContext::createContext(const core::Rect &r) {
+    return new H264VentoDecoderContext(r);
+}
+
+H264DecoderContext::~H264DecoderContext() {}
+
 H264VentoDecoderContext::H264VentoDecoderContext(const core::Rect &r)
         : H264DecoderContext(r) {}
 
