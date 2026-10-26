@@ -32,6 +32,7 @@ typedef struct vento_freerdp_config {
     const char *graphics;    /* "gfx", "gfx-novideo", "rfx" or "bitmap" */
     const char *experience;  /* "full", "balanced" or "plain" */
     const char *sound;       /* "off", "local" or "remote"; see `audio` */
+    const char *gateway;     /* an RD Gateway as `host` or `host:port` (443); NULL or empty for none */
     int scale;               /* 100, 140 or 180; anything else is taken as 100 */
     int width, height;       /* the desktop asked for, per monitor */
     int monitors;

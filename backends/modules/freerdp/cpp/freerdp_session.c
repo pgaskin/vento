@@ -256,6 +256,8 @@ struct Session {
     char *experience;
     char *graphics;
     char *sound;
+    char *gatewayHost; /* NULL for a direct connection */
+    int gatewayPort;
     char *clientName;
     UINT32 osMajorType;
     char *configPath;
@@ -1266,9 +1268,30 @@ static BOOL onAuthenticate(freerdp *instance, char **username, char **password, 
    The fingerprint is the one the library's own prompt would show, the
    SHA-256 of the server's certificate, so a pin made from that prompt still
    matches. */
+/* "host" or "host:port", with 443 when there is no port. Empty is a direct
+   connection. IPv6 literals are not taken: a colon in the host is the port. */
+static void parseGateway(Session *s, const char *text) {
+    s->gatewayHost = NULL;
+    s->gatewayPort = 443;
+    if (!text || !*text) {
+        return;
+    }
+    size_t hostLen = strlen(text);
+    const char *colon = strrchr(text, ':');
+    char *end = NULL;
+    const long port = colon ? strtol(colon + 1, &end, 10) : 0;
+    if (colon && end != colon + 1 && *end == '\0' && port > 0 && port <= 65535) {
+        hostLen = (size_t) (colon - text);
+        s->gatewayPort = (int) port;
+    }
+    if (hostLen > 0) {
+        s->gatewayHost = strndup(text, hostLen);
+    }
+}
+
 static int onVerifyX509Certificate(freerdp *instance, const BYTE *data, size_t length,
                                    const char *hostname, UINT16 port, DWORD flags) {
-    (void) hostname; (void) port; (void) flags;
+    (void) flags;
     Session *s = sessionOf(instance->context);
 
     /* The chain as PEM, the server's certificate first, which is the one
@@ -1293,7 +1316,18 @@ static int onVerifyX509Certificate(freerdp *instance, const BYTE *data, size_t l
     s->trustAccepted = 0;
     pthread_mutex_unlock(&s->lock);
 
-    s->cb.trust_needed(s->cb.user, fingerprint);
+    /* The library asks for the gateway's certificate with the gateway's name.
+       The pin store keeps one fingerprint per address, so the gateway's would
+       clash with the target's; it goes to `question` instead, which asks every
+       time and remembers nothing. */
+    if (s->gatewayHost && hostname && strcmp(hostname, s->gatewayHost) == 0) {
+        char text[512];
+        snprintf(text, sizeof(text), "The RD Gateway %s:%u presented a certificate with the SHA-256 fingerprint %s. Continue?",
+                 hostname, (unsigned) port, fingerprint);
+        s->cb.question(s->cb.user, "RD Gateway certificate", text);
+    } else {
+        s->cb.trust_needed(s->cb.user, fingerprint);
+    }
     free(fingerprint);
 
     pthread_mutex_lock(&s->lock);
@@ -2124,6 +2158,19 @@ static void applySettings(Session *s, rdpSettings *settings) {
     freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, soundHere);
     freerdp_settings_set_bool(settings, FreeRDP_RemoteConsoleAudio, soundThere);
 
+    /* RD Gateway, over HTTPS only (the RPC transport is the old one). The
+       gateway takes the connection's own credentials. DIRECT means always use
+       it, where the detect mode would only use it when the direct route fails. */
+    freerdp_settings_set_bool(settings, FreeRDP_GatewayEnabled, s->gatewayHost != NULL);
+    if (s->gatewayHost) {
+        freerdp_settings_set_string(settings, FreeRDP_GatewayHostname, s->gatewayHost);
+        freerdp_settings_set_uint32(settings, FreeRDP_GatewayPort, (UINT32) s->gatewayPort);
+        freerdp_settings_set_uint32(settings, FreeRDP_GatewayUsageMethod, TSC_PROXY_MODE_DIRECT);
+        freerdp_settings_set_bool(settings, FreeRDP_GatewayUseSameCredentials, TRUE);
+        freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, TRUE);
+        freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, FALSE);
+    }
+
     /* The scale the far end draws its interface at. The protocol allows
        100–500 for the desktop factor and exactly 100, 140 or 180 for the
        device factor, and a value outside either range makes a server ignore
@@ -2329,6 +2376,7 @@ static void freeSession(Session *s) {
     free(s->graphics);
     free(s->experience);
     free(s->sound);
+    free(s->gatewayHost);
     free(s->clientName);
     free(s->configPath);
     free(s->credUser);
@@ -2434,6 +2482,7 @@ vento_session *vento_freerdp_create(const vento_freerdp_config *cfg, const vento
     s->graphics = dupOrNull(cfg->graphics);
     s->experience = dupOrNull(cfg->experience);
     s->sound = dupOrNull(cfg->sound);
+    parseGateway(s, cfg->gateway);
     s->clientName = dupOrNull(cfg->client_name);
     s->osMajorType = OSMAJORTYPE_UNSPECIFIED;
     if (cfg->platform && strcmp(cfg->platform, "android") == 0) {

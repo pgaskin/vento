@@ -92,6 +92,7 @@ fn create(c: &Connect) -> Result<std::sync::Arc<dyn Backend>, String> {
     let graphics = CString::new(o.get("Graphics")).unwrap_or_default();
     let experience = CString::new(o.get("Experience")).unwrap_or_default();
     let sound = CString::new(o.get("Sound")).unwrap_or_default();
+    let gateway = CString::new(o.get("Gateway").trim()).unwrap_or_default();
     let name = CString::new(c.client_name).unwrap_or_default();
     // The C sends ANDROID or UNIX as the general capability set's major type
     // from these, as IronRDP does.
@@ -111,6 +112,7 @@ fn create(c: &Connect) -> Result<std::sync::Arc<dyn Backend>, String> {
         graphics: graphics.as_ptr(),
         experience: experience.as_ptr(),
         sound: sound.as_ptr(),
+        gateway: gateway.as_ptr(),
         scale: scale(o),
         width: width as i32,
         height: height as i32,

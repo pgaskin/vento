@@ -10,7 +10,7 @@
 
 use crate::catalog::About;
 use crate::options::{
-    Scope, Spec, Choice, VIEW_ONLY, DESKTOP_SIZES, MONITOR_COUNTS, choice, choices, bool,
+    Scope, Spec, Choice, VIEW_ONLY, DESKTOP_SIZES, MONITOR_COUNTS, choice, choices, bool, text,
 };
 use crate::trust::Pinning;
 
@@ -158,6 +158,14 @@ pub static OPTIONS: &[Spec] = &[
             choice("remote", "The remote machine"),
         ],
     ),
+    text(
+        "Gateway",
+        "RD Gateway",
+        "Reach this machine through an RD Gateway, as host or host:port (443 if no port). The connection's own username and password are used for it. Leave empty to connect directly.",
+        "",
+        Scope::Connection,
+        false,
+    ),
     bool(
         "Compression",
         "Compression",
@@ -193,6 +201,7 @@ mod tests {
                 "Graphics",
                 "Experience",
                 "Sound",
+                "Gateway",
                 "Compression",
                 "ViewOnly"
             ]
