@@ -404,12 +404,12 @@ cargo run -- --forget 127.0.0.1:5901
 # A session, headless: connect, print every event, answer the prompts from the
 # flags, run the steps of the spec in order (waits, input, size requests,
 # the framebuffer and its thumbnail written), print the facts, and leave.
-# --probe SPEC (-P SPEC) selects this instead of the window; its other option,
-# --connect-timeout, is refused without it. A certificate the known hosts
-# match is accepted without --trust; --trust accepts any other for this run
-# and pins nothing.
+# --probe SPEC (-P SPEC) selects this instead of the window; a first step of
+# wait-connect=SECONDS sets how long it waits for the connection (30 s
+# otherwise). A certificate the known hosts match is accepted without
+# --trust; --trust accepts any other for this run and pins nothing.
 cargo run -- tigervnc 127.0.0.1:5901 --password vncpass -P \
-    'wait=1,click=500:300,key=0x61,clipboard="hello, \"you\"",wait=4,out=/tmp/shot.ppm,thumb=/tmp/shot-thumb.ppm'
+    'wait-connect=10,wait=1,click=500:300,key=0x61,clipboard="hello, \"you\"",wait=4,out=/tmp/shot.ppm,thumb=/tmp/shot-thumb.ppm'
 cargo run -- freerdp 127.0.0.1:3389 --user proto --password protopass \
     --trust --probe wait=2,resize=1280x720,wait=3,out=/tmp/rdp.ppm
 ```
@@ -509,7 +509,10 @@ the overlay's `dec` line, with the reason where hardware was asked for and
 the picture is software.
 
 `--probe`'s spec (`cli::steps`, with tests) is a comma-separated list of
-`name=value` steps, run in order once connected, with nothing between them:
+`name=value` steps, run in order once connected, with nothing between them,
+except `wait-connect=SECONDS`, which is taken only as the first step and is
+how long the probe waits for the connection before any of the others run
+(`cli::CONNECT_TIMEOUT`, 30 s, without it; anywhere else it is refused).
 `wait=SECONDS` (a fraction is fine) prints events for that long, so a click
 that should land on a drawn desktop comes after a `wait=1`. `click=X:Y`,
 `key=KEYSYM` (read as probe.c's `--key` reads it), `clipboard=TEXT`,
@@ -521,7 +524,7 @@ there (and nowhere else), so `clipboard="a, \"b\""` sends `a, "b"`. An empty
 spec connects, prints the facts and leaves. Steps stop at the first one that
 finds the session gone.
 
-The probe's exit status is 0 only if it connected within `--connect-timeout`,
+The probe's exit status is 0 only if it connected within `wait-connect=`,
 stayed connected through the steps, wrote every `out=` and `thumb=` picture,
 and closed within 10 s of disconnecting; it is 1 otherwise (a failed write
 does not stop the steps after it), and 2 for a command line or spec it

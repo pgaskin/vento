@@ -68,7 +68,8 @@ mod host {
         dirs: Dirs,
         /// `--probe`'s spec, run in order once connected.
         steps: Vec<Step>,
-        connect_timeout: u64,
+        /// The spec's `wait-connect=`, or the default.
+        connect_timeout: Duration,
         trust: bool,
         /// `sound-cycle=`: how often the far end's sound is turned off and
         /// on again, where the session's switch can ask it to.
@@ -206,12 +207,9 @@ mod host {
         let mut password = None;
         let mut assignments: Vec<String> = Vec::new();
         let mut steps = None;
-        let mut connect_timeout = cli::CONNECT_TIMEOUT;
         let mut state_dir = None;
         let mut extlib_dir = None;
         let mut settings = gui::Settings::default();
-        // The first of the probe's own options, which need `--probe`.
-        let mut probe_only = None;
         let mut connect = false;
         // The window's display server, if named; the probe has no window and
         // takes any.
@@ -226,9 +224,6 @@ mod host {
                 }
                 Arg::Flag(name, value) => (name, value.unwrap_or_default()),
             };
-            if cli::PROBE_ONLY.contains(&name) {
-                probe_only.get_or_insert(name);
-            }
             match name {
                 "help" => help = true,
                 "list" => list = true,
@@ -272,7 +267,6 @@ mod host {
                 "no-recv-clipboard" => settings.clipboard_in = false,
                 "no-grab-keyboard" => settings.grab_keyboard = false,
                 "probe" => steps = Some(cli::steps(&value).map_err(|e| format!("--probe: {e}"))?),
-                "connect-timeout" => connect_timeout = number::<u64>(&value, "--connect-timeout")?,
                 other => unreachable!("--{other} is in cli::FLAGS but not parsed"),
             }
         }
@@ -284,11 +278,6 @@ mod host {
             return Ok(Mode::List);
         }
         let headless = steps.is_some();
-        if let Some(name) = probe_only
-            && !headless
-        {
-            return Err(format!("--{name} needs --probe"));
-        }
         let dirs = backends::dirs(
             &state_dir.unwrap_or_else(backends::default_state_dir),
             &extlib_dir.unwrap_or_else(backends::default_extlib_dir),
@@ -331,7 +320,7 @@ mod host {
         }
         options.check_requirements(kind.options)?;
 
-        let Some(steps) = steps else {
+        let Some(mut steps) = steps else {
             return Ok(Mode::Gui(Box::new(gui::Launch {
                 request: Some(gui::Request {
                     kind,
@@ -346,6 +335,15 @@ mod host {
                 settings,
                 display_server,
             })));
+        };
+
+        // `cli::steps` takes `wait-connect=` only as the first step.
+        let connect_timeout = match steps.first() {
+            Some(&Step::WaitConnect(time)) => {
+                steps.remove(0);
+                time
+            }
+            _ => Duration::from_secs(cli::CONNECT_TIMEOUT),
         };
 
         Ok(Mode::Probe(Box::new(Probe {
@@ -397,10 +395,6 @@ mod host {
                 ));
             }
         })
-    }
-
-    fn number<T: std::str::FromStr>(value: &str, flag: &str) -> Result<T, String> {
-        value.trim().parse().map_err(|_| format!("{flag}: {value:?} is not a number"))
     }
 
     /// At most `bytes` of `text`, cut where a character starts: the far end's
@@ -456,8 +450,7 @@ mod host {
 
             let mut status = 0;
             // Drain and print until connected, or the connect deadline.
-            let connect_timeout = Duration::from_secs(self.connect_timeout);
-            let connected = self.pump(&mailbox, &backend, &say, connect_timeout, |m| {
+            let connected = self.pump(&mailbox, &backend, &say, self.connect_timeout, |m| {
                 m.state() != State::Connecting
             });
             if mailbox.state() != State::Connected {
@@ -729,6 +722,7 @@ mod host {
         /// Runs one of `--probe`'s steps; whether it did what it says.
         fn step(&self, step: &Step, mailbox: &Mailbox, backend: &Arc<dyn Backend>, say: &dyn Fn(&str)) -> bool {
             match step {
+                Step::WaitConnect(_) => unreachable!("wait-connect= is taken off the spec as the connect timeout"),
                 Step::Wait(time) => {
                     self.pump(mailbox, backend, say, *time, |_| false);
                 }
@@ -1014,13 +1008,17 @@ mod host {
             assert!(launch(&["--trust", "-c", "rfb", "127.0.0.1:1"]).settings.trust);
             assert!(probe(&["rfb", "127.0.0.1:1", "--trust", "--probe=wait=1"]).trust);
             assert!(!probe(&["rfb", "127.0.0.1:1", "--probe=wait=1"]).trust);
-            let error = "--connect-timeout needs --probe".to_string();
-            assert_eq!(parsed(&["rfb", "127.0.0.1:1", "--connect-timeout", "5"]).err(), Some(error.clone()));
-            assert_eq!(parsed(&["rfb", "127.0.0.1:1", "-c", "--connect-timeout=5"]).err(), Some(error));
-            let p = probe(&["rfb", "127.0.0.1:1", "--connect-timeout", "5", "-P", ""]);
-            assert_eq!((p.connect_timeout, p.steps.len()), (5, 0));
             // The former probe flags are gone; their steps are in the spec.
-            for flag in ["--out", "--out-thumb", "--thumb-step", "--click", "--key", "--clipboard", "--resize"] {
+            for flag in [
+                "--out",
+                "--out-thumb",
+                "--thumb-step",
+                "--click",
+                "--key",
+                "--clipboard",
+                "--resize",
+                "--connect-timeout",
+            ] {
                 assert_eq!(
                     parsed(&["rfb", "127.0.0.1:1", "-P", "wait=1", flag, "x"]).err(),
                     Some(format!("unknown option {flag}"))
@@ -1036,7 +1034,17 @@ mod host {
                     Step::Clipboard("a, b".into()),
                 ]
             );
-            assert_eq!(p.connect_timeout, cli::CONNECT_TIMEOUT);
+            assert_eq!(p.connect_timeout, Duration::from_secs(cli::CONNECT_TIMEOUT));
+            // wait-connect= is the connect timeout, and not a step of its own.
+            let p = probe(&["rfb", "127.0.0.1:1", "-P", "wait-connect=5"]);
+            assert_eq!((p.connect_timeout, p.steps.len()), (Duration::from_secs(5), 0));
+            let p = probe(&["rfb", "127.0.0.1:1", "-P", "wait-connect=0.5,wait=1"]);
+            assert_eq!(p.connect_timeout, Duration::from_millis(500));
+            assert_eq!(p.steps, [Step::Wait(Duration::from_secs(1))]);
+            assert_eq!(
+                parsed(&["rfb", "127.0.0.1:1", "-P", "wait=1,wait-connect=5"]).err().unwrap(),
+                "--probe: wait-connect must be the first step"
+            );
             assert_eq!(
                 parsed(&["rfb", "127.0.0.1:1", "--probe", "3"]).err().unwrap(),
                 "--probe: \"3\" is not a step (wait=3 waits 3 seconds)"

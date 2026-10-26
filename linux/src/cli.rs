@@ -27,6 +27,7 @@ pub const FLAGS: &[Flag] = &[
     flag("help", Some('h'), false),
     flag("list", Some('L'), false),
     flag("forget", Some('F'), true),
+    flag("probe", Some('P'), true),
     flag("connect", Some('c'), false),
     flag("user", Some('u'), true),
     flag("domain", None, true),
@@ -46,12 +47,7 @@ pub const FLAGS: &[Flag] = &[
     flag("no-send-clipboard", None, false),
     flag("no-recv-clipboard", None, false),
     flag("no-grab-keyboard", None, false),
-    flag("probe", Some('P'), true),
-    flag("connect-timeout", None, true),
 ];
-
-/// The probe's own options, which mean something only with `--probe`.
-pub const PROBE_ONLY: &[&str] = &["connect-timeout"];
 
 /// One word of the command line, taken apart.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -123,7 +119,7 @@ pub struct Defaults {
     pub state_dir: String,
 }
 
-/// The default `--scale`, `--connect-timeout` and thumbnail scale (1/N).
+/// The default `--scale`, `wait-connect=` and thumbnail scale (1/N).
 pub const SCALE: &str = "auto";
 pub const CONNECT_TIMEOUT: u64 = 30;
 pub const THUMB_STEP: usize = 8;
@@ -144,6 +140,7 @@ commands:
   -h, --help                 show this help
   -L, --list                 list backends
   -F, --forget ADDRESS       forget the server with the specified address
+  -P, --probe SPEC           run headless and run the steps in SPEC once connected (implies --connect)
 
 options:
   -c, --connect              automatically connect, and quit on disconnect
@@ -169,11 +166,8 @@ session options (also see backends below):
       --no-recv-clipboard    do not update local clipboard from the server
       --no-grab-keyboard     do not automatically grab the keyboard
 
-probe options (--probe must be provided for these options to work):
-  -P, --probe SPEC           run headless and run the steps in SPEC once connected (implies --connect)
-      --connect-timeout N    wait up to N seconds for the connection (default: <connect-timeout>)
-
 probe steps (SPEC is a comma-separated list of these, run in order):
+  wait-connect=SECONDS       wait up to SECONDS for the connection, only as the first step (default: <wait-connect>)
   wait=SECONDS               wait, printing events (e.g., 2, 0.5)
   click=X:Y                  left-click at that position
   key=KEYSYM                 press and release X keysym (e.g., 0x61, 97, 0141 are all 'a')
@@ -194,7 +188,7 @@ pub fn usage(defaults: &Defaults) -> String {
         .replace("<extlib-dir>", &defaults.extlib_dir)
         .replace("<state-dir>", &defaults.state_dir)
         .replace("<scale>", SCALE)
-        .replace("<connect-timeout>", &CONNECT_TIMEOUT.to_string())
+        .replace("<wait-connect>", &CONNECT_TIMEOUT.to_string())
         .replace("<thumb-step>", &THUMB_STEP.to_string())
 }
 
@@ -274,6 +268,9 @@ pub fn list_line(id: &str, library: &Result<std::path::PathBuf, (std::path::Path
 /// One step of `--probe`'s spec.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Step {
+    /// `wait-connect=SECONDS`: how long to wait for the connection. Only
+    /// the first step can be this one.
+    WaitConnect(Duration),
     /// `wait=SECONDS`: events printed, prompts answered, for this long.
     Wait(Duration),
     /// `click=X:Y`: a left click there.
@@ -296,7 +293,8 @@ pub enum Step {
 }
 
 /// The names of the steps [`steps`] takes, in the help's order.
-pub const STEPS: &[&str] = &["wait", "click", "key", "clipboard", "resize", "layout", "sound-cycle", "out", "thumb"];
+pub const STEPS: &[&str] =
+    &["wait-connect", "wait", "click", "key", "clipboard", "resize", "layout", "sound-cycle", "out", "thumb"];
 
 /// `--probe`'s spec: steps separated by commas, each `name=value`. Space
 /// around a name is ignored. A value runs to the next comma outside quotes;
@@ -326,7 +324,11 @@ pub fn steps(spec: &str) -> Result<Vec<Step>, String> {
                 format!("unknown step {name:?}")
             });
         };
-        out.push(step(name, &value)?);
+        let step = step(name, &value)?;
+        if matches!(step, Step::WaitConnect(_)) && !out.is_empty() {
+            return Err("wait-connect must be the first step".into());
+        }
+        out.push(step);
         if !more {
             return Ok(out);
         }
@@ -380,6 +382,7 @@ fn quoted(chars: &mut std::str::Chars, quote: char, into: &mut String) -> Result
 fn step(name: &str, value: &str) -> Result<Step, String> {
     let wrong = |e: String| format!("{name}: {e}");
     Ok(match name {
+        "wait-connect" => Step::WaitConnect(seconds(value).map_err(wrong)?),
         "wait" => Step::Wait(seconds(value).map_err(wrong)?),
         "click" => {
             let (x, y) = value.split_once(':').ok_or_else(|| wrong(format!("not X:Y: {value:?}")))?;
@@ -559,9 +562,6 @@ mod tests {
             let long = line.split_whitespace().find_map(|w| w.strip_prefix("--")).unwrap();
             assert!(FLAGS.iter().any(|f| f.long == long), "{line:?}");
         }
-        for name in PROBE_ONLY {
-            assert!(FLAGS.iter().any(|f| f.long == *name), "{name}");
-        }
     }
 
     #[test]
@@ -575,7 +575,7 @@ mod tests {
         assert!(help.contains("none-resize) (default: auto)\n"), "{help}");
         assert!(help.contains("(default: 30)\n"), "{help}");
         assert!(help.contains("1/N (default: 8)\n"), "{help}");
-        for placeholder in ["<extlib-dir>", "<state-dir>", "<scale>", "<connect-timeout>", "<thumb-step>"] {
+        for placeholder in ["<extlib-dir>", "<state-dir>", "<scale>", "<wait-connect>", "<thumb-step>"] {
             assert!(!help.contains(placeholder), "{placeholder}");
         }
         // Every option's description starts in the same column.
@@ -689,6 +689,24 @@ backends:
         assert_eq!(steps("sound-cycle=0"), Ok(vec![Step::SoundCycle(Duration::ZERO)]));
         for (spec, want) in [("wait=0", 0.0), ("wait=.5", 0.5), ("wait=2.", 2.0), ("wait=007", 7.0)] {
             assert_eq!(steps(spec), Ok(vec![secs(want)]), "{spec}");
+        }
+    }
+
+    #[test]
+    fn wait_connect_is_taken_only_as_the_first_step() {
+        let wait_connect = |s: f64| Step::WaitConnect(Duration::from_secs_f64(s));
+        assert_eq!(steps("wait-connect=5"), Ok(vec![wait_connect(5.0)]));
+        assert_eq!(steps(" wait-connect=0.5,wait=1"), Ok(vec![wait_connect(0.5), secs(1.0)]));
+        assert_eq!(steps("wait-connect='3',out=a.ppm"), Ok(vec![wait_connect(3.0), Step::Out(PathBuf::from("a.ppm"))]));
+        assert_eq!(steps("wait-connect=0"), Ok(vec![wait_connect(0.0)]));
+        let err = |spec: &str| steps(spec).expect_err(spec);
+        let not_first = "wait-connect must be the first step";
+        assert_eq!(err("wait=1,wait-connect=5"), not_first);
+        assert_eq!(err("wait-connect=5,wait-connect=5"), not_first);
+        assert_eq!(err("key=97,wait-connect=x"), "wait-connect: \"x\" is not a number of seconds");
+        assert_eq!(err("wait-connect"), "wait-connect needs a value (wait-connect=...)");
+        for bad in ["", "-1", "1s", "1.2.3", "inf", " 5", "0x10"] {
+            assert_eq!(err(&format!("wait-connect={bad}")), format!("wait-connect: {bad:?} is not a number of seconds"));
         }
     }
 
