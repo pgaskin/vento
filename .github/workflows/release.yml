@@ -17,6 +17,7 @@ jobs:
       name: ${{ steps.version.outputs.name }}
       code: ${{ steps.version.outputs.code }}
       tag: ${{ steps.version.outputs.tag }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
     steps:
       - uses: actions/checkout@v7
 
@@ -45,6 +46,7 @@ jobs:
             const plugins = fs.readdirSync('plugins', {withFileTypes: true})
               .filter(e => e.isDirectory() && fs.existsSync(`plugins/${e.name}/build.gradle`))
               .map(e => e.name)
+              .sort()
             if (!plugins.length) fail('nothing in plugins/')
             for (const name of plugins) {
               const plugin = fs.readFileSync(`plugins/${name}/build.gradle`, 'utf8')
@@ -62,6 +64,34 @@ jobs:
             core.setOutput('name', versionName)
             core.setOutput('code', versionCode)
             core.setOutput('tag', tag)
+            core.setOutput('plugins', JSON.stringify(plugins))
+
+      - name: Generate changelog
+        id: changelog
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs')
+            const dryRun = context.eventName === 'workflow_dispatch'
+            const fail = (message) => { if (dryRun) core.warning(message); else throw new Error(message) }
+            const versionCode = ${{ toJSON(steps.version.outputs.code) }}
+            const plugins = JSON.parse(${{ toJSON(steps.version.outputs.plugins) }})
+            const changelogs = []
+            const appChangelog = `app/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`
+            if (fs.existsSync(appChangelog)) changelogs.push(fs.readFileSync(appChangelog, 'utf8').trimEnd())
+            for (const name of plugins) {
+              const title = `plugins/${name}/fastlane/metadata/android/en-US/title.txt`
+              const changelog = `plugins/${name}/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`
+              const displayName = fs.existsSync(title) ? fs.readFileSync(title, 'utf8').match(/^Vento (.+) backend$/m)?.[1] : undefined
+              if (!displayName) { fail(`the ${name} plugin's title (${title}) is missing or does not match "Vento <name> backend"`); continue }
+              if (!fs.existsSync(changelog)) continue
+              const text = fs.readFileSync(changelog, 'utf8').trimEnd()
+              if (['updateapp', 'updateappmetadata'].includes(text.replace(/[^A-Za-z]/g, '').toLowerCase())) continue
+              changelogs.push(`#### ${displayName}\n\n${text}`)
+            }
+            const changelog = changelogs.join('\n\n') + '\n'
+            core.info(changelog)
+            core.setOutput('changelog', changelog)
 
   linux:
     name: Linux
@@ -162,6 +192,7 @@ jobs:
           if-no-files-found: error
 
   release:
+    name: Release
     environment:
       name: release
       deployment: false
@@ -230,27 +261,14 @@ jobs:
         with:
           retries: 3
           script: |
-            const fs = require('fs')
             const tag = ${{ toJSON(needs.version.outputs.tag) }}
-            const versionCode = ${{ toJSON(needs.version.outputs.code) }}
-            const changelog = (dir) => `${dir}/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`
-            const sections = [fs.readFileSync(changelog('app'), 'utf8').trimEnd()]
-            for (const dir of fs.readdirSync('plugins').sort().map(name => `plugins/${name}`)) {
-              const title = `${dir}/fastlane/metadata/android/en-US/title.txt`
-              if (!fs.existsSync(title) || !fs.existsSync(changelog(dir))) continue
-              const text = fs.readFileSync(changelog(dir), 'utf8').trimEnd()
-              if (['updateapp', 'updateappmetadata'].includes(text.replace(/[^A-Za-z]/g, '').toLowerCase())) continue
-              const name = fs.readFileSync(title, 'utf8').match(/^Vento (.+) backend$/m)?.[1]
-              if (!name) throw new Error(`${title} does not match "Vento <name> backend"`)
-              sections.push(`#### ${name}\n\n${text}`)
-            }
             const {data: {id: id}} = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: tag,
               target_commitish: context.sha,
               name: tag,
-              body: sections.join('\n\n') + '\n',
+              body: ${{ toJSON(needs.version.outputs.changelog) }},
               draft: true,
             })
             core.setOutput('id', id)
