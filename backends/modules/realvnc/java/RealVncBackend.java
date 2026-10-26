@@ -211,7 +211,7 @@ public final class RealVncBackend implements Backend,
         state = State.CONNECTING;
         RealVncCore.start(context);
         RealVncCore.postDelayed(connectTimeout, CONNECT_TIMEOUT_MS);
-        onMain(() -> fireState(State.CONNECTING, "Connecting to " + address));
+        onMain(() -> fireState(State.CONNECTING, connectingTo()));
         RealVncCore.post(() -> {
             if (dead) {
                 return;
@@ -845,13 +845,29 @@ public final class RealVncBackend implements Backend,
         });
     }
 
+    /**
+     * The core's status line ("Authenticating user…", "Attempting to
+     * reconnect to VNC Server…"), under "Connecting to" rather than in its
+     * place, so that the address stays on screen. The screen shows it only
+     * while connecting. Its first, "Connecting...", says what the line above
+     * it already does, and is shown as no status.
+     */
     void status(String text) {
         Log.i(TAG, "status: " + text);
-        onMain(() -> fireState(state, text));
+        final String shown = "Connecting...".equals(text) ? null : text;
+        onMain(() -> fireStatus(shown));
     }
 
+    /**
+     * The core's reconnect banner: connecting again, with its message as the
+     * status line.
+     */
     void reconnecting(String message, String detail) {
-        onMain(() -> fireState(State.CONNECTING, message));
+        Log.i(TAG, "reconnecting: " + message + (detail == null ? "" : " (" + detail + ")"));
+        onMain(() -> {
+            fireState(State.CONNECTING, connectingTo());
+            fireStatus(message);
+        });
     }
 
     /**
@@ -861,7 +877,10 @@ public final class RealVncBackend implements Backend,
      * Without this, a recovered session would show "Connecting…" forever.
      */
     void reconnected() {
-        onMain(() -> fireState(state, null));
+        onMain(() -> {
+            fireState(state, state == State.CONNECTING ? connectingTo() : null);
+            fireStatus(null);
+        });
     }
 
     void saveCredentials(String userName, String password) {
@@ -918,6 +937,16 @@ public final class RealVncBackend implements Backend,
         if (listener != null) {
             listener.state(s, detail);
         }
+    }
+
+    private void fireStatus(String text) {
+        if (listener != null) {
+            listener.status(text);
+        }
+    }
+
+    private String connectingTo() {
+        return "Connecting to " + address;
     }
 
     private void onMain(Runnable r) {
