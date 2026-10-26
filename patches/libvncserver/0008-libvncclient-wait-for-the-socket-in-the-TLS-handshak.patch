@@ -1,7 +1,7 @@
-From 3ad9da92c6b9f7874bf840b94e80abdfb370beb7 Mon Sep 17 00:00:00 2001
+From c056ec08c47460ebbdbbb283cb008bfdf929df3a Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Sun, 25 Oct 2026 17:55:06 -0400
-Subject: [PATCH 9/9] libvncclient: wait for the socket in the TLS handshake
+Subject: [PATCH 8/9] libvncclient: wait for the socket in the TLS handshake
 
 The client's socket is non-blocking, so gnutls_handshake() returns
 GNUTLS_E_AGAIN whenever the server has not sent the next record yet.
@@ -19,7 +19,7 @@ callback in between, and shutting the socket down still ends a wait at
 once.
 
 diff --git a/src/libvncclient/tls_gnutls.c b/src/libvncclient/tls_gnutls.c
-index 0d4cc77..3731eda 100644
+index ef0e969..be914c7 100644
 --- a/src/libvncclient/tls_gnutls.c
 +++ b/src/libvncclient/tls_gnutls.c
 @@ -22,6 +22,11 @@

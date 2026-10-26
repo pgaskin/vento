@@ -1,7 +1,7 @@
-From 6692fb890cd7f5c7be1c799479728dfe05c86a4c Mon Sep 17 00:00:00 2001
+From acc53fd6970b9e8662dfd0e3beaa1e01aee27f37 Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Sun, 18 Oct 2026 15:29:41 -0400
-Subject: [PATCH 6/9] libvncclient: a certificate that verifies is the client's
+Subject: [PATCH 5/9] libvncclient: a certificate that verifies is the client's
  question too
 
 verify_certificate_callback put a certificate to
@@ -50,7 +50,7 @@ index 90627af..1b22f3b 100644
  typedef rfbBool (*GetX509CertFingerprintMismatchDecisionProc)(struct _rfbClient* client,
                                                                const char *remote_cert_subject,
 diff --git a/src/libvncclient/tls_gnutls.c b/src/libvncclient/tls_gnutls.c
-index 71b36a1..fbd96f1 100644
+index 16c5218..5534b53 100644
 --- a/src/libvncclient/tls_gnutls.c
 +++ b/src/libvncclient/tls_gnutls.c
 @@ -78,6 +78,35 @@ static int cert_fingerprint_mismatch_callback(rfbClient *client, gnutls_x509_crt

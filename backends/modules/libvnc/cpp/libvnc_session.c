@@ -392,7 +392,7 @@ static void onGotUpdate(rfbClient *cl, int x, int y, int w, int h) {
     s->dirty[s->ndirty++] = (Rect) {x, y, w, h};
 }
 
-/* Copies the library's screen list, which patches/libvncserver's 0004 adds
+/* Copies the library's screen list, which patches/libvncserver's 0003 adds
    (upstream keeps only one screen). The fields are in network byte order
    there, as in `client->screen`, so they are swapped here and in sendLayout
    only. The ids are kept, since a later layout request sends them back.
@@ -487,7 +487,7 @@ static void onFinishedUpdate(rfbClient *cl) {
 }
 
 /* A 0x0 shape means the server hid the pointer, which the library reports
-   only with patches/libvncserver's 0008; it is passed on with no pixels, which
+   only with patches/libvncserver's 0007; it is passed on with no pixels, which
    is how the session API represents a hidden pointer. */
 static void onGotCursor(rfbClient *cl, int xhot, int yhot, int w, int h, int bpp) {
     Session *s = sessionOf(cl);
@@ -675,6 +675,16 @@ static rfbCredential *onGetCredential(rfbClient *cl, int type) {
         return calloc(1, sizeof(rfbCredential));
     }
     if (type != rfbCredentialTypeUser) {
+        return NULL;
+    }
+    /* VeNCrypt's top-level Plain has no TLS under it: the user name and
+       password would go to the server in the clear. The library accepts it,
+       over VncAuth or an anonymous TLS sub-type listed before it too, and asks
+       for the credentials before sending them, so this is where it is
+       refused. The TLS and X509 Plain sub-types come here as well, inside
+       their tunnel, and are answered as usual. */
+    if (cl->subAuthScheme == rfbVeNCryptPlain) {
+        rfbClientErr("This server asks for the user name and password to be sent unencrypted (VeNCrypt Plain), which this app does not do.\n");
         return NULL;
     }
     char *user = NULL, *pass = NULL;
@@ -1800,7 +1810,7 @@ static bool op_info(vento_session *base, vento_strings *out) {
     return vento_strings_set(out, values, sizeof(values) / sizeof(values[0]));
 }
 
-/* The counters kept by the patched sockets.c (patches/libvncserver's 0005),
+/* The counters kept by the patched sockets.c (patches/libvncserver's 0004),
    read under the framebuffer lock because a failed handshake may free the
    client concurrently. */
 static bool op_traffic(vento_session *base, uint64_t out[2]) {

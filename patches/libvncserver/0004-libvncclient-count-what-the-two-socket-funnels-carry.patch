@@ -1,7 +1,7 @@
-From a07f784e50cfb636cf25b6c0ba2092774782294b Mon Sep 17 00:00:00 2001
+From d63ce29877eb0d00baf05017a488e31a179d5dee Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Fri, 14 Aug 2026 04:14:14 -0400
-Subject: [PATCH 5/9] libvncclient: count what the two socket funnels carry
+Subject: [PATCH 4/9] libvncclient: count what the two socket funnels carry
 
 
 diff --git a/include/rfb/rfbclient.h b/include/rfb/rfbclient.h

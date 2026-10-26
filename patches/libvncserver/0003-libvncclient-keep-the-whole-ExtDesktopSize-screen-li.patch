@@ -1,7 +1,7 @@
-From fdfab591fe19b90d1bcfd6b604a8ccda2cd0ab33 Mon Sep 17 00:00:00 2001
+From 65a1738f05fa0b9dfc37aed89b5ebb98a41a120d Mon Sep 17 00:00:00 2001
 From: Claude Opus 5 <noreply@anthropic.com>
 Date: Wed, 12 Aug 2026 23:51:22 -0400
-Subject: [PATCH 4/9] libvncclient: keep the whole ExtDesktopSize screen list
+Subject: [PATCH 3/9] libvncclient: keep the whole ExtDesktopSize screen list
 
 A multi-head desktop is one framebuffer with the heads laid out inside
 it, and the layout is the only thing that says where the joins are. The

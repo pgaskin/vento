@@ -1,7 +1,7 @@
-From 7881c30fe9f9a05617078de5f1ebd63000039d4f Mon Sep 17 00:00:00 2001
+From 6aef5233efa6795c272dd16604d22e06582efc09 Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Sun, 25 Oct 2026 19:05:02 -0400
-Subject: [PATCH 10/10] libvncclient: wait for sockets with poll() rather than
+Subject: [PATCH 9/9] libvncclient: wait for sockets with poll() rather than
  select()
 
 select() takes an fd_set, a bitmap of FD_SETSIZE (1024) bits, so a
@@ -366,7 +366,7 @@ index 303ad1f..19f69ab 100644
    }
  
 diff --git a/src/libvncclient/tls_gnutls.c b/src/libvncclient/tls_gnutls.c
-index 3731eda..21ed5d5 100644
+index be914c7..f957fc4 100644
 --- a/src/libvncclient/tls_gnutls.c
 +++ b/src/libvncclient/tls_gnutls.c
 @@ -445,22 +445,24 @@ SetTLSAnonCredential(rfbClient* client)
@@ -412,7 +412,7 @@ index 3731eda..21ed5d5 100644
        if (errno == ETIMEDOUT)
          rfbClientLog("TLS handshake failed: the server did not answer for %d seconds.\n",
                       TLS_HANDSHAKE_WAIT_MS / 1000);
-@@ -854,17 +858,31 @@ WriteToTLS(rfbClient* client, const char *buf, unsigned int n)
+@@ -853,17 +857,31 @@ WriteToTLS(rfbClient* client, const char *buf, unsigned int n)
  {
    unsigned int offset = 0;
    ssize_t ret;

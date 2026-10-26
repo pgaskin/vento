@@ -1,7 +1,7 @@
-From 49cd25406960dacc0b92cfe7226925054ee878ae Mon Sep 17 00:00:00 2001
+From 121e6c37ab0528a91bd3311f29a244fe5fe4257e Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Sun, 18 Oct 2026 15:55:53 -0400
-Subject: [PATCH 7/9] libvncclient: a verified certificate for another name is
+Subject: [PATCH 6/9] libvncclient: a verified certificate for another name is
  asked about too
 
 A certificate that verified against the system CA (or the CA file
@@ -43,7 +43,7 @@ index 1b22f3b..87027ad 100644
  typedef rfbBool (*GetX509CertFingerprintMismatchDecisionProc)(struct _rfbClient* client,
                                                                const char *remote_cert_subject,
 diff --git a/src/libvncclient/tls_gnutls.c b/src/libvncclient/tls_gnutls.c
-index fbd96f1..0d4cc77 100644
+index 5534b53..ef0e969 100644
 --- a/src/libvncclient/tls_gnutls.c
 +++ b/src/libvncclient/tls_gnutls.c
 @@ -229,7 +229,16 @@ verify_certificate_callback (gnutls_session_t session)

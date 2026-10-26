@@ -1,7 +1,7 @@
-From 550ace525f791bed6fc1fec843c50eac37dedb31 Mon Sep 17 00:00:00 2001
+From 7e97543e9408018650cb95612ee65691663012cb Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Mon, 19 Oct 2026 00:54:37 -0400
-Subject: [PATCH 8/9] libvncclient: an empty cursor shape is reported, not
+Subject: [PATCH 7/9] libvncclient: an empty cursor shape is reported, not
  dropped
 
 A cursor update of no pixels (width or height 0) is how a server hides

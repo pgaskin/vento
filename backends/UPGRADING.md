@@ -459,27 +459,30 @@ One commit per upstream, after review, by the lead:
   configures the same tarballs with the port's options but for the
   assembly, which it leaves on, a CA bundle path and a system priority
   file path.
-- **libvncserver** at upstream master; ten patches. No releases since
-  0.9.15. `0006` (as TigerVNC's `0005`) hands a certificate that verified
-  against the system's authorities, and is for the name dialled, to
+- **libvncserver** at upstream master; nine patches. No releases since
+  0.9.15. VeNCrypt's top-level Plain (credentials without TLS), which the
+  library accepts, is refused by the shim's `onGetCredential` before the
+  credentials are sent. `0005` (as TigerVNC's `0005`)
+  hands a certificate that verified against the system's authorities, and is
+  for the name dialled, to
   `GetX509CertFingerprintMismatchDecision` too when it is installed, and
-  `0007` one that verified for another name, which upstream refuses outright
+  `0006` one that verified for another name, which upstream refuses outright
   (TigerVNC's viewer asks about it, and so does that backend): so the shim's
   `trust_needed` and the known hosts see every certificate. Should upstream
   ever take them or change `verify_certificate_callback`, check that a
   CA-signed certificate, for the name or not, still reaches the hook.
-  `0008` calls `GotCursorShape` with a 0x0 shape for a cursor update of no
+  `0007` calls `GotCursorShape` with a 0x0 shape for a cursor update of no
   pixels, the server hiding the pointer, which upstream returns from
-  before the callback. `0009` waits for the socket between the TLS
+  before the callback. `0008` waits for the socket between the TLS
   handshake's retries, at most 15 s each, where it retried at once and
   logged each time: `0002` took gnutls' own deadline away, and with it the
-  only wait on the non-blocking socket. `0010` waits for sockets with
+  only wait on the non-blocking socket. `0009` waits for sockets with
   `poll()` (a new `sock_wait()` in `common/sockets.c`) where `select()`
   overflowed its `fd_set` for a socket at descriptor 1024 or above, and makes
   `WriteToTLS` wait for room where it retried at once; Windows keeps
   `select()`. Upstream's own attempt (993df689) was reverted in 7dd27504
   because its connect wait used `POLLIN`, which broke a server's reverse
-  connection to a repeater; `0010` waits for `POLLOUT`. Should upstream take
+  connection to a repeater; `0009` waits for `POLLOUT`. Should upstream take
   a `poll()` change of its own, check the connect wait's direction.
 - **tigervnc** master ed951a41, reporting 1.16.80; six patches (the PAM one
   dropped, the libav context's pixel format fix with that context, and the
