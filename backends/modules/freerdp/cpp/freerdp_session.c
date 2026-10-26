@@ -1972,6 +1972,39 @@ static void onPostDisconnect(freerdp *instance) {
     gdi_free(instance);
 }
 
+/* ---- automatic reconnection --------------------------------------------- */
+
+/* The library runs the retries (client_auto_reconnect, the loop the desktop
+   and Android clients use); these supply its delay and let a close interrupt
+   the wait. A close is a quit request, which the library reads as the window
+   going away, so the loop returns instead of waiting out a delay for a session
+   nobody is watching. The reconnect runs PostConnect again, which fires
+   `connected` once the session is back. */
+static BOOL onReconnectWindowEvents(freerdp *instance) {
+    Session *s = sessionOf(instance->context);
+    pthread_mutex_lock(&s->lock);
+    const int quit = s->quit;
+    pthread_mutex_unlock(&s->lock);
+    return !quit;
+}
+
+static SSIZE_T onRetryDialog(freerdp *instance, const char *what, size_t current, void *userarg) {
+    (void) current;
+    (void) userarg;
+    if (strcmp(what, "connection") != 0) {
+        return -1;
+    }
+    return (SSIZE_T) freerdp_settings_get_uint32(instance->context->settings, FreeRDP_TcpConnectTimeout);
+}
+
+/* Called when the transport has died mid-session. The picture and input stop
+   (`connected` is clear) until the library has the session back. Clearing it
+   also lets PostConnect, which ignores a second call, run again. */
+static BOOL reconnectSession(Session *s, rdpContext *ctx) {
+    s->connected = 0;
+    return client_auto_reconnect_ex(ctx->instance, onReconnectWindowEvents);
+}
+
 static void applySettings(Session *s, rdpSettings *settings) {
     freerdp_settings_set_string(settings, FreeRDP_ServerHostname, s->host);
     freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, (UINT32) s->port);
@@ -2056,6 +2089,9 @@ static void applySettings(Session *s, rdpSettings *settings) {
     freerdp_settings_set_bool(settings, FreeRDP_CompressionEnabled, s->compression != 0);
     freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE);
+    /* The library's retry loop returns at once unless this is on. The retry
+       count stays the library's own default. */
+    freerdp_settings_set_bool(settings, FreeRDP_AutoReconnectionEnabled, TRUE);
 
     /* The picture. Windows 8 and later prefer the graphics pipeline, and it is
        the only path that carries H.264, which this build decodes with the
@@ -2230,6 +2266,7 @@ static void *protocolThread(void *arg) {
     ctx->instance->PreConnect = onPreConnect;
     ctx->instance->PostConnect = onPostConnect;
     ctx->instance->PostDisconnect = onPostDisconnect;
+    ctx->instance->RetryDialog = onRetryDialog;
     ctx->instance->AuthenticateEx = onAuthenticate;
     /* The only certificate check, with the library's own store bypassed (see
        onVerifyX509Certificate). */
@@ -2285,7 +2322,7 @@ static void *protocolThread(void *arg) {
            auto-reset, and an event left signalled makes this loop spin. */
         ResetEvent(s->wake);
         drainCommands(s);
-        if (!freerdp_check_event_handles(ctx)) {
+        if (!freerdp_check_event_handles(ctx) && !reconnectSession(s, ctx)) {
             break;
         }
     }
