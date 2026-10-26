@@ -1647,6 +1647,13 @@ void Session::run() {
         // again, as fast as it can, for as long as the rest of a large
         // rectangle takes to arrive.
         bool starved = false;
+        // A server set to ask its user (QueryConnect) sends its
+        // SecurityResult only once they answer. The wait is named once it has
+        // lasted a second: a server that answers at once is never named.
+        const auto approvalDelay = std::chrono::seconds(1);
+        std::chrono::steady_clock::time_point approvalSince;
+        bool approving = false;
+        bool approvalSaid = false;
         for (;;) {
             bool paused;
             {
@@ -1702,8 +1709,29 @@ void Session::run() {
                     fds[n++] = {sock->getFd(),
                                 (short) ((paused ? 0 : POLLIN) | (unsent ? POLLOUT : 0)), 0};
                 }
-                const int timeout = core::Timer::checkTimeouts();
-                const int r = poll(fds, n, timeout > 0 ? timeout : -1);
+                int timeout = core::Timer::checkTimeouts();
+                timeout = timeout > 0 ? timeout : -1;
+                if (conn->state() == rfb::CConnection::RFBSTATE_SECURITY_RESULT) {
+                    const auto now = std::chrono::steady_clock::now();
+                    if (!approving) {
+                        approving = true;
+                        approvalSince = now;
+                    }
+                    const long long left =
+                            std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    approvalSince + approvalDelay - now)
+                                    .count();
+                    if (!approvalSaid && left <= 0) {
+                        approvalSaid = true;
+                        LOGI("waiting for the server to accept the connection");
+                        cb_.status(cb_.user, "Waiting for the server to accept the connection…");
+                    } else if (!approvalSaid && (timeout < 0 || left < timeout)) {
+                        timeout = (int) left;
+                    }
+                } else {
+                    approving = false;
+                }
+                const int r = poll(fds, n, timeout);
                 if (r < 0 && errno != EINTR) {
                     break;
                 }

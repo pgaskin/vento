@@ -1102,6 +1102,10 @@ impl security::Ask for FromConfigThenHandler<'_> {
     fn trust(&mut self, fingerprint: &str) -> bool {
         self.handler.trust(fingerprint)
     }
+
+    fn status_setter(&mut self) -> Option<runtime::status::StatusSetter> {
+        self.handler.status_setter()
+    }
 }
 
 /// `host`, `host:port`, `host:display` or `host::port`, plus the bracketed IPv6

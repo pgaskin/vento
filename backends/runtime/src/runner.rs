@@ -108,6 +108,11 @@ impl Handler for Bridge {
         self.events.status(text);
     }
 
+    fn status_setter(&mut self) -> Option<crate::status::StatusSetter> {
+        let events = Arc::clone(&self.events);
+        Some(Arc::new(move |text: Option<&str>| events.status(text)))
+    }
+
     fn clipboard(&mut self, text: &str) {
         self.events.clipboard(text);
     }

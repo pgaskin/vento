@@ -112,7 +112,17 @@ pub trait Ask {
 
     /// The server's certificate fingerprint. `false` abandons the connection.
     fn trust(&mut self, fingerprint: &str) -> bool;
+
+    /// The handler's [`status_setter`](runtime::Handler::status_setter).
+    fn status_setter(&mut self) -> Option<runtime::status::StatusSetter> {
+        None
+    }
 }
+
+/// The status while the server has not answered the authentication: a
+/// server set to ask its user (TigerVNC's `QueryConnect`, RealVNC's and
+/// x11vnc's equivalents) sends its result only once they answer.
+const WAITING_FOR_APPROVAL: &str = "Waiting for the server to accept the connection…";
 
 /// Negotiates a security type, runs it, and reads the result.
 pub fn handshake_security(
@@ -170,7 +180,10 @@ pub fn handshake_security(
     // authenticated nothing.
     let expect_result = version >= Version::V3_8 || kind != SEC_NONE;
     if expect_result {
-        let result = wire.r.u32()?;
+        let result = {
+            let _waiting = runtime::status::Delayed::new(ask.status_setter(), WAITING_FOR_APPROVAL);
+            wire.r.u32()?
+        };
         if result != 0 {
             let reason = if version >= Version::V3_8 {
                 wire.r.string().unwrap_or_default()
@@ -351,6 +364,58 @@ fn vnc_auth(password: &str, challenge: &[u8; 16]) -> [u8; 16] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    /// Answers nothing, and records the statuses it is given.
+    struct Statuses(Arc<Mutex<Vec<String>>>);
+
+    impl Ask for Statuses {
+        fn credentials(&mut self, _needs_user: bool) -> Option<Credentials> {
+            None
+        }
+        fn trust(&mut self, _fingerprint: &str) -> bool {
+            false
+        }
+        fn status_setter(&mut self) -> Option<runtime::status::StatusSetter> {
+            let said = Arc::clone(&self.0);
+            Some(Arc::new(move |text: Option<&str>| {
+                said.lock().unwrap().push(text.unwrap_or("-").to_string())
+            }))
+        }
+    }
+
+    /// RFB 3.8 with security type None, the result sent after `delay`: a
+    /// server asking its user is named once the wait has lasted a second,
+    /// and a prompt one is not named at all.
+    fn result_after(delay: Duration) -> Vec<String> {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let near = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (mut far, _) = listener.accept().unwrap();
+        let server = std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            far.write_all(&[1, SEC_NONE]).unwrap();
+            let mut chosen = [0u8; 1];
+            far.read_exact(&mut chosen).unwrap();
+            std::thread::sleep(delay);
+            far.write_all(&0u32.to_be_bytes()).unwrap();
+        });
+        let mut wire = Wire::plain(near, Arc::default(), Arc::default()).unwrap();
+        let said = Arc::new(Mutex::new(Vec::new()));
+        let mut ask = Statuses(Arc::clone(&said));
+        let chosen = handshake_security(&mut wire, Version::V3_8, Security::Plain, "far", &mut ask);
+        server.join().unwrap();
+        assert_eq!(chosen.unwrap().description, "None");
+        let said = said.lock().unwrap().clone();
+        said
+    }
+
+    #[test]
+    fn a_server_slow_to_accept_is_named() {
+        assert!(result_after(Duration::ZERO).is_empty());
+        let slow = runtime::status::READABLE + Duration::from_millis(300);
+        assert_eq!(result_after(slow), [WAITING_FOR_APPROVAL]);
+    }
 
     /// Password "test", all-zero challenge, checked against another
     /// implementation:

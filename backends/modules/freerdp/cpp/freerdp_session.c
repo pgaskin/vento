@@ -44,12 +44,14 @@
 //     alternative is holding that lock across a decode, which would make the
 //     drawing thread wait for an H.264 frame.
 
+#include <errno.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
@@ -151,6 +153,18 @@ struct Session {
 
     /* the certificate prompt, answered the same way */
     int trustAnswered, trustAccepted;
+
+    /* The connecting screen's status (see statusThread), under `lock`: the
+       text due at `statusDue` if the step it names is still under way, the
+       text last shown, and the thread that shows it, started at the first
+       step worth naming. The texts are string literals, compared by
+       address. */
+    const char *statusPending;
+    const char *statusShown;
+    struct timespec statusDue;
+    pthread_cond_t statusCond; /* on CLOCK_MONOTONIC */
+    pthread_t statusThread;
+    int statusStarted, statusStop;
 
     /* the copy op_read_region reads from */
     pthread_rwlock_t fbLock;
@@ -429,6 +443,8 @@ static void post(Session *s, const Cmd *c) {
 
 /* ---- callbacks out ------------------------------------------------------ */
 
+static void stopStatus(Session *s);
+
 static void fireClosed(Session *s, const char *detail) {
     pthread_mutex_lock(&s->lock);
     const int already = s->closedReported;
@@ -437,6 +453,8 @@ static void fireClosed(Session *s, const char *detail) {
     if (already) {
         return;
     }
+    /* Nothing may follow `closed`. */
+    stopStatus(s);
     /* The library's message, which can quote the server's; the callback
        takes UTF-8. */
     char *utf8 = vento_utf8_from_bytes(detail);
@@ -1762,12 +1780,138 @@ static void drainCommands(Session *s) {
     }
 }
 
+/* ---- the connecting screen's status --------------------------------------- */
+
+/* How long a step of the connection lasts before the connecting screen names
+   it: most are over in milliseconds, and a line that flashes past unread is
+   noise. Those that can last are the authentication (a slow domain
+   controller) and the steps after it, where Windows prepares the session and
+   may wait for its licence server, and any of them over a slow link. */
+#define STATUS_DELAY_MS 1000
+
+static const char STATUS_AUTHENTICATING[] = "Authenticating…";
+static const char STATUS_STARTING[] = "Starting the session…";
+
+/* What a connection state is worth saying, or NULL: the authentication, and
+   everything after it until the session is active. */
+static const char *statusOfState(int state) {
+    if (state == CONNECTION_STATE_NLA || state == CONNECTION_STATE_AAD) {
+        return STATUS_AUTHENTICATING;
+    }
+    if (state >= CONNECTION_STATE_MCS_CREATE_REQUEST && state < CONNECTION_STATE_ACTIVE) {
+        return STATUS_STARTING;
+    }
+    return NULL;
+}
+
+/* Shows the pending status once it is due. A thread of its own, since the
+   protocol thread is inside freerdp_connect for the whole of the wait. */
+static void *statusThread(void *arg) {
+    Session *s = (Session *) arg;
+    pthread_mutex_lock(&s->lock);
+    while (!s->statusStop) {
+        if (!s->statusPending) {
+            pthread_cond_wait(&s->statusCond, &s->lock);
+            continue;
+        }
+        const struct timespec due = s->statusDue;
+        if (pthread_cond_timedwait(&s->statusCond, &s->lock, &due) != ETIMEDOUT) {
+            continue;
+        }
+        if (s->statusStop || !s->statusPending) {
+            continue;
+        }
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        if (now.tv_sec < s->statusDue.tv_sec
+            || (now.tv_sec == s->statusDue.tv_sec && now.tv_nsec < s->statusDue.tv_nsec)) {
+            continue; /* moved while this waited */
+        }
+        const char *text = s->statusPending;
+        s->statusPending = NULL;
+        s->statusShown = text;
+        pthread_mutex_unlock(&s->lock);
+        LOGI("status: %s", text);
+        s->cb.status(s->cb.user, text);
+        pthread_mutex_lock(&s->lock);
+    }
+    pthread_mutex_unlock(&s->lock);
+    return NULL;
+}
+
+/* The protocol thread's: ends the status thread, whose last status then
+   comes before whatever this thread reports next. */
+static void stopStatus(Session *s) {
+    pthread_mutex_lock(&s->lock);
+    const int started = s->statusStarted;
+    s->statusStop = 1;
+    s->statusPending = NULL;
+    pthread_cond_broadcast(&s->statusCond);
+    pthread_mutex_unlock(&s->lock);
+    if (started) {
+        pthread_join(s->statusThread, NULL);
+        pthread_mutex_lock(&s->lock);
+        s->statusStarted = 0;
+        pthread_mutex_unlock(&s->lock);
+    }
+}
+
+/* Each step of the connection sequence: the status it names is due a
+   second from now, or at once if one is already up (the wait is already a
+   long one), and a status that no longer applies is cleared at once.
+   StateChanged rather than ConnectionStateChange, which the library declares
+   but never registers, so a handler for it is never called. */
+static void onStateChanged(void *context, const StateChangedEventArgs *e) {
+    Session *s = sessionOf((rdpContext *) context);
+    const char *text = statusOfState((int) e->newState);
+    int clear = 0;
+    const char *now = NULL;
+    pthread_mutex_lock(&s->lock);
+    const char *coming = s->statusPending ? s->statusPending : s->statusShown;
+    if (s->statusStop || text == coming) {
+        /* nothing new */
+    } else if (text == s->statusShown || e->newState == CONNECTION_STATE_ACTIVE) {
+        /* Back to what is shown, or connected, where the screen drops what
+           was shown by itself. */
+        s->statusPending = NULL;
+    } else if (s->statusShown && text) {
+        s->statusPending = NULL;
+        s->statusShown = text;
+        now = text;
+    } else {
+        clear = s->statusShown != NULL;
+        s->statusShown = NULL;
+        s->statusPending = text;
+        if (text) {
+            clock_gettime(CLOCK_MONOTONIC, &s->statusDue);
+            s->statusDue.tv_sec += STATUS_DELAY_MS / 1000;
+            s->statusDue.tv_nsec += (long) (STATUS_DELAY_MS % 1000) * 1000000L;
+            if (s->statusDue.tv_nsec >= 1000000000L) {
+                s->statusDue.tv_sec++;
+                s->statusDue.tv_nsec -= 1000000000L;
+            }
+            if (!s->statusStarted) {
+                s->statusStarted = pthread_create(&s->statusThread, NULL, statusThread, s) == 0;
+            }
+        }
+        pthread_cond_broadcast(&s->statusCond);
+    }
+    pthread_mutex_unlock(&s->lock);
+    if (now) {
+        LOGI("status: %s", now);
+    }
+    if (now || clear) {
+        s->cb.status(s->cb.user, now);
+    }
+}
+
 /* ---- the connection ----------------------------------------------------- */
 
 static BOOL onPreConnect(freerdp *instance) {
     rdpContext *ctx = instance->context;
     PubSub_SubscribeChannelConnected(ctx->pubSub, onChannelConnected);
     PubSub_SubscribeChannelDisconnected(ctx->pubSub, onChannelDisconnected);
+    PubSub_SubscribeStateChanged(ctx->pubSub, onStateChanged);
     /* Set before connecting, since the Monitor Layout PDU arrives in the
        connection sequence. */
     ctx->update->RemoteMonitors = onRemoteMonitors;
@@ -2192,6 +2336,7 @@ static void freeSession(Session *s) {
     free(s->credPass);
     pthread_mutex_destroy(&s->lock);
     pthread_cond_destroy(&s->cond);
+    pthread_cond_destroy(&s->statusCond);
     pthread_rwlock_destroy(&s->fbLock);
     vento_h264_release(&s->h264);
     vento_sound_release(&s->audio);
@@ -2260,6 +2405,13 @@ vento_session *vento_freerdp_create(const vento_freerdp_config *cfg, const vento
     s->cb = *cb;
     pthread_mutex_init(&s->lock, NULL);
     pthread_cond_init(&s->cond, NULL);
+    {
+        pthread_condattr_t monotonic;
+        pthread_condattr_init(&monotonic);
+        pthread_condattr_setclock(&monotonic, CLOCK_MONOTONIC);
+        pthread_cond_init(&s->statusCond, &monotonic);
+        pthread_condattr_destroy(&monotonic);
+    }
     pthread_rwlock_init(&s->fbLock, NULL);
     s->wake = CreateEvent(NULL, FALSE, FALSE, NULL);
     if (!s->wake) {
@@ -2404,6 +2556,8 @@ static void op_destroy(vento_session *base) {
     Session *s = sessionOfBase(base);
     stop(s);
     pthread_join(s->thread, NULL);
+    /* Already stopped by `closed`, unless the thread ended without one. */
+    stopStatus(s);
 
     if (s->ctx) {
         if (s->started) {

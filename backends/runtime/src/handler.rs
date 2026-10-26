@@ -134,6 +134,14 @@ pub trait Handler {
         let _ = text;
     }
 
+    /// [`status`](Handler::status) as a handle another thread can call, for
+    /// a status that is due only once a wait has lasted long enough to read
+    /// ([`status::Delayed`](crate::status::Delayed)). `None` for a handler
+    /// with no screen to show one on.
+    fn status_setter(&mut self) -> Option<crate::status::StatusSetter> {
+        None
+    }
+
     /// What the far end's clipboard now holds, as text.
     fn clipboard(&mut self, text: &str);
 

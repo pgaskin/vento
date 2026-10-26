@@ -1016,13 +1016,27 @@ public:
                     (flags & MB_CUSTOM) != 0 && custom ? custom : "");
     }
 
-    void onStatus(const std::string &text) { LOGI("status: %s", text.c_str()); }
-
-    void onReconnecting(const std::string &message, const std::string &detail) {
-        LOGI("reconnecting: %s (%s)", message.c_str(), detail.c_str());
+    // The core's progress ("Authenticating user…", "Waiting for RealVNC
+    // Server to connect…"), in its own words, as the connecting screen's
+    // status. Once connected the platform ignores it. Its first,
+    // "Connecting...", says what the line above it already does, and is
+    // passed as no status.
+    void onStatus(const std::string &text) {
+        LOGI("status: %s", text.c_str());
+        cb_.status(cb_.user, text == "Connecting..." ? nullptr : text.c_str());
     }
 
-    void onReconnected() { LOGI("reconnected"); }
+    // The core's reconnect banner: shown as the status while connecting,
+    // and cleared when the banner is hidden again.
+    void onReconnecting(const std::string &message, const std::string &detail) {
+        LOGI("reconnecting: %s (%s)", message.c_str(), detail.c_str());
+        cb_.status(cb_.user, message.c_str());
+    }
+
+    void onReconnected() {
+        LOGI("reconnected");
+        cb_.status(cb_.user, nullptr);
+    }
 
     void onSaveCredentials(const std::string &userName, const std::string &password) {
         // These belong in a connection store, which this file cannot reach;

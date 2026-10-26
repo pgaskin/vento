@@ -35,6 +35,7 @@ pub mod media;
 pub mod rate;
 pub mod runner;
 pub mod slot;
+pub mod status;
 pub mod text;
 pub mod tls;
 

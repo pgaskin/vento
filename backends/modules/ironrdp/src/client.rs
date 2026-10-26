@@ -846,7 +846,8 @@ impl Client {
         // always returns false.
         let credssp = connector.should_perform_credssp();
         let public_key = peer.public_key.clone();
-        let mut framed = Framed::new(Counting::new(wire.clone_handle(), &self.shared));
+        let steps = Steps::new(Counting::new(wire.clone_handle(), &self.shared), handler.status_setter(), credssp);
+        let mut framed = Framed::new(steps);
         let mut network = NoNetworkClient;
         let outcome = connect_finalize(
             upgraded,
@@ -865,6 +866,7 @@ impl Client {
                 protocol(e)
             }
         })?;
+        framed.get_inner_mut().0.finish();
         let result = match outcome {
             ConnectionOutcome::Connected(result) => result,
             ConnectionOutcome::Redirected(pdu) => return Err(redirected(&pdu)),
@@ -1562,6 +1564,72 @@ impl<W: Write> Write for Counting<W> {
     }
 }
 
+/// The connecting screen's status during the connection sequence, which
+/// `connect_finalize` runs from start to end without a word: the
+/// authentication (CredSSP), and then the rest, where the server prepares the
+/// session (and Windows may wait for its licence server). Each is named once
+/// it has lasted long enough to read (`runtime::status::Delayed`).
+///
+/// Which one is under way shows in what this end writes: CredSSP's messages
+/// are DER (`TSRequest`, a SEQUENCE, 0x30) and the rest of the sequence is
+/// X.224 in TPKT (version 3), each write one whole message. So the first
+/// write that starts with a TPKT header ends the authentication.
+struct Steps<S> {
+    inner: S,
+    setter: Option<runtime::status::StatusSetter>,
+    authenticating: bool,
+    status: Option<runtime::status::Delayed>,
+}
+
+const STATUS_AUTHENTICATING: &str = "Authenticating…";
+const STATUS_STARTING: &str = "Starting the session…";
+
+impl<S> Steps<S> {
+    fn new(inner: S, setter: Option<runtime::status::StatusSetter>, credssp: bool) -> Steps<S> {
+        let text = if credssp { STATUS_AUTHENTICATING } else { STATUS_STARTING };
+        Steps {
+            status: Some(runtime::status::Delayed::new(setter.clone(), text)),
+            inner,
+            setter,
+            authenticating: credssp,
+        }
+    }
+
+    /// The sequence is over: nothing more is named, and what follows passes
+    /// straight through.
+    fn finish(&mut self) {
+        self.status = None;
+        self.setter = None;
+        self.authenticating = false;
+    }
+}
+
+impl<R: Read> Read for Steps<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl<W: Write> Write for Steps<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.authenticating && buf.first() == Some(&0x03) {
+            self.authenticating = false;
+            // At once if the authentication was named (the wait is already
+            // a long one), and otherwise once it has lasted.
+            let shown = self.status.take().is_some_and(|status| status.end());
+            match &self.setter {
+                Some(setter) if shown => setter(Some(STATUS_STARTING)),
+                _ => self.status = Some(runtime::status::Delayed::new(self.setter.clone(), STATUS_STARTING)),
+            }
+        }
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 /// CredSSP requires one of these so that Kerberos can reach a KDC. This client
 /// does not support Kerberos (it uses NTLM, which needs no third party), so
 /// this only reports that, rather than pulling an HTTP client into the app.
@@ -1834,6 +1902,39 @@ impl Default for Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The authentication is named once it has lasted a second, and
+    /// replaced as soon as the first X.224 message is written.
+    #[test]
+    fn the_connection_sequence_names_its_long_steps() {
+        let said = Arc::new(Mutex::new(Vec::new()));
+        let into = Arc::clone(&said);
+        let setter: runtime::status::StatusSetter = Arc::new(move |text: Option<&str>| {
+            into.lock().unwrap().push(text.map(str::to_string));
+        });
+        let mut steps = Steps::new(Vec::new(), Some(setter), true);
+        steps.write_all(&[0x30, 0x82, 0x01]).unwrap();
+        std::thread::sleep(runtime::status::READABLE + Duration::from_millis(300));
+        steps.write_all(&[0x03, 0x00, 0x01, 0x00]).unwrap();
+        steps.finish();
+        assert_eq!(
+            *said.lock().unwrap(),
+            [Some(STATUS_AUTHENTICATING.to_string()), Some(STATUS_STARTING.to_string())]
+        );
+        assert_eq!(steps.inner, [0x30, 0x82, 0x01, 0x03, 0x00, 0x01, 0x00]);
+        // A short authentication is never named, and neither is a short
+        // step after it.
+        let said = Arc::new(Mutex::new(Vec::new()));
+        let into = Arc::clone(&said);
+        let setter: runtime::status::StatusSetter = Arc::new(move |text: Option<&str>| {
+            into.lock().unwrap().push(text.map(str::to_string));
+        });
+        let mut steps = Steps::new(Vec::new(), Some(setter), true);
+        steps.write_all(&[0x30]).unwrap();
+        steps.write_all(&[0x03]).unwrap();
+        steps.finish();
+        assert!(said.lock().unwrap().is_empty());
+    }
 
     /// Only a CredSSP status for a refused user name or password is a
     /// logon failure; any other status or error is not.
