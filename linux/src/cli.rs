@@ -25,6 +25,7 @@ const fn flag(long: &'static str, short: Option<char>, value: bool) -> Flag {
 /// Every option, in the help's order.
 pub const FLAGS: &[Flag] = &[
     flag("help", Some('h'), false),
+    flag("version", Some('V'), false),
     flag("list", Some('L'), false),
     flag("forget", Some('F'), true),
     flag("probe", Some('P'), true),
@@ -124,7 +125,19 @@ pub const SCALE: &str = "auto";
 pub const CONNECT_TIMEOUT: u64 = 30;
 pub const THUMB_STEP: usize = 8;
 
-const USAGE: &str = r#"usage:
+/// The version `--version` and the help show: `v` and the package's
+/// version, without the `0.0.` of a release's `0.0.N`.
+pub fn version() -> String {
+    display_version(env!("CARGO_PKG_VERSION"))
+}
+
+fn display_version(package: &str) -> String {
+    format!("v{}", package.strip_prefix("0.0.").unwrap_or(package))
+}
+
+const USAGE: &str = r#"vento <version>
+
+usage:
   vento                                       connection dialog
   vento [<backend> [<address>]] [options]     connection dialog (prefilled)
   vento <backend> <address> --connect ...     single session, auto-connect
@@ -138,6 +151,7 @@ arguments:
 
 commands:
   -h, --help                 show this help
+  -V, --version              show the version
   -L, --list                 list backends
   -F, --forget ADDRESS       forget the server with the specified address
   -P, --probe SPEC           run headless and run the steps in SPEC once connected (implies --connect)
@@ -185,6 +199,7 @@ probe steps (SPEC is a comma-separated list of these, run in order):
 /// The help without its `backends:` section, the defaults filled in.
 pub fn usage(defaults: &Defaults) -> String {
     USAGE
+        .replace("<version>", &version())
         .replace("<extlib-dir>", &defaults.extlib_dir)
         .replace("<state-dir>", &defaults.state_dir)
         .replace("<scale>", SCALE)
@@ -575,7 +590,7 @@ mod tests {
         assert!(help.contains("none-resize) (default: auto)\n"), "{help}");
         assert!(help.contains("(default: 30)\n"), "{help}");
         assert!(help.contains("1/N (default: 8)\n"), "{help}");
-        for placeholder in ["<extlib-dir>", "<state-dir>", "<scale>", "<wait-connect>", "<thumb-step>"] {
+        for placeholder in ["<version>", "<extlib-dir>", "<state-dir>", "<scale>", "<wait-connect>", "<thumb-step>"] {
             assert!(!help.contains(placeholder), "{placeholder}");
         }
         // Every option's description starts in the same column.
@@ -584,6 +599,16 @@ mod tests {
             assert_ne!(line.as_bytes()[29], b' ', "{line:?}");
         }
         assert!(!help.contains(['\u{2013}', '\u{2014}']));
+    }
+
+    #[test]
+    fn the_version_is_n_for_a_release_s_0_0_n() {
+        assert_eq!(display_version("0.0.6"), "v6");
+        assert_eq!(display_version("0.0.12"), "v12");
+        assert_eq!(display_version("1.2.3"), "v1.2.3");
+        assert_eq!(display_version("0.1.0"), "v0.1.0");
+        let help = usage(&Defaults { extlib_dir: "E".into(), state_dir: "S".into() });
+        assert!(help.starts_with(&format!("vento {}\n\nusage:\n", version())), "{help}");
     }
 
     fn option(key: &str, default: &str, values: &[&str], description: &str) -> BackendOption {

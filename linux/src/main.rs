@@ -47,6 +47,8 @@ mod host {
     enum Mode {
         /// The options, and the backends with theirs.
         Help,
+        /// `vento` and [`cli::version`].
+        Version,
         /// Each backend's library.
         List,
         /// A headless session, as the probe.
@@ -107,6 +109,10 @@ mod host {
         match parse(args) {
             Ok(Mode::Help) => {
                 print!("{}\n{}", cli::usage(&defaults()), cli::backends(&help_backends()));
+                0
+            }
+            Ok(Mode::Version) => {
+                println!("vento {}", cli::version());
                 0
             }
             Ok(Mode::List) => {
@@ -200,6 +206,7 @@ mod host {
 
     fn parse(args: Vec<Arg>) -> Result<Mode, String> {
         let mut help = false;
+        let mut version = false;
         let mut list = false;
         let mut positional = Vec::new();
         let mut user = String::new();
@@ -226,6 +233,7 @@ mod host {
             };
             match name {
                 "help" => help = true,
+                "version" => version = true,
                 "list" => list = true,
                 "forget" => forget = Some(value),
                 "connect" => connect = true,
@@ -273,6 +281,9 @@ mod host {
 
         if help {
             return Ok(Mode::Help);
+        }
+        if version {
+            return Ok(Mode::Version);
         }
         if list {
             return Ok(Mode::List);
@@ -1076,6 +1087,11 @@ mod host {
             assert!(matches!(parsed(&["-h"]), Ok(Mode::Help)));
             assert!(parsed(&["rfb", "--help", "--x"]).is_err());
             assert!(matches!(parsed(&["rfb", "127.0.0.1:1", "-c", "--help"]), Ok(Mode::Help)));
+            assert!(matches!(parsed(&["--version"]), Ok(Mode::Version)));
+            assert!(matches!(parsed(&["rfb", "-cV"]), Ok(Mode::Version)));
+            assert!(matches!(parsed(&["-V", "--help"]), Ok(Mode::Help)));
+            assert!(matches!(parsed(&["-L", "-V"]), Ok(Mode::Version)));
+            assert!(parsed(&["--version=1"]).is_err());
             assert!(matches!(parsed(&["--list"]), Ok(Mode::List)));
             assert!(matches!(parsed(&["-L", "rfb"]), Ok(Mode::List)));
             assert!(matches!(parsed(&["--forget=host:1"]), Ok(Mode::Forget { .. })));

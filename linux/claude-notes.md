@@ -80,10 +80,11 @@ clients, and what differs between them is each client's own code.
   it keeps its pins (what they mean, and what is asked, is `api::trust`)
   and RealVNC's identities, as files in the state directory
   (`--state-dir`, `$XDG_STATE_HOME/vento` by default), with tests.
-- **`src/main.rs`** — the `vento` binary: the window, `--help`, `--list`,
-  `--forget`, and the headless probe. **`src/cli.rs`** — the command line's
-  GNU-style splitting, the help text, the formatting of the help's
-  `backends:` section and of `--list`, and `--probe`'s spec, with tests.
+- **`src/main.rs`** — the `vento` binary: the window, `--help`,
+  `--version`, `--list`, `--forget`, and the headless probe.
+  **`src/cli.rs`** — the command line's GNU-style splitting, the help text
+  and the version shown, the formatting of the help's `backends:` section
+  and of `--list`, and `--probe`'s spec, with tests.
 
 ## Building and running
 
@@ -388,9 +389,14 @@ cargo run -- spice 127.0.0.1:5930 --password spicepass --connect
 cargo run -- --platform x11 tigervnc 127.0.0.1:5901 --password vncpass --connect
 cargo run -- --platform wayland
 
-# The options, then the backends and their options ("backends:"); each
-# backend's library is opened for its version.
+# The version, the options, then the backends and their options
+# ("backends:"); each backend's library is opened for its version.
 cargo run -- --help
+
+# "vento v6": the crate's version, which is 0.0.N for the app's release N
+# (`versionCode` in `app/build.gradle`, checked by the release workflow),
+# shown as vN.
+cargo run -- --version
 
 # Each backend and the file its code runs from, one line each: the library a
 # C backend loaded, or this binary for a Rust one; where a library cannot be
