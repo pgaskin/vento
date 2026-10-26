@@ -38,6 +38,7 @@ jobs:
             if (versionName !== versionCode) fail(`versionName (${versionName}) does not match versionCode (${versionCode})`)
             if (tag !== `v${versionName}`) fail(`tag (${tag}) does not match versionName (${versionName})`)
             if (!fs.existsSync(`app/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`)) fail(`missing changelog for versionCode ${versionCode}`)
+            if (!fs.existsSync(`linux/metadata/changelogs/${versionCode}.txt`)) fail(`missing linux changelog for versionCode ${versionCode}`)
             const assets = {
               /* also needs to be in sign/verify/upload steps */
               realvnc: 'vento-rvnc.apk',
@@ -79,15 +80,19 @@ jobs:
             const changelogs = []
             const appChangelog = `app/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`
             if (fs.existsSync(appChangelog)) changelogs.push(fs.readFileSync(appChangelog, 'utf8').trimEnd())
+            const sections = []
             for (const name of plugins) {
               const title = `plugins/${name}/fastlane/metadata/android/en-US/title.txt`
-              const changelog = `plugins/${name}/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`
               const displayName = fs.existsSync(title) ? fs.readFileSync(title, 'utf8').match(/^Vento (.+) backend$/m)?.[1] : undefined
               if (!displayName) { fail(`the ${name} plugin's title (${title}) is missing or does not match "Vento <name> backend"`); continue }
-              if (!fs.existsSync(changelog)) continue
-              const text = fs.readFileSync(changelog, 'utf8').trimEnd()
+              sections.push([displayName, `plugins/${name}/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`])
+            }
+            sections.push(['Linux', `linux/metadata/changelogs/${versionCode}.txt`])
+            for (const [name, file] of sections) {
+              if (!fs.existsSync(file)) continue
+              const text = fs.readFileSync(file, 'utf8').trimEnd()
               if (['updateapp', 'updateappmetadata'].includes(text.replace(/[^A-Za-z]/g, '').toLowerCase())) continue
-              changelogs.push(`#### ${displayName}\n\n${text}`)
+              changelogs.push(`#### ${name}\n\n${text}`)
             }
             const changelog = changelogs.join('\n\n') + '\n'
             core.info(changelog)

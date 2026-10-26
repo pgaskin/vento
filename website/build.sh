@@ -17,19 +17,20 @@ files=("$changelogs"/*.txt)
 shopt -u nullglob
 test ${#files[@]} -gt 0 || die "no changelogs in $changelogs"
 
-# plugins with a store listing, named by their title ("Vento <name> backend")
-plugin_dirs=()
-plugin_names=()
+# additional changelogs (plugins, linux)
+section_dirs=()
+section_names=()
 shopt -s nullglob
 for title in ../plugins/*/fastlane/metadata/android/en-US/title.txt; do
-    dir=${title%/fastlane/*}
     name=$(sed -n 's/^Vento \(.*\) backend$/\1/p' "$title")
     test -n "$name" || die "$title does not match \"Vento <name> backend\""
-    plugin_dirs+=("$dir")
-    plugin_names+=("$name")
+    section_dirs+=("${title%/title.txt}/changelogs")
+    section_names+=("$name")
 done
 shopt -u nullglob
-test ${#plugin_dirs[@]} -gt 0 || die "no plugins in ../plugins"
+test ${#section_dirs[@]} -gt 0 || die "no plugins in ../plugins"
+section_dirs+=(../linux/metadata/changelogs)
+section_names+=(Linux)
 
 # prints a changelog's items as <li> elements
 changelog_items() {
@@ -58,13 +59,13 @@ whatsnew=$(
         printf '%s  <ul>\n' "$indent"
         changelog_items "$changelogs/$v.txt" "$indent    "
         printf '%s  </ul>\n' "$indent"
-        for i in "${!plugin_dirs[@]}"; do
-            f=${plugin_dirs[$i]}/fastlane/metadata/android/en-US/changelogs/$v.txt
+        for i in "${!section_dirs[@]}"; do
+            f=${section_dirs[$i]}/$v.txt
             test -f "$f" || continue
             case "$(tr -cd 'A-Za-z' <"$f" | tr 'A-Z' 'a-z')" in
                 updateapp | updateappmetadata) continue ;;
             esac
-            printf '%s  <h4>%s</h4>\n' "$indent" "${plugin_names[$i]}"
+            printf '%s  <h4>%s</h4>\n' "$indent" "${section_names[$i]}"
             printf '%s  <ul>\n' "$indent"
             changelog_items "$f" "$indent    "
             printf '%s  </ul>\n' "$indent"
