@@ -1,10 +1,16 @@
 # Vento VNC/RDP Client
 
-Fast, fluid VNC/RDP remote desktop client for Android.
+Fast, fluid VNC/RDP remote desktop client for Android/Linux.
 
-It has the best touchpad-style controls of any remote desktop app I am currently aware of, and it supports multiple client backends.
+The Android app has the best touchpad-style controls of any remote desktop app I am currently aware of, and it supports multiple client backends.
+
+The Linux app is currently the only fully-native wayland/x11 one with support for all major VNC/RDP implementations.
+
+[**`Download`**](https://github.com/pgaskin/vento/releases/latest) [**`Website`**](https://pgaskin.net/vento/)
 
 ### Features
+
+#### Android
 
 - Intuitive touchpad-style controls (see [here](./control/README.md) for more info).
 - Accuracy assists (improved precision, axis locking, adaptive acceleration).
@@ -12,12 +18,82 @@ It has the best touchpad-style controls of any remote desktop app I am currently
 - Multi-window support.
 - Physical keyboard/mouse support.
 - Workarounds for various Android IME bugs.
-- Hardware-accelerated video where supported (H.264 with FreeRDP and TigerVNC, H.264/H.265/VP8/VP9/AV1 with RustDesk).
+
+#### Linux
+
+- Native app (no Java or embedded browsers).
+- Full X11 and Wayland support (input grabbing, clipboard, window management, etc).
+- Automatic keyboard grabbing.
+- Multi-monitor pop-out.
+- Clean interface with unobtrusive toolbar.
+- Self-contained release builds (only needs glibc).
+
+#### Backends
+
 - Multiple client backends for VNC (TigerVNC, LibVNC, Rust) and RDP (IronRDP, FreeRDP), plus SPICE.
 - Optional RealVNC backend (separate APK, fetches the library at runtime).
 - Optional RustDesk backend (separate APK), reaching a machine by ID through a rendezvous server or by address.
+- Hardware-accelerated video where supported (H.264 with FreeRDP and TigerVNC, H.264/H.265/VP8/VP9/AV1 with RustDesk).
+- Audio where supported (TigerVNC, FreeRDP).
 
-[**`Download`**](https://github.com/pgaskin/vento/releases/latest) [**`Website`**](https://pgaskin.net/vento/)
+### Development
+
+Only Linux x86_64 is supported for building the app due to the native builds and shell scripts.
+
+JDK 21 is required. Use `JAVA_HOME` to point to it if it isn't the default.
+
+The `sdk.dir` option in `local.properties` must point to your Android SDK installation, which must have `ndk;28.2.13676358`, `build-tools;36.0.0`, and `cmake;3.30.5`.
+
+The NDK should be set in `local.properties` and `ANDROID_NDK_HOME`.
+
+To build the Linux client, `libclang`, `nasm`, `m4`, `make`, `meson`, `perl`, and `python3` are also required.
+
+```bash
+# fetch and patch dependencies
+git submodule update --init
+./patch.sh -n
+./gradlew :backends:fetchCryptoSources
+
+# build apk
+./gradlew :app:assembleDebug
+
+# build the non-free realvnc backend plugin apk
+./gradlew :plugins:realvnc:assembleDebug
+
+# build the rustdesk backend plugin apk
+./gradlew :plugins:rustdesk:assembleDebug
+
+# fetch additional linux-only dependencies
+git -C third_party/mcpelauncher-linker submodule update --init
+
+# build linux client
+cargo build --locked --manifest-path linux/Cargo.toml
+
+# build linux client (release)
+docker build -f linux/Dockerfile --output type=local,dest=build/linux .
+```
+
+Backend plugins must be signed with the same key (enforced since the main app loads code from it) and built from the same version (the API isn't stable).
+
+When updating the third_party dependencies, you'll need to update the unpatched gitlink, regenerate the patches and generated code, and commit the result.
+
+```bash
+# apply/refresh the third_party patches
+./patch.sh
+
+# regenerate code (needs autotools, perl, make, host toolchain, ndk)
+./backends/platform/android/ports/nettle/gen.sh
+./backends/platform/android/ports/gnutls/gen.sh
+./backends/platform/android/ports/openssl/gen.sh
+```
+
+The Android builds are designed to be reproducible regardless of the host (this is why I commit generated code). There are some blobs (mostly images plus some testdata) in the deps, but none of these are required at build time.
+
+The Linux build is deterministic, but not necessarily reproducible bit-for-bit in all host environments. Release builds are built using the dockerfile.
+
+### Naming
+
+I was originally just going to call this "Remote Desktop", but the name doesn't fit nicely, and it wouldn't be searchable. I ended up asking ChatGPT and Claude to come up with a list of name ideas given the list of features, and I liked "Vento" the best. It's Italian for wind, which makes sense since the main reason I created this was the lack of fluidity in the controls for other remote desktop apps. The name also kind of makes me think of VNC, and is unique, which is also nice.
 
 ### Vibe-coding
 
@@ -40,82 +116,6 @@ Claude was very useful for playing with the gesture detection code, as it was ab
 
 Claude was also very helpful for exhaustively testing things like keyboard input, catching quite a few bugs in the process. Without Claude, I wouldn't have bothered to write and run individual test scripts for all combinations of platforms (Windows, Linux, etc), server implementations (RealVNC, Microsoft Remote Desktop, IronRDP, FreeRDP, TightVNC, TigerVNC, NeatVNC, UltraVNC, LibVNC), and client implementations (IronRDP, FreeRDP, LibVNC, TigerVNC, RealVNC, etc). Over a day of unattended running, it wrote more than 90k lines of throwaway test scripts and ran them on multiple devices against multiple VMs I set up and its own containers.
 
+Claude also made it feasible to implement a linux client (there's a LOT of build logic which needed to be added, and there's a lot of x11/wayland boilerplate too, along with a few more layers of abstraction/bindings over the backends).
+
 This README (and the ones in the other folders) is entirely hand-written by me. Almost all user-facing text in the app is also hand-written.
-
-I still need to refactor the code and clean up the comments in the app.
-
-### Development
-
-Only Linux x86_64 is supported for building the app due to the native builds and shell scripts.
-
-JDK 21 is required. Use `JAVA_HOME` to point to it if it isn't the default.
-
-The `sdk.dir` option in `local.properties` must point to your Android SDK installation, which must have `ndk;28.2.13676358`, `build-tools;36.0.0`, and `cmake;3.30.5`.
-
-The NDK should be set in `local.properties` and `ANDROID_NDK_HOME`.
-
-```bash
-# fetch and patch dependencies
-git submodule update --init
-./patch.sh -n
-./gradlew :backends:fetchCryptoSources
-
-# build apk
-./gradlew :app:assembleDebug
-
-# build the non-free realvnc backend plugin
-./gradlew :plugins:realvnc:assembleDebug
-
-# build the rustdesk backend plugin
-./gradlew :plugins:rustdesk:assembleDebug
-```
-
-Backend plugins must be signed with the same key (enforced since the main app loads code from it) and built from the same version (the API isn't stable).
-
-When updating the third_party dependencies, you'll need to update the unpatched gitlink, regenerate the patches and generated code, and commit the result.
-
-```bash
-# apply/refresh the third_party patches
-./patch.sh
-
-# regenerate code (needs autotools, perl, make, host toolchain, ndk)
-./backends/platform/android/ports/nettle/gen.sh
-./backends/platform/android/ports/gnutls/gen.sh
-./backends/platform/android/ports/openssl/gen.sh
-```
-
-The builds are designed to be reproducible (this is why I commit generated code). There are some blobs (mostly images plus some testdata) in the deps, but none of these are required for the build:
-
-```gitignore
-third_party/freerdp/client/Android/
-third_party/freerdp/client/iOS/
-third_party/freerdp/client/Mac/
-third_party/freerdp/client/SDL/
-third_party/freerdp/client/Windows/
-third_party/freerdp/docs/
-third_party/freerdp/libfreerdp/codec/test/
-third_party/freerdp/resources/
-third_party/freerdp/server/
-third_party/freerdp/winpr/libwinpr/utils/test/
-third_party/libjpeg-turbo/doc/
-third_party/libjpeg-turbo/testimages/
-third_party/openssl/apps/
-third_party/openssl/doc/
-third_party/openssl/test/
-third_party/pixman/demos/
-third_party/rustdesk/fastlane/
-third_party/rustdesk/flutter/
-third_party/rustdesk/libs/clipboard/
-third_party/rustdesk/libs/portable/
-third_party/rustdesk/res/
-third_party/ryll/shakenfist-spice-compression/tests/
-third_party/tigervnc/java/
-third_party/tigervnc/media/
-third_party/tigervnc/tests/
-third_party/tigervnc/vncviewer/
-third_party/tigervnc/win/
-```
-
-### Naming
-
-I was originally just going to call this "Remote Desktop", but the name doesn't fit nicely, and it wouldn't be searchable. I ended up asking ChatGPT and Claude to come up with a list of name ideas given the list of features, and I liked "Vento" the best. It's Italian for wind, which makes sense since the main reason I created this was the lack of fluidity in the controls for other remote desktop apps. The name also kind of makes me think of VNC, and is unique, which is also nice.
