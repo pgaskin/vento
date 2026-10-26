@@ -230,15 +230,27 @@ jobs:
         with:
           retries: 3
           script: |
+            const fs = require('fs')
             const tag = ${{ toJSON(needs.version.outputs.tag) }}
             const versionCode = ${{ toJSON(needs.version.outputs.code) }}
+            const changelog = (dir) => `${dir}/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`
+            const sections = [fs.readFileSync(changelog('app'), 'utf8').trimEnd()]
+            for (const dir of fs.readdirSync('plugins').sort().map(name => `plugins/${name}`)) {
+              const title = `${dir}/fastlane/metadata/android/en-US/title.txt`
+              if (!fs.existsSync(title) || !fs.existsSync(changelog(dir))) continue
+              const text = fs.readFileSync(changelog(dir), 'utf8').trimEnd()
+              if (['updateapp', 'updateappmetadata'].includes(text.replace(/[^A-Za-z]/g, '').toLowerCase())) continue
+              const name = fs.readFileSync(title, 'utf8').match(/^Vento (.+) backend$/m)?.[1]
+              if (!name) throw new Error(`${title} does not match "Vento <name> backend"`)
+              sections.push(`#### ${name}\n\n${text}`)
+            }
             const {data: {id: id}} = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: tag,
               target_commitish: context.sha,
               name: tag,
-              body: require('fs').readFileSync(`app/fastlane/metadata/android/en-US/changelogs/${versionCode}.txt`, 'utf8'),
+              body: sections.join('\n\n') + '\n',
               draft: true,
             })
             core.setOutput('id', id)

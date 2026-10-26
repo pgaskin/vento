@@ -17,6 +17,25 @@ files=("$changelogs"/*.txt)
 shopt -u nullglob
 test ${#files[@]} -gt 0 || die "no changelogs in $changelogs"
 
+# plugins with a store listing, named by their title ("Vento <name> backend")
+plugin_dirs=()
+plugin_names=()
+shopt -s nullglob
+for title in ../plugins/*/fastlane/metadata/android/en-US/title.txt; do
+    dir=${title%/fastlane/*}
+    name=$(sed -n 's/^Vento \(.*\) backend$/\1/p' "$title")
+    test -n "$name" || die "$title does not match \"Vento <name> backend\""
+    plugin_dirs+=("$dir")
+    plugin_names+=("$name")
+done
+shopt -u nullglob
+test ${#plugin_dirs[@]} -gt 0 || die "no plugins in ../plugins"
+
+# prints a changelog's items as <li> elements
+changelog_items() {
+    sed -e 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' "$1" | sed -n "s|^\* \(.*\)\$|$2<li>\1</li>|p"
+}
+
 versions=$(printf '%s\n' "${files[@]}" | sed 's|.*/||; s|\.txt$||' | sort -rn)
 version=$(printf '          <span>Version %s</span>' "$(printf '%s\n' "$versions" | head -n1)")
 
@@ -37,8 +56,19 @@ whatsnew=$(
         printf '%s<details class="release"%s>\n' "$indent" "$open"
         printf '%s  <summary>Version %s</summary>\n' "$indent" "$v"
         printf '%s  <ul>\n' "$indent"
-        sed -e 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' "$changelogs/$v.txt" | sed -n "s|^\* \(.*\)\$|$indent    <li>\1</li>|p"
+        changelog_items "$changelogs/$v.txt" "$indent    "
         printf '%s  </ul>\n' "$indent"
+        for i in "${!plugin_dirs[@]}"; do
+            f=${plugin_dirs[$i]}/fastlane/metadata/android/en-US/changelogs/$v.txt
+            test -f "$f" || continue
+            case "$(tr -cd 'A-Za-z' <"$f" | tr 'A-Z' 'a-z')" in
+                updateapp | updateappmetadata) continue ;;
+            esac
+            printf '%s  <h4>%s</h4>\n' "$indent" "${plugin_names[$i]}"
+            printf '%s  <ul>\n' "$indent"
+            changelog_items "$f" "$indent    "
+            printf '%s  </ul>\n' "$indent"
+        done
         printf '%s</details>\n' "$indent"
         n=$((n + 1))
     done
