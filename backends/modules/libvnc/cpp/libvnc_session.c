@@ -684,7 +684,7 @@ static rfbCredential *onGetCredential(rfbClient *cl, int type) {
        refused. The TLS and X509 Plain sub-types come here as well, inside
        their tunnel, and are answered as usual. */
     if (cl->subAuthScheme == rfbVeNCryptPlain) {
-        rfbClientErr("This server asks for the user name and password to be sent unencrypted (VeNCrypt Plain), which this app does not do.\n");
+        rfbClientErr("The remote server is requesting plaintext credentials (VeNCrypt Plain), which are not supported by this app.\n");
         return NULL;
     }
     char *user = NULL, *pass = NULL;

@@ -78,7 +78,7 @@ pub static OPTIONS: &[Spec] = &[
     ),
     bool(
         "LegacyTls",
-        "Old TLS",
+        "Legacy TLS",
         "Allow TLS 1.0 and 1.1 and their weaker keys, for a server that has nothing newer, such as Windows 7 or Server 2008 R2 without updates.",
         false,
         Scope::Connection,
