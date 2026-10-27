@@ -47,6 +47,10 @@
 //! Meson is `MESON`, or `meson` on the path; `meson.build` sets the oldest
 //! version it accepts. It runs ninja, which has to be on the path too.
 //!
+//! `VENTO_COMPILE_COMMANDS=<path>` copies the tree's `compile_commands.json`
+//! there after each build, for clangd; a relative path is from the
+//! repository root.
+//!
 //! It also decodes the window icon, `metadata/icon.png`, into the RGBA rows
 //! winit takes (see `window_icon`), so that the binary carries no PNG
 //! decoder.
@@ -119,6 +123,12 @@ fn main() {
         assert!(path.is_file(), "the C build did not produce {}", path.display());
     }
     beside_the_binary(&tree, &out);
+    println!("cargo:rerun-if-env-changed=VENTO_COMPILE_COMMANDS");
+    if let Some(dest) = env::var_os("VENTO_COMPILE_COMMANDS") {
+        let dest = root.join(dest);
+        fs::copy(tree.join("compile_commands.json"), &dest)
+            .unwrap_or_else(|e| panic!("copying compile_commands.json to {}: {e}", dest.display()));
+    }
     // Whether RealVNC's library was made, for the binary (`backends::all`),
     // which then reports it as not built rather than as not found by the
     // loader.

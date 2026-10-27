@@ -65,6 +65,9 @@ git submodule update --init
 # build the rustdesk backend plugin apk
 ./gradlew :plugins:rustdesk:assembleDebug
 
+# export android compile_commands for clangd (can also set flags like -Pabi=x86_64 or -Pvariant=release)
+./gradlew :backends:exportCompileCommands
+
 # fetch additional linux-only dependencies
 git -C third_party/mcpelauncher-linker submodule update --init
 
@@ -73,6 +76,9 @@ cargo build --locked --manifest-path linux/Cargo.toml
 
 # build linux client (release)
 docker build -f linux/Dockerfile --output type=local,dest=build/linux .
+
+# export linux compile_commands for clangd
+VENTO_COMPILE_COMMANDS=build/compile_commands.json cargo build --locked --manifest-path linux/Cargo.toml
 ```
 
 Backend plugins must be signed with the same key (enforced since the main app loads code from it) and built from the same version (the API isn't stable).

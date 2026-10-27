@@ -208,6 +208,44 @@ static int minSdk(Project module) {
 }
 
 /*
+ * The C backends' compile commands for clangd, from one ABI and variant of the
+ * four C modules' Meson trees, as one file:
+ *
+ *   ./gradlew :backends:exportCompileCommands [-Pabi=x86_64] [-Pvariant=release]
+ *
+ * written to build/compile_commands.json at the repository root, where clangd
+ * finds it. A file two modules compile (libjpeg-turbo, GnuTLS and nettle are
+ * in libvnc's and TigerVNC's) is written once. Run only when asked for.
+ */
+tasks.register('exportCompileCommands') {
+    final abi = project.findProperty('abi') ?: 'arm64-v8a'
+    final variant = project.findProperty('variant') ?: 'debug'
+    final modules = ['libvnc', 'tigervnc', 'freerdp', 'realvnc']
+    final out = rootProject.layout.buildDirectory.file('compile_commands.json')
+    group = 'help'
+    description = 'Writes the C backends\' compile commands for clangd to build/compile_commands.json.'
+    dependsOn modules.collect { ":backends:${it}:mesonBuild${variant.substring(0, 1).toUpperCase(Locale.ROOT)}${variant.substring(1)}" }
+    outputs.upToDateWhen { false }
+    doLast {
+        final entries = [:]
+        modules.each { module ->
+            final db = project(":backends:${module}").layout.buildDirectory
+                    .file("meson/${variant}/${abi}/compile_commands.json").get().asFile
+            if (!db.isFile()) {
+                throw new GradleException("no ${db}: ${abi} is not one of nativeAbis (${nativeAbis.join(', ')})")
+            }
+            new groovy.json.JsonSlurper().parse(db).each { entry ->
+                entries.putIfAbsent(new File(entry.directory as String, entry.file as String).canonicalPath, entry)
+            }
+        }
+        final file = out.get().asFile
+        file.parentFile.mkdirs()
+        file.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(entries.values() as List)), 'UTF-8')
+        logger.lifecycle("${entries.size()} files (${abi}, ${variant}) in ${file}")
+    }
+}
+
+/*
  * The two upstreams that come as a release rather than as a submodule, both
  * used for TLS by the vendored VNC clients. Their git trees have no
  * `configure` (it is an autotools bootstrap output, and gnutls' bootstrap
