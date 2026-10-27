@@ -18,6 +18,16 @@
 //! - **The punch needs the port the server saw.** A peer is dialled from the
 //!   local port used for the rendezvous server, because that is the hole the
 //!   peer was told to expect a packet on; a fresh port works only on a LAN.
+//!   So there is a punch only where the session's network is this end's own
+//!   TCP connection; through any other route, a peer is met at a relay.
+//! - **Through any other route the peer must not be asked to punch either.**
+//!   An ordinary request makes the peer dial the address the server saw this
+//!   end come from (on a tunnel, the tunnel's exit) before it answers. So the
+//!   request says this end's NAT is symmetric, which the server passes on and
+//!   which sends the peer straight to a relay, and sets `force_relay`, which
+//!   the open-source server (1.1.16) drops and RustDesk's paid server passes
+//!   on to the same effect. That is what RustDesk's client sends when it is
+//!   told to always relay.
 //! - **The id is an address and the key is the identity.** Ids are re-issued
 //!   when a machine's configuration is wiped, so a session is verified against
 //!   the key the server vouched for, and the id only says what was requested.
@@ -26,17 +36,18 @@
 //! a few hundred bytes on sockets other than the session's, and the row covers
 //! the connection's traffic.
 
-use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::error::{Error, Result};
 use crate::protos::rendezvous::{
-    PunchHoleRequest, RendezvousMessage, RequestRelay, punch_hole_response::Failure,
+    NatType, PunchHoleRequest, RendezvousMessage, RequestRelay, punch_hole_response::Failure,
     rendezvous_message,
 };
 use crate::wire::{self, Traffic};
 use runtime::Hangup;
+use runtime::net::{EndReason, Liveness, Network, Socket, Timeout};
 
 /// RustDesk's default ports (`libs/hbb_common/src/config.rs`): the rendezvous
 /// server and the relay next to it. Direct access is two above the rendezvous
@@ -63,7 +74,9 @@ pub enum How {
 
 /// A socket to the peer, and what the rendezvous server said about it.
 pub struct Reached {
-    pub sock: TcpStream,
+    pub sock: Socket,
+    /// Where the route records why `sock`'s connection ended.
+    pub end: EndReason,
     /// The peer's long-term sign key, signed by the rendezvous server. Empty if
     /// the server answered without one, in which case the session cannot be
     /// verified.
@@ -87,16 +100,27 @@ impl How {
 /// ends to dial each other and this end dials, or the peer asks for a relay
 /// and this end meets it there.
 ///
-/// Every socket it opens is dialled through `hangup` and held there while it
-/// is being waited on, so that closing the session ends this at any step.
-pub fn reach(hangup: &Hangup, id: &str, server: &str, key: &str, timeout: Duration) -> Result<Reached> {
-    let server_addr = resolve(server, RENDEZVOUS_PORT)?;
-    log::info!("rendezvous: asking {server_addr} for {id}");
-    let sock = connect_reusable(hangup, server_addr, None, timeout)?;
-    let _holding = hangup.hold(&sock)?;
+/// Every socket it opens is dialled through `network` with `hangup`, and held
+/// there while it is being waited on, so that closing the session ends this
+/// at any step.
+pub fn reach(
+    network: &dyn Network,
+    hangup: &Hangup,
+    id: &str,
+    server: &str,
+    key: &str,
+    timeout: Duration,
+) -> Result<Reached> {
+    let server_at = locate(network, hangup, server, RENDEZVOUS_PORT, timeout)?;
+    log::info!("rendezvous: asking {} for {id}", server_at.describe());
     // The peer is told to expect a packet on the hole this socket opened, so
-    // the peer is dialled from this socket's local address.
-    let local = sock.local_addr()?;
+    // the peer is dialled from this socket's local address, where this end
+    // has one.
+    let (sock, local) = match &server_at {
+        Located::Address(addr) if network.direct() => connect_reusable(network, hangup, *addr, None, timeout)?,
+        _ => (server_at.dial(network, hangup, timeout)?.0, None),
+    };
+    let _holding = hangup.hold(&sock)?;
     let (mut reader, mut writer, _) = wire::split(sock, Arc::new(Traffic::default()))?;
 
     let mut request = PunchHoleRequest::new();
@@ -106,6 +130,12 @@ pub fn reach(hangup: &Hangup, id: &str, server: &str, key: &str, timeout: Durati
     // `LICENSE_MISMATCH`: despite the name, the key is a shared secret, not a
     // licence. The public network expects it empty.
     request.licence_key = key.into();
+    if local.is_none() {
+        // No punch from this end, so none from the peer: it goes straight to
+        // a relay and answers with a RelayResponse (the arm below).
+        request.nat_type = NatType::SYMMETRIC.into();
+        request.force_relay = true;
+    }
     let mut out = RendezvousMessage::new();
     out.set_punch_hole_request(request);
 
@@ -152,9 +182,19 @@ pub fn reach(hangup: &Hangup, id: &str, server: &str, key: &str, timeout: Durati
                 } else {
                     (started.elapsed() * 6).clamp(Duration::from_secs(1), timeout)
                 };
-                return match connect_reusable(hangup, peer, Some(local), punch) {
+                let punched = match local {
+                    Some(local) => connect_reusable(network, hangup, peer, Some(local), punch).map(|(sock, _)| sock),
+                    // The rendezvous connection is not this end's own TCP
+                    // connection, so there is no hole to punch from.
+                    None => Err(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
+                        "a tunnelled connection cannot punch a hole to the peer",
+                    )),
+                };
+                return match punched {
                     Ok(sock) => Ok(Reached {
                         sock,
+                        end: EndReason::none(),
                         signed_id_pk,
                         how: How::Punched(peer),
                     }),
@@ -163,10 +203,11 @@ pub fn reach(hangup: &Hangup, id: &str, server: &str, key: &str, timeout: Durati
                     // to the server, waiting to be told where to meet.
                     Err(e) if !response.relay_server.is_empty() && !hangup.is_hung_up() => {
                         log::info!("rendezvous: no way through to {peer} ({e}), asking for a relay");
-                        let sock = ask_for_relay(
+                        let (sock, end) = ask_for_relay(
+                            network,
                             hangup,
                             id,
-                            server_addr,
+                            &server_at,
                             &response.relay_server,
                             key,
                             timeout,
@@ -174,6 +215,7 @@ pub fn reach(hangup: &Hangup, id: &str, server: &str, key: &str, timeout: Durati
                         )?;
                         Ok(Reached {
                             sock,
+                            end,
                             signed_id_pk,
                             how: How::Relayed(response.relay_server),
                         })
@@ -191,9 +233,10 @@ pub fn reach(hangup: &Hangup, id: &str, server: &str, key: &str, timeout: Durati
                     response.relay_server.clone()
                 };
                 log::info!("rendezvous: {id} asked for a relay at {relay}");
-                let sock = meet_relay(hangup, id, &response.uuid, &relay, key, timeout)?;
+                let (sock, end) = meet_relay(network, hangup, id, &response.uuid, &relay, key, timeout)?;
                 return Ok(Reached {
                     sock,
+                    end,
                     signed_id_pk: response.pk().to_vec(),
                     how: How::Relayed(relay),
                 });
@@ -215,12 +258,15 @@ pub fn reach(hangup: &Hangup, id: &str, server: &str, key: &str, timeout: Durati
 /// port held by an ordinary connection fails with "address in use" however the
 /// second socket is set up. That happened against a peer on the same machine
 /// before both sockets were opened this way.
+///
+/// Returns the socket and its local address.
 fn connect_reusable(
+    network: &dyn Network,
     hangup: &Hangup,
     peer: SocketAddr,
     local: Option<SocketAddr>,
     timeout: Duration,
-) -> std::io::Result<TcpStream> {
+) -> std::io::Result<(Socket, Option<SocketAddr>)> {
     use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
     let domain = if peer.is_ipv4() {
@@ -242,9 +288,75 @@ fn connect_reusable(
     sock.bind(&SockAddr::from(local))?;
     // Returned in blocking mode, as the callers expect: they read with their
     // own timeouts.
-    let stream = hangup.dial_from(sock, peer, timeout)?;
-    stream.set_nodelay(true)?;
-    Ok(stream)
+    let connection = network.connect_from(sock, peer, timeout, hangup)?;
+    connection.socket.set_nodelay(true)?;
+    Ok((connection.socket, connection.peer.local))
+}
+
+/// A connection to a server by name or address, for the relay's two
+/// connections, which need no particular local port, and where its route
+/// records why it ended.
+fn dial(
+    network: &dyn Network,
+    hangup: &Hangup,
+    host: &str,
+    port: u16,
+    timeout: Duration,
+) -> std::io::Result<(Socket, EndReason)> {
+    let connection = network.connect(host, port, Timeout::PerAddress(timeout), &Liveness::default(), hangup)?;
+    connection.socket.set_nodelay(true)?;
+    Ok((connection.socket, connection.end))
+}
+
+/// Where a rendezvous or relay server is to be dialled.
+enum Located {
+    /// Resolved here, to its first address, as RustDesk's client resolves
+    /// it: on this end's own network, where the punch needs an address to
+    /// bind beside and the server has to see one source address.
+    Address(SocketAddr),
+    /// By name, which the network resolves: on any other route.
+    Name(String, u16),
+}
+
+impl Located {
+    fn describe(&self) -> String {
+        match self {
+            Located::Address(addr) => addr.to_string(),
+            Located::Name(host, port) => format!("{host}:{port}"),
+        }
+    }
+
+    fn dial(&self, network: &dyn Network, hangup: &Hangup, timeout: Duration) -> std::io::Result<(Socket, EndReason)> {
+        match self {
+            Located::Address(addr) => dial(network, hangup, &addr.ip().to_string(), addr.port(), timeout),
+            Located::Name(host, port) => dial(network, hangup, host, *port, timeout),
+        }
+    }
+}
+
+/// `host` as a server to dial: `server_address`'s forms, resolved here on a
+/// direct network.
+fn locate(network: &dyn Network, hangup: &Hangup, host: &str, default_port: u16, timeout: Duration) -> Result<Located> {
+    let (name, port) = server_address(host, default_port)?;
+    if let Ok(ip) = name.parse::<IpAddr>() {
+        return Ok(Located::Address(SocketAddr::new(ip, port)));
+    }
+    if !network.direct() {
+        return Ok(Located::Name(name, port));
+    }
+    let host = host.trim();
+    let found = runtime::net::resolve(&name, port, timeout, hangup).map_err(|e| {
+        if hangup.is_hung_up() {
+            Error::Closed
+        } else {
+            Error::Protocol(format!("{host} does not resolve: {e}"))
+        }
+    })?;
+    found
+        .into_iter()
+        .next()
+        .map(Located::Address)
+        .ok_or_else(|| Error::Protocol(format!("{host} resolves to nothing")))
 }
 
 /// Requests a relay: a second connection to the rendezvous server carrying a
@@ -256,18 +368,18 @@ fn connect_reusable(
 /// `vouched` is whether the server introduced the peer with a signed key.
 #[allow(clippy::too_many_arguments)]
 fn ask_for_relay(
+    network: &dyn Network,
     hangup: &Hangup,
     id: &str,
-    server: SocketAddr,
+    server: &Located,
     relay: &str,
     key: &str,
     timeout: Duration,
     vouched: bool,
-) -> Result<TcpStream> {
+) -> Result<(Socket, EndReason)> {
     let uuid = uuid();
-    let sock = hangup.dial(server, timeout)?;
+    let (sock, _) = server.dial(network, hangup, timeout)?;
     let _holding = hangup.hold(&sock)?;
-    sock.set_nodelay(true)?;
     let (mut reader, mut writer, _) = wire::split(sock, Arc::new(Traffic::default()))?;
     let mut request = RequestRelay::new();
     request.id = id.into();
@@ -294,7 +406,7 @@ fn ask_for_relay(
             } else {
                 response.relay_server
             };
-            meet_relay(hangup, id, &uuid, &relay, key, timeout)
+            meet_relay(network, hangup, id, &uuid, &relay, key, timeout)
         }
         // Logged by name: a rendezvous server that answers with anything else
         // has decided not to relay, and the message it sent instead is the
@@ -344,15 +456,16 @@ fn named(union: &Option<rendezvous_message::Union>) -> &'static str {
 /// the relay forwards without being able to read it: the key is agreed with
 /// the peer and never passes through the relay.
 fn meet_relay(
+    network: &dyn Network,
     hangup: &Hangup,
     id: &str,
     uuid: &str,
     relay: &str,
     key: &str,
     timeout: Duration,
-) -> Result<TcpStream> {
-    let addr = resolve(relay, RELAY_PORT)?;
-    log::info!("relay: meeting {id} at {addr}");
+) -> Result<(Socket, EndReason)> {
+    let at = locate(network, hangup, relay, RELAY_PORT, timeout)?;
+    log::info!("relay: meeting {id} at {}", at.describe());
     // RustDesk's relay pairs two sockets by looking up the uuid and, if
     // nothing is there, registering itself, taking the lock separately for
     // each step. Two ends that arrive at the same moment therefore both look,
@@ -362,8 +475,7 @@ fn meet_relay(
     // attempt landed inside that window and none paired. Arriving deliberately
     // late costs a quarter of a second once and orders the two.
     std::thread::sleep(RELAY_PAIR_DELAY);
-    let sock = hangup.dial(addr, timeout)?;
-    sock.set_nodelay(true)?;
+    let (sock, end) = at.dial(network, hangup, timeout)?;
     let session = sock.try_clone()?;
     let (_, mut writer, _) = wire::split(sock, Arc::new(Traffic::default()))?;
     let mut request = RequestRelay::new();
@@ -373,7 +485,7 @@ fn meet_relay(
     let mut out = RendezvousMessage::new();
     out.set_request_relay(request);
     writer.send(&out)?;
-    Ok(session)
+    Ok((session, end))
 }
 
 /// A token for pairing two sockets at a relay, which is all RustDesk's uuid is
@@ -444,18 +556,12 @@ fn why(failure: &Failure, other: &str) -> String {
 /// brackets, which means that address on the default port. RustDesk reads
 /// these servers that way (hbb_common's `check_port`), so a relay named by
 /// its server or a server copied from RustDesk's settings can be one.
-fn resolve(host: &str, default_port: u16) -> Result<SocketAddr> {
+fn server_address(host: &str, default_port: u16) -> Result<(String, u16)> {
     let host = host.trim();
     if let Ok(ip) = host.parse::<std::net::Ipv6Addr>() {
-        return Ok(SocketAddr::new(ip.into(), default_port));
+        return Ok((ip.to_string(), default_port));
     }
-    let (name, port) = runtime::address::split(host, default_port, runtime::address::Ports::Plain)
-        .map_err(Error::Address)?;
-    (name.as_str(), port)
-        .to_socket_addrs()
-        .map_err(|e| Error::Protocol(format!("{host} does not resolve: {e}")))?
-        .next()
-        .ok_or_else(|| Error::Protocol(format!("{host} resolves to nothing")))
+    runtime::address::split(host, default_port, runtime::address::Ports::Plain).map_err(Error::Address)
 }
 
 fn would_block(e: &std::io::Error) -> bool {
@@ -519,7 +625,10 @@ mod tests {
     /// say whether the port was given.
     #[test]
     fn a_server_resolves_in_every_form() {
-        let at = |host: &str| resolve(host, RENDEZVOUS_PORT).unwrap().to_string();
+        let resolve = |host: &str, port| {
+            locate(&runtime::net::Direct, &Hangup::new(), host, port, Duration::from_secs(5)).map(|at| at.describe())
+        };
+        let at = |host: &str| resolve(host, RENDEZVOUS_PORT).unwrap();
         assert_eq!(at("10.33.0.208"), "10.33.0.208:21116");
         assert_eq!(at("10.33.0.208:21200"), "10.33.0.208:21200");
         assert_eq!(at("::1"), "[::1]:21116");
@@ -527,8 +636,12 @@ mod tests {
         assert_eq!(at("[::1]"), "[::1]:21116");
         assert_eq!(at("[::1]:21200"), "[::1]:21200");
         assert_eq!(at(" [fd00:33::208]:21117 "), "[fd00:33::208]:21117");
-        assert_eq!(resolve("localhost", RELAY_PORT).unwrap().port(), RELAY_PORT);
-        assert_eq!(resolve("localhost:21200", RELAY_PORT).unwrap().port(), 21200);
+        assert!(resolve("localhost", RELAY_PORT).unwrap().ends_with(":21117"));
+        assert!(resolve("localhost:21200", RELAY_PORT).unwrap().ends_with(":21200"));
+        // Through a route that resolves names itself, a name stays one.
+        let tunnel = runtime::net::Socketpair::new(Arc::new(runtime::net::Direct));
+        let named = locate(&tunnel, &Hangup::new(), "localhost:21200", RELAY_PORT, Duration::from_secs(5));
+        assert_eq!(named.unwrap().describe(), "localhost:21200");
         assert!(matches!(resolve("[::1", RELAY_PORT), Err(Error::Address(_))));
         assert!(matches!(resolve("::1:x", RELAY_PORT), Err(Error::Address(_))));
         assert!(matches!(resolve("10.33.0.208:0", RELAY_PORT), Err(Error::Address(_))));

@@ -20,7 +20,7 @@
 use crate::error::{Error, Result};
 use std::sync::{Arc, Mutex};
 use runtime::tls::pinning;
-use tokio::net::TcpStream;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 
@@ -58,9 +58,12 @@ impl Connector {
 
     /// The handshake, and the SHA-256 of the leaf certificate it presented:
     /// what the app pins, and what the user is asked about when it changes.
-    pub async fn connect(&self, tcp: TcpStream) -> Result<(TlsStream<TcpStream>, Option<String>)> {
+    pub async fn connect<S>(&self, io: S) -> Result<(TlsStream<S>, Option<String>)>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
         let name = pinning::server_name(&self.host);
-        let stream = self.connector.connect(name, tcp).await?;
+        let stream = self.connector.connect(name, io).await?;
         let (_, conn) = stream.get_ref();
         *self.negotiated.lock().unwrap() = Some(pinning::describe(
             conn.protocol_version(),

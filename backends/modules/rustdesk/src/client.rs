@@ -28,7 +28,6 @@
 //!   arrives.
 
 use std::collections::{HashMap, VecDeque};
-use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex, RwLock};
@@ -52,6 +51,7 @@ use crate::rendezvous;
 use crate::wire::{self, Traffic};
 use runtime::media::audio::decode::Codec as SoundCodec;
 use runtime::media::audio::{Format, Outputs, Player};
+use runtime::net::{Connection, EndReason, Liveness, Network, Socket, Timeout};
 use runtime::{Asked, Handler, Hangup};
 use runtime::media::video::{self, Codec, Decoded, Decoders, GpuPicture, Hardware};
 
@@ -123,6 +123,10 @@ pub struct Config {
     /// state of the session's Enable switch, which changes it later with the
     /// option message.
     pub sound: bool,
+    /// What the connections are made through. Reaching a peer by id
+    /// punches through only on a direct network, and otherwise goes
+    /// through a relay.
+    pub network: Arc<dyn Network>,
 }
 
 /// How long a stream stays open after the last audible sound: the gap between
@@ -374,7 +378,9 @@ const WHEEL_NOTCH: i32 = 1;
 /// to be checked for a peer reached by id (its signed key and the rendezvous
 /// key that vouches for it), and the panel's description of the connection.
 struct Dialled {
-    sock: TcpStream,
+    sock: Socket,
+    /// Where the route records why the session's connection ended.
+    end: EndReason,
     introduction: Option<(Vec<u8>, String)>,
     connection: String,
 }
@@ -622,6 +628,7 @@ impl Client {
         // on the session is the same.
         let Dialled {
             sock,
+            end,
             introduction,
             connection,
         } = match self.reach(config) {
@@ -697,23 +704,37 @@ impl Client {
         let _ = writing.join();
         match outcome {
             Err(_) if asked => Err(Error::Closed),
-            other => other,
+            // The end of the stream on a relayed connection is whatever ended
+            // the connection behind it: the route says which.
+            other => other.map_err(|e| e.explained(&end)),
         }
     }
 
     fn reach(&self, config: &Config) -> Result<Dialled> {
-        let (sock, introduction, connection) = match &config.reach {
+        let (sock, end, introduction, connection) = match &config.reach {
             Reach::Direct => {
-                let (sock, addr) = dial_direct(&self.hangup, &config.address, config.connect_timeout)?;
-                sock.set_nodelay(true)?;
+                let (host, port) = direct_address(&config.address)?;
+                let Connection { socket, peer, end } = config.network.connect(
+                    &host,
+                    port,
+                    Timeout::PerAddress(config.connect_timeout),
+                    &Liveness::default(),
+                    &self.hangup,
+                )?;
+                socket.set_nodelay(true)?;
                 // The login names the resolved address rather than the typed
                 // one, because the peer checks it against three regular
                 // expressions: a v4 literal with an optional port, a v6 one
                 // either bare or bracketed **with** a port, or a dotted name
                 // with a port. A bracketed literal without a port matches none
-                // of them, and the refusal is `Offline`.
-                *self.login_as.lock().unwrap() = addr.to_string();
-                (sock, None, format!("Direct access to {addr}"))
+                // of them, and the refusal is `Offline`. Through a route that
+                // resolves the name at its far end and does not report the
+                // address, the name and port are all there is, bracketed where
+                // it is a literal (and a peer refuses an undotted name).
+                let addr = peer.describe();
+                log::info!("connected to {addr}");
+                *self.login_as.lock().unwrap() = addr.clone();
+                (socket, end, None, format!("Direct access to {addr}"))
             }
             Reach::Id { server, key } => {
                 let server = if server.trim().is_empty() {
@@ -722,6 +743,7 @@ impl Client {
                     server.trim()
                 };
                 let reached = rendezvous::reach(
+                    &*config.network,
                     &self.hangup,
                     &config.address,
                     server,
@@ -733,6 +755,7 @@ impl Client {
                 *self.login_as.lock().unwrap() = config.address.clone();
                 (
                     reached.sock,
+                    reached.end,
                     Some((reached.signed_id_pk, key.clone())),
                     connection,
                 )
@@ -740,6 +763,7 @@ impl Client {
         };
         Ok(Dialled {
             sock,
+            end,
             introduction,
             connection,
         })
@@ -2198,37 +2222,10 @@ fn login_hash(password: &str, hash: &Hash) -> Vec<u8> {
         .to_vec()
 }
 
-/// `host` or `host:port`, plus the bracketed IPv6 form, as every address it
-/// resolves to, in the resolver's order. Direct mode only; an id never
-/// reaches here.
-fn resolve(address: &str) -> Result<Vec<SocketAddr>> {
-    let (host, port) = runtime::address::split(address, DIRECT_PORT, runtime::address::Ports::Plain)
-        .map_err(Error::Address)?;
-    let found: Vec<SocketAddr> = (host.as_str(), port).to_socket_addrs().map_err(Error::Io)?.collect();
-    if found.is_empty() {
-        return Err(Error::Protocol(format!("{address} resolves to nothing")));
-    }
-    Ok(found)
-}
-
-/// Dials each of `address`'s addresses in turn, each with the whole timeout,
-/// as rfb and IronRDP do, through `hangup` so that a close also ends the
-/// dial. Returns the socket and the address that answered; otherwise the
-/// last address's error.
-fn dial_direct(hangup: &Hangup, address: &str, timeout: Duration) -> Result<(TcpStream, SocketAddr)> {
-    let mut last = None;
-    for addr in resolve(address)? {
-        log::info!("connecting to {addr}");
-        match hangup.dial(addr, timeout) {
-            Ok(sock) => return Ok((sock, addr)),
-            Err(e) if hangup.is_hung_up() => return Err(Error::Io(e)),
-            Err(e) => {
-                log::info!("{addr}: {e}");
-                last = Some(e);
-            }
-        }
-    }
-    Err(Error::Io(last.expect("resolve returns at least one address")))
+/// `host` or `host:port`, plus the bracketed IPv6 form. Direct mode only; an
+/// id never reaches here.
+fn direct_address(address: &str) -> Result<(String, u16)> {
+    runtime::address::split(address, DIRECT_PORT, runtime::address::Ports::Plain).map_err(Error::Address)
 }
 
 fn timed_out(e: &std::io::Error) -> bool {
@@ -2361,9 +2358,9 @@ mod tests {
         answers: &[&'static str],
     ) -> (Result<()>, Vec<Vec<u8>>, usize, Vec<String>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let near = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let near = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (far, _) = listener.accept().unwrap();
-        let (_, mut peer, _) = wire::split(far, Arc::default()).unwrap();
+        let (_, mut peer, _) = wire::split(far.into(), Arc::default()).unwrap();
         let mut hash = Message::new();
         hash.set_hash(challenge());
         peer.send(&hash).unwrap();
@@ -2371,7 +2368,7 @@ mod tests {
             peer.send(message).unwrap();
         }
 
-        let (mut reader, _, _) = wire::split(near, Arc::default()).unwrap();
+        let (mut reader, _, _) = wire::split(near.into(), Arc::default()).unwrap();
         let client = Client::new(Arc::new(video::NoDecoders));
         let (out, sent) = channel::<Vec<u8>>();
         *client.out.lock().unwrap() = Some(out);
@@ -2387,6 +2384,7 @@ mod tests {
             codec: PreferredCodec::Auto,
             lock_after: false,
             audio: None,
+            network: Arc::new(runtime::net::Direct),
             sound: false,
         };
         let mut handler = Answers {
@@ -2542,9 +2540,9 @@ mod tests {
     /// each login sent, and what the handler was told.
     fn answered_by_the_peer(then: Vec<Message>) -> (Result<()>, Vec<Vec<u8>>, Vec<String>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let near = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let near = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (far, _) = listener.accept().unwrap();
-        let (_, mut peer, _) = wire::split(far, Arc::default()).unwrap();
+        let (_, mut peer, _) = wire::split(far.into(), Arc::default()).unwrap();
         let mut hash = Message::new();
         hash.set_hash(challenge());
         peer.send(&hash).unwrap();
@@ -2564,7 +2562,7 @@ mod tests {
             peer
         });
 
-        let (mut reader, _, _) = wire::split(near, Arc::default()).unwrap();
+        let (mut reader, _, _) = wire::split(near.into(), Arc::default()).unwrap();
         let client = Client::new(Arc::new(video::NoDecoders));
         let (out, sent) = channel::<Vec<u8>>();
         *client.out.lock().unwrap() = Some(out);
@@ -2580,6 +2578,7 @@ mod tests {
             codec: PreferredCodec::Auto,
             lock_after: false,
             audio: None,
+            network: Arc::new(runtime::net::Direct),
             sound: false,
         };
         let mut handler = Unanswered {
@@ -2771,6 +2770,7 @@ mod tests {
             lock_after: false,
             audio,
             sound: true,
+            network: Arc::new(runtime::net::Direct),
         };
         let controls = Arc::new(runtime::media::audio::Controls::new());
         assert!(sound_of(&config(None)).is_none());
@@ -2825,13 +2825,13 @@ mod tests {
 
     #[test]
     fn a_port_is_theirs_unless_one_is_given() {
-        assert_eq!(resolve("127.0.0.1").unwrap()[0].port(), DIRECT_PORT);
-        assert_eq!(resolve("127.0.0.1:5900").unwrap()[0].port(), 5900);
+        assert_eq!(direct_address("127.0.0.1").unwrap().1, DIRECT_PORT);
+        assert_eq!(direct_address("127.0.0.1:5900").unwrap().1, 5900);
         // The bracketed form without a port is the case a `contains(':')`
         // check for "has a port" gets wrong, since every IPv6 literal has a
         // colon.
-        assert_eq!(resolve("[::1]").unwrap()[0].port(), DIRECT_PORT);
-        assert!(resolve("::1").is_err());
+        assert_eq!(direct_address("[::1]").unwrap(), ("::1".to_string(), DIRECT_PORT));
+        assert!(direct_address("::1").is_err());
     }
 
     #[test]

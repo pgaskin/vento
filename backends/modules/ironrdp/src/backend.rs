@@ -74,6 +74,7 @@ fn create(c: &Connect) -> Result<Arc<dyn Backend>, String> {
         // The same option as FreeRDP's: "local" plays the sound here, if
         // there is an output.
         audio: c.audio.clone().filter(|_| o.get("Sound") == "local"),
+        network: Arc::clone(&c.network),
     };
     log::info!(
         "connecting to {} as {:?} ({}x{} × {}, nla {:?}, compression {:?}, graphics {:?}, experience {:?}, platform {:?}, sound {}, video decoders {})",

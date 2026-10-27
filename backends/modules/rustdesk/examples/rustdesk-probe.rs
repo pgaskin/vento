@@ -159,7 +159,7 @@ struct Stream {
 }
 
 impl Stream {
-    fn new(sock: TcpStream) -> Result<Stream, String> {
+    fn new(sock: runtime::net::Socket) -> Result<Stream, String> {
         let traffic = Arc::new(wire::Traffic::default());
         let (reader, writer, _) =
             wire::split(sock, Arc::clone(&traffic)).map_err(|e| e.to_string())?;
@@ -233,7 +233,7 @@ fn tcp(addr: SocketAddr, seconds: u64) -> Result<TcpStream, String> {
 fn connect_direct(args: &Args) -> Result<Stream, String> {
     let addr = resolve(&args.peer, DIRECT_PORT)?;
     println!("== direct to {addr}");
-    let mut s = Stream::new(tcp(addr, args.seconds)?)?;
+    let mut s = Stream::new(tcp(addr, args.seconds)?.into())?;
     s.send(&Message::new()).map_err(|e| e.to_string())?;
     Ok(s)
 }
@@ -247,8 +247,15 @@ fn connect_direct(args: &Args) -> Result<Stream, String> {
 fn connect_by_id(args: &Args) -> Result<Stream, String> {
     // A probe ends only when the process exits, so its hangup is never used.
     let hangup = runtime::Hangup::new();
-    let reached = rendezvous::reach(&hangup, &args.peer, &args.server, key_of(args), Duration::from_secs(10))
-        .map_err(|e| e.to_string())?;
+    let reached = rendezvous::reach(
+        &runtime::net::Direct,
+        &hangup,
+        &args.peer,
+        &args.server,
+        key_of(args),
+        Duration::from_secs(10),
+    )
+    .map_err(|e| e.to_string())?;
     println!(
         "== {} ({} bytes of peer key)",
         reached.how.describe(),

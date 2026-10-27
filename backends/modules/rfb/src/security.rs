@@ -400,7 +400,7 @@ mod tests {
             std::thread::sleep(delay);
             far.write_all(&0u32.to_be_bytes()).unwrap();
         });
-        let mut wire = Wire::plain(near, Arc::default(), Arc::default()).unwrap();
+        let mut wire = Wire::plain(near.into(), Arc::default(), Arc::default()).unwrap();
         let said = Arc::new(Mutex::new(Vec::new()));
         let mut ask = Statuses(Arc::clone(&said));
         let chosen = handshake_security(&mut wire, Version::V3_8, Security::Plain, "far", &mut ask);

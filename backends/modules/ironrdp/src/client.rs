@@ -17,6 +17,7 @@ use crate::sound::{QUIET, Sound};
 use crate::tls;
 use runtime::media::audio::{Outputs, Player};
 use runtime::media::video::Decoders;
+use runtime::net::{Connection, EndReason, Liveness, Network, Peer, Timeout};
 use runtime::rate::Rate;
 use runtime::{Credentials, Handler, Hangup};
 
@@ -49,7 +50,6 @@ use ironrdp_session::{ActiveStage, ActiveStageBuilder, ActiveStageOutput};
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::io::{Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, RwLock};
@@ -115,6 +115,8 @@ pub struct Config {
     /// sound: the server is told not to play it here, and no rdpsnd channel
     /// is offered.
     pub audio: Option<Arc<dyn Outputs>>,
+    /// What the connection is made through.
+    pub network: Arc<dyn Network>,
 }
 
 impl Default for Config {
@@ -139,6 +141,7 @@ impl Default for Config {
             // indefinitely.
             connect_timeout: Duration::from_secs(20),
             audio: None,
+            network: Arc::new(runtime::net::Direct),
         }
     }
 }
@@ -741,7 +744,10 @@ impl Client {
     /// Connect and run until the session ends. Blocks; every [`Handler`] call
     /// happens on this thread.
     pub fn run(&self, config: &Config, handler: &mut dyn Handler) -> Result<()> {
-        let result = self.session(config, handler);
+        // The end of the stream on a relayed connection is whatever ended
+        // the connection behind it: the route says which.
+        let mut end = EndReason::none();
+        let result = self.session(config, handler, &mut end).map_err(|e| e.explained(&end));
         self.shared.running.store(false, Ordering::Release);
         let _ = self.shared.out.send(Out::Stop);
         if self.shared.hangup.is_hung_up() {
@@ -750,7 +756,7 @@ impl Client {
         result
     }
 
-    fn session(&self, config: &Config, handler: &mut dyn Handler) -> Result<()> {
+    fn session(&self, config: &Config, handler: &mut dyn Handler, end: &mut EndReason) -> Result<()> {
         let (host, port) = resolve(&config.address)?;
 
         // Asked before anything is connected, as the protocol requires: RDP
@@ -763,14 +769,16 @@ impl Client {
                 .ok_or(Error::Closed)?,
         };
 
-        let socket = connect(&self.shared.hangup, &host, port, config.connect_timeout)?;
+        let Connection { socket, peer, end: ended } =
+            connect(&*config.network, &self.shared.hangup, &host, port, config.connect_timeout)?;
+        *end = ended;
         // Held for the rest of the session, including the X.224 and TLS
         // exchanges: a server that accepts the connection and sends nothing
         // blocks a read that only shutting the socket down ends.
         let _holding = self.shared.hangup.hold(&socket)?;
         socket.set_nodelay(true).ok();
         socket.set_read_timeout(Some(config.connect_timeout)).ok();
-        let client_addr = socket.local_addr()?;
+        let client_addr = client_address(&peer);
 
         let mut connector = ClientConnector::new(connector_config(config, &credentials), client_addr);
         // Before the connection sequence rather than after it: the list of
@@ -1857,25 +1865,25 @@ fn resolve(address: &str) -> Result<(String, u16)> {
     runtime::address::split(address, 3389, runtime::address::Ports::Plain).map_err(Error::Protocol)
 }
 
-/// Each address in turn, through `hangup` so that a close ends the dial too.
-fn connect(hangup: &Hangup, host: &str, port: u16, timeout: Duration) -> Result<TcpStream> {
+/// The Client Info PDU's client address, which the server shows as where the
+/// session came from: the address the server sees the connection come from,
+/// as the route reports it. A route that does not know it (a tunnel that
+/// resolves at its far end) gets 0.0.0.0, which xrdp and Windows accept.
+fn client_address(peer: &Peer) -> std::net::SocketAddr {
+    peer.local.unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], 0)))
+}
+
+/// Dials through `network`, which tries each address in turn, each with the
+/// whole `timeout`, with `hangup` so that a close ends the dial too.
+fn connect(network: &dyn Network, hangup: &Hangup, host: &str, port: u16, timeout: Duration) -> Result<Connection> {
     if host.is_empty() {
         return Err(Error::Protocol("no address".into()));
     }
-    let mut last = None;
-    for addr in (host, port).to_socket_addrs()? {
-        match hangup.dial(addr, timeout) {
-            Ok(socket) => return Ok(socket),
-            Err(_) if hangup.is_hung_up() => return Err(Error::Closed),
-            Err(e) => last = Some(e),
-        }
+    match network.connect(host, port, Timeout::PerAddress(timeout), &Liveness::default(), hangup) {
+        Ok(connection) => Ok(connection),
+        Err(_) if hangup.is_hung_up() => Err(Error::Closed),
+        Err(e) => Err(Error::Io(e)),
     }
-    Err(Error::Io(last.unwrap_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("no address for {host}"),
-        )
-    })))
 }
 
 /// The interface `runtime::Runner` runs: the inherent `run` and `close` are
@@ -1909,6 +1917,20 @@ impl Default for Client {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_client_address_is_the_routes_or_none() {
+        use runtime::net::{Peer, Route};
+        let peer = |local: Option<&str>| Peer {
+            host: "rdp.example".into(),
+            port: 3389,
+            address: None,
+            local: local.map(|a| a.parse().unwrap()),
+            route: Route::Tunnel,
+        };
+        assert_eq!(super::client_address(&peer(Some("10.0.0.7:50123"))).to_string(), "10.0.0.7:50123");
+        assert_eq!(super::client_address(&peer(None)).to_string(), "0.0.0.0:0");
+    }
+
     use super::*;
 
     /// The authentication is named once it has lasted a second, and

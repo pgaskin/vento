@@ -13,11 +13,11 @@ use crate::security::{self, Security};
 use crate::transport::{Wire, Writes};
 use crate::zlib::ZlibStream;
 use runtime::rate::Rate;
+use runtime::net::{Connection, Liveness, Network, Socket, Timeout};
 use runtime::{Credentials, Handler, Hangup};
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, RwLock};
@@ -42,6 +42,8 @@ pub struct Config {
     /// zlib effort, 0–9, sent as the `compressLevel` pseudo-encodings.
     pub compress_level: Option<u8>,
     pub connect_timeout: Duration,
+    /// What the connection is made through.
+    pub network: Arc<dyn Network>,
 }
 
 impl Default for Config {
@@ -57,6 +59,7 @@ impl Default for Config {
             // A mistyped address must not leave the connection spinning
             // forever.
             connect_timeout: Duration::from_secs(20),
+            network: Arc::new(runtime::net::Direct),
         }
     }
 }
@@ -448,7 +451,15 @@ impl Client {
 
     fn session(&self, config: &Config, handler: &mut dyn Handler) -> Result<()> {
         let (host, port) = resolve(&config.address)?;
-        let socket = connect(&self.shared.hangup, &host, port, config.connect_timeout)?;
+        let Connection { socket, end, .. } =
+            connect(&*config.network, &self.shared.hangup, &host, port, config.connect_timeout)?;
+        // The end of the stream on a relayed connection is whatever ended
+        // the connection behind it: the route says which, so that a reset
+        // reads as one either way.
+        self.connected(config, handler, &host, socket).map_err(|e| e.explained(&end))
+    }
+
+    fn connected(&self, config: &Config, handler: &mut dyn Handler, host: &str, socket: Socket) -> Result<()> {
         // Held for the rest of the session, including the handshake: if a
         // server accepts the connection and then sends nothing, only shutting
         // the socket down ends the read.
@@ -476,7 +487,7 @@ impl Client {
                         password,
                     }),
             };
-            security::handshake_security(&mut wire, version, config.security, &host, &mut ask)?
+            security::handshake_security(&mut wire, version, config.security, host, &mut ask)?
         };
 
         // ClientInit, then ServerInit.
@@ -1115,22 +1126,17 @@ fn resolve(address: &str) -> Result<(String, u16)> {
     runtime::address::split(address, 5900, runtime::address::Ports::Display).map_err(Error::Address)
 }
 
-/// Tries each address in turn, through `hangup` so a close also ends the dial.
-fn connect(hangup: &Hangup, host: &str, port: u16, timeout: Duration) -> Result<TcpStream> {
+/// Dials through `network`, which tries each address in turn, each with the
+/// whole `timeout`, with `hangup` so a close also ends the dial.
+fn connect(network: &dyn Network, hangup: &Hangup, host: &str, port: u16, timeout: Duration) -> Result<Connection> {
     if host.is_empty() {
         return Err(Error::Protocol("no address".into()));
     }
-    let mut last = None;
-    for addr in (host, port).to_socket_addrs()? {
-        match hangup.dial(addr, timeout) {
-            Ok(socket) => return Ok(socket),
-            Err(_) if hangup.is_hung_up() => return Err(Error::Closed),
-            Err(e) => last = Some(e),
-        }
+    match network.connect(host, port, Timeout::PerAddress(timeout), &Liveness::default(), hangup) {
+        Ok(connection) => Ok(connection),
+        Err(_) if hangup.is_hung_up() => Err(Error::Closed),
+        Err(e) => Err(Error::Io(e)),
     }
-    Err(Error::Io(last.unwrap_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::NotFound, format!("no address for {host}"))
-    })))
 }
 
 /// The interface `runtime::Runner` runs: the inherent `run` and `close` are the

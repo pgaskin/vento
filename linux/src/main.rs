@@ -422,6 +422,7 @@ mod host {
 
             println!("{}", (self.kind.version)());
             let mailbox = Mailbox::new(None);
+            let network: Arc<dyn runtime::net::Network> = Arc::new(runtime::net::Direct);
             let backend = {
                 let client_name = backends::client_name();
                 let identity = known_hosts::saved_identity(&self.dirs.config, self.kind, &self.address);
@@ -448,6 +449,7 @@ mod host {
                         *self.sound_controls.borrow_mut() = Some(Arc::clone(audio.controls()));
                         audio.plays().then_some(audio as _)
                     },
+                    network: Arc::clone(&network),
                 };
                 say("create");
                 match self.kind.start(&connect) {
@@ -490,7 +492,7 @@ mod host {
                     });
                     status = 1;
                 } else {
-                    self.facts(&backend, &say);
+                    self.facts(&backend, &*network, &say);
                     // Asked at the end rather than when it was sent, since an
                     // agent that comes up late still gets the offer.
                     let sent_clipboard = self.steps.iter().any(|s| matches!(s, Step::Clipboard(_)));
@@ -801,7 +803,7 @@ mod host {
             backend.request_layout(width, height, &screens);
         }
 
-        fn facts(&self, backend: &Arc<dyn Backend>, say: &dyn Fn(&str)) {
+        fn facts(&self, backend: &Arc<dyn Backend>, network: &dyn runtime::net::Network, say: &dyn Fn(&str)) {
             let facts = backend.facts();
             say(&format!(
                 "facts {}x{}, {} monitors, {} displays (on {}){}{}",
@@ -819,7 +821,10 @@ mod host {
             for m in &facts.monitors {
                 say(&format!("monitor {}", screen(m)));
             }
-            for (i, fact) in backend.info().iter().enumerate() {
+            // With the client's own rows, as the panel shows them.
+            let mut info = backend.info();
+            api::backend::with_network(&mut info, network);
+            for (i, fact) in info.iter().enumerate() {
                 say(&format!(
                     "info[{i}] {}{}: {}",
                     fact.label,

@@ -55,7 +55,14 @@ public record ConnectionFact(Field field, String label, String value, boolean di
         /** What we asked it for. */
         VIEWER_PIXELS,
         /** Anything a particular protocol has that this list does not. */
-        OTHER
+        OTHER,
+        /**
+         * What carries the connection where it is not this end's own TCP
+         * connection (the session's network says what). Added by the native
+         * layer after the backend's rows, and shown last, in a group of its
+         * own.
+         */
+        TUNNEL
     }
 
     public ConnectionFact {

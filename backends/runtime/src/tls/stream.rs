@@ -20,13 +20,13 @@
 
 use rustls::ClientConnection;
 use std::io::{self, Read, Write};
-use std::net::TcpStream;
+use crate::net::Socket;
 use std::sync::{Arc, Mutex};
 
 struct Stream {
     conn: Mutex<ClientConnection>,
-    socket_read: Mutex<TcpStream>,
-    socket_write: Mutex<TcpStream>,
+    socket_read: Mutex<Socket>,
+    socket_write: Mutex<Socket>,
 }
 
 /// One thread's view of the session: `Read` and `Write`, so it goes wherever an
@@ -48,7 +48,7 @@ pub struct Handle {
 impl Handle {
     /// Take over a socket whose handshake is already complete. `conn` must be
     /// the connection that did it.
-    pub fn new(conn: ClientConnection, socket: &TcpStream) -> io::Result<Handle> {
+    pub fn new(conn: ClientConnection, socket: &Socket) -> io::Result<Handle> {
         Ok(Handle {
             stream: Arc::new(Stream {
                 conn: Mutex::new(conn),

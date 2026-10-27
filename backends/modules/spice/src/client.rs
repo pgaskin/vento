@@ -16,7 +16,7 @@
 //! waits for a socket.
 
 use crate::agent::{Agent, Event};
-use crate::channel::{Channel, Ended, Kind, Message};
+use crate::channel::{Channel, Ended, Kind, Message, Server};
 use crate::cursor::Cursors;
 use crate::display::Display;
 use crate::error::{Error, Result};
@@ -24,7 +24,8 @@ use crate::framebuffer::Framebuffer;
 use crate::keymap;
 use crate::playback::Playback;
 use crate::tls;
-use runtime::Handler;
+use runtime::net::Network;
+use runtime::{Handler, Hangup};
 use runtime::media::audio::Outputs;
 use runtime::address::Ports;
 use shakenfist_spice_protocol::constants::{
@@ -70,6 +71,8 @@ pub struct Config {
     /// one. This is the initial state of the session's Enable switch, which
     /// opens and closes the channel from then on.
     pub sound: bool,
+    /// What every channel's connection is made through.
+    pub network: Arc<dyn Network>,
 }
 
 /// What the connection panel shows about a live session.
@@ -133,6 +136,9 @@ pub struct Client {
     /// four links, a TLS handshake each) only has per-step deadlines, so a
     /// close sent only through the queue would wait for all of them.
     closing: tokio::sync::Notify,
+    /// Ends a channel's dial, which the network does on a blocking thread
+    /// that the dropped session future does not stop.
+    hangup: Arc<Hangup>,
 }
 
 impl Client {
@@ -152,6 +158,7 @@ impl Client {
             resizable: Arc::new(AtomicBool::new(false)),
             clipboard: Arc::new(AtomicBool::new(false)),
             closing: tokio::sync::Notify::new(),
+            hangup: Arc::new(Hangup::new()),
         }
     }
 
@@ -274,6 +281,7 @@ impl Client {
         // nothing is waiting yet, so a close that arrives before the runtime
         // has started is still the first thing the session sees.
         self.closing.notify_one();
+        self.hangup.hang_up();
         let _ = self.commands.send(Command::Close);
     }
 
@@ -294,12 +302,22 @@ impl Client {
         // session listening for it: dropping the session future ends a dial,
         // handshake or read wherever it is, and dropping the runtime ends the
         // channels' reader tasks.
+        //
+        // `biased`, with the close first: `close` hangs up a dial in progress,
+        // which ends the session with the hang-up's `Interrupted`, so both
+        // branches can be ready at once. `close` notifies before it hangs up,
+        // so the close is always ready by then, and checked first it wins.
         let ended = runtime.block_on(async {
             tokio::select! {
-                ended = self.session(config, handler, inbox) => ended,
+                biased;
                 () = self.closing.notified() => Err(Error::Closed),
+                ended = self.session(config, handler, inbox) => ended,
             }
         });
+        // A dial still in progress on the blocking pool (a channel opened as
+        // the session ended) is ended here, since dropping the runtime waits
+        // for it.
+        self.hangup.hang_up();
         // The sound switch goes away with the session.
         if let Some(audio) = &config.audio {
             audio.controls().withdraw();
@@ -344,7 +362,12 @@ impl Client {
 
         let mut session = Session {
             client: self,
-            server: (host, port),
+            server: Server {
+                host,
+                port,
+                network: Arc::clone(&config.network),
+                hangup: Arc::clone(&self.hangup),
+            },
             channels: HashMap::new(),
             display: Display::new(Arc::clone(&self.framebuffer), IMAGE_CACHE),
             cursors: Cursors::new(),
@@ -535,8 +558,8 @@ const GLZ_WINDOW: usize = 3 * 1024 * 1024;
 struct Session<'a> {
     client: &'a Client,
     /// The host and port every channel of this session dials, parsed from the
-    /// address once.
-    server: (String, u16),
+    /// address once, and the network it dials through.
+    server: Server,
     channels: HashMap<Kind, Channel>,
     display: Display,
     cursors: Cursors,
@@ -601,7 +624,7 @@ impl Session<'_> {
                 Channel::open(
                     kind,
                     caps,
-                    (&self.server.0, self.server.1),
+                    &self.server,
                     session_id,
                     password.as_deref(),
                     connector,

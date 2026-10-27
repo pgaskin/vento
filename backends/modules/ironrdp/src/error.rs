@@ -50,6 +50,18 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+impl Error {
+    /// This error, with a socket error that came from the stream ending
+    /// replaced by what the connection's route says ended it
+    /// ([`runtime::net::EndReason::explain`]).
+    pub fn explained(self, end: &runtime::net::EndReason) -> Error {
+        match self {
+            Error::Io(e) => Error::Io(end.explain(e)),
+            other => other,
+        }
+    }
+}
+
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Error {
         Error::Io(e)
@@ -71,4 +83,24 @@ pub fn describe(e: &dyn std::error::Error) -> String {
         source = inner.source();
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use runtime::net::{End, EndReason};
+
+    /// A relayed connection's end of stream reads as the route recorded
+    /// it: IronRDP words a reset as a close, either way.
+    #[test]
+    fn a_relayed_end_is_worded_as_a_direct_one() {
+        let eof = || Error::Io(std::io::ErrorKind::UnexpectedEof.into());
+        let reset = EndReason::new();
+        reset.record(End::Reset);
+        assert_eq!(eof().explained(&reset).to_string(), "The server closed the connection.");
+        let closed = EndReason::new();
+        closed.record(End::Closed);
+        assert_eq!(eof().explained(&closed).to_string(), "The server closed the connection.");
+        assert_eq!(eof().explained(&EndReason::none()).to_string(), "The server closed the connection.");
+    }
 }

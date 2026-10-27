@@ -4,7 +4,7 @@
 //! The socket, and the TLS VeNCrypt may wrap around it.
 //!
 //! Everything above this reads and writes through [`Wire`], a pair of boxed
-//! halves rather than a `TcpStream`: the same code drives an encrypted session
+//! halves rather than a socket: the same code drives an encrypted session
 //! and a plain one, and the swap happens in the middle of the security
 //! handshake, where VeNCrypt puts it.
 //!
@@ -26,9 +26,9 @@
 
 use crate::error::{Error, Result};
 use crate::proto::{Counter, Reader, Writer};
+use runtime::net::Socket;
 use rustls::ClientConnection;
 use std::io::{self, Read, Write};
-use std::net::TcpStream;
 use std::sync::Arc;
 
 pub type Reads = Box<dyn Read + Send>;
@@ -48,12 +48,12 @@ pub struct Wire {
     pub r: Reader<Reads>,
     pub w: Writer<Writes>,
     /// The socket underneath, kept for the upgrade and for shutdown.
-    socket: TcpStream,
+    socket: Socket,
     peer: Option<Peer>,
 }
 
 impl Wire {
-    pub fn plain(socket: TcpStream, received: Counter, sent: Counter) -> io::Result<Wire> {
+    pub fn plain(socket: Socket, received: Counter, sent: Counter) -> io::Result<Wire> {
         Ok(Wire {
             r: Reader::counting(Box::new(socket.try_clone()?) as Reads, received),
             w: Writer::counting(Box::new(socket.try_clone()?) as Writes, sent),

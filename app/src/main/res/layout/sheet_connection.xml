@@ -147,6 +147,18 @@
             android:orientation="vertical" />
 
         <!--
+            What carries the connection where it is not this end's own TCP
+            connection (a tunnel): last, and gone where there is none.
+        -->
+        <LinearLayout
+            android:id="@+id/tunnel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/group_spacing"
+            android:orientation="vertical"
+            android:visibility="gone" />
+
+        <!--
             Three buttons. At the end of the row: Log, always, and beside it
             Disconnect or Reconnect depending on the session's state
             (ConnectionPanel sets the text and the action). At the start, alone,

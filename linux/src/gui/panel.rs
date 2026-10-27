@@ -566,12 +566,19 @@ fn display_label(i: i32, m: &Monitor) -> String {
     format!("{} · {} × {}", i + 1, m.width, m.height)
 }
 
-/// The facts: the backend's rows, then the counts this client keeps.
+/// The facts: the backend's rows, then the counts this client keeps, then
+/// what carries the connection where it is not this end's own (the Tunnel
+/// group).
 ///
 /// All the backend's rows, in its order, its diagnostic ones among the
 /// rest rather than folded away under a heading of their own.
 fn facts(ui: &mut Ui, snapshot: &Snapshot) {
-    let plain: Vec<&ConnectionFact> = snapshot.info.iter().filter(|f| f.field != Field::DesktopName).collect();
+    let plain: Vec<&ConnectionFact> = snapshot
+        .info
+        .iter()
+        .filter(|f| !matches!(f.field, Field::DesktopName | Field::Tunnel))
+        .collect();
+    let tunnel: Vec<&ConnectionFact> = snapshot.info.iter().filter(|f| f.field == Field::Tunnel).collect();
 
     Grid::new("facts").num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
         for fact in &plain {
@@ -597,6 +604,14 @@ fn facts(ui: &mut Ui, snapshot: &Snapshot) {
             );
         }
     });
+    if !tunnel.is_empty() {
+        ui.separator();
+        Grid::new("tunnel").num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
+            for fact in &tunnel {
+                row(ui, fact.label, &fact.value);
+            }
+        });
+    }
 }
 
 /// A field the backend has but no answer for yet says so, rather than

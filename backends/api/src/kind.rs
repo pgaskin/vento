@@ -11,6 +11,7 @@ use crate::events::Mailbox;
 use crate::options::Options;
 use runtime::media::audio::Outputs;
 use runtime::media::video::Decoders;
+use runtime::net::Network;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -88,6 +89,11 @@ pub struct Connect<'a> {
     /// that its controls (the switch, and the mute a window sets) apply to
     /// this session only. With `None`, the sound is dropped.
     pub audio: Option<Arc<dyn Outputs>>,
+    /// Where the session's connections go: [`Direct`](runtime::net::Direct)
+    /// for this end's own TCP connections, as every client has. The Rust
+    /// backends dial through it; the C libraries and RealVNC's core dial for
+    /// themselves.
+    pub network: Arc<dyn Network>,
 }
 
 impl Connect<'_> {
@@ -224,6 +230,7 @@ mod tests {
             platform: Platform::Linux,
             decoders: None,
             audio: Some(Arc::clone(&audio) as Arc<dyn Outputs>),
+            network: Arc::new(runtime::net::Direct),
         };
         assert!(KIND.start(&connect).is_err());
         let mut stream = audio.open(Format::new(48_000, 2).unwrap()).unwrap();
@@ -267,6 +274,7 @@ mod tests {
                 platform: Platform::Linux,
                 decoders: None,
                 audio: None,
+                network: Arc::new(runtime::net::Direct),
             }
             .domain_and_user()
         };

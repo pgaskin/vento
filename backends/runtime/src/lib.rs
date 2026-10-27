@@ -16,6 +16,11 @@
 //! A protocol that uses TLS uses it through [`tls`]: the certificate pinned
 //! rather than verified, and one connection read and written by two threads.
 //!
+//! A protocol's connections are made by [`net`]'s `Network`, which a platform
+//! may supply as it supplies the media below, and which hands back a
+//! connected fd: this end's own TCP socket, or a socketpair's end with vento
+//! carrying the bytes.
+//!
 //! The picture and the sound a session carries are [`media`]'s: the video
 //! decoders and sound outputs a platform supplies by implementing its two
 //! traits ([`media::video::Decoders`], [`media::audio::Outputs`]), and what is
@@ -30,8 +35,8 @@ pub mod callbacks;
 pub mod client;
 pub mod cursor;
 pub mod handler;
-pub mod hangup;
 pub mod media;
+pub mod net;
 pub mod rate;
 pub mod runner;
 pub mod slot;
@@ -42,7 +47,7 @@ pub mod tls;
 pub use callbacks::Callbacks;
 pub use client::Client;
 pub use handler::{Asked, Credentials, Handler, Withdraw};
-pub use hangup::Hangup;
+pub use net::Hangup;
 pub use runner::{Bridge, Runner};
 pub use slot::Slot;
 

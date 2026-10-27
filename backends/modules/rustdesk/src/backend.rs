@@ -88,6 +88,7 @@ fn create(c: &Connect) -> Result<Arc<dyn Backend>, String> {
         lock_after: o.bool("LockAfterSession"),
         audio: c.audio.clone(),
         sound: o.bool("Audio"),
+        network: Arc::clone(&c.network),
     };
     log::info!(
         "connecting to {} {} ({:?}, {} fps, sound {})",

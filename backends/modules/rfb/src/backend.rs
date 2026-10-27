@@ -66,6 +66,7 @@ fn create(c: &Connect) -> Result<Arc<dyn Backend>, String> {
         encodings: encodings(o.get("Encoding")),
         compress_level: compress_level(o.get("Compression")),
         connect_timeout: Duration::from_millis(CONNECT_TIMEOUT_MS as u64),
+        network: Arc::clone(&c.network),
     };
     log::info!(
         "connecting to {} ({} encodings, compression {:?}, security {:?})",

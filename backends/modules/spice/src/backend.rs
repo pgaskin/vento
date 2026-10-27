@@ -44,6 +44,7 @@ fn create(c: &Connect) -> Result<Arc<dyn Backend>, String> {
         // whether it starts open.
         audio: c.audio.clone(),
         sound: o.bool("Audio"),
+        network: Arc::clone(&c.network),
     };
     log::info!(
         "connecting to {} ({}, sound {})",

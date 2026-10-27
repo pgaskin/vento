@@ -216,6 +216,9 @@ pub struct Session {
     /// the session plays under, at once and without the backend hearing of
     /// it, or an enable, which the backend asks the far end for).
     audio: Arc<backends::Audio>,
+    /// What the session's connections go through, also handed to the
+    /// backend: the panel's Tunnel row says what carries them.
+    network: Arc<dyn runtime::net::Network>,
     /// The session's sound as it last said it (`Event::Sound`): whether
     /// there is a switch and what it does, and whether anything plays.
     pub sound: Sound,
@@ -346,6 +349,7 @@ impl Session {
             request.options.set("ViewOnly", "true");
         }
         let identity = known_hosts::saved_identity(&dirs.config, request.kind, &request.address);
+        let network: Arc<dyn runtime::net::Network> = Arc::new(runtime::net::Direct);
         let connect = Connect {
             address: &request.address,
             user: &request.user,
@@ -361,6 +365,7 @@ impl Session {
             platform: backends::Platform::Linux,
             decoders: Some(Arc::clone(&decoders) as _),
             audio: audio.plays().then(|| Arc::clone(&audio) as _),
+            network: Arc::clone(&network),
         };
         let backend = request.kind.start(&connect)?;
         // Typed or pasted, and a title before the desktop has a name.
@@ -382,6 +387,7 @@ impl Session {
             backend,
             decoders,
             audio,
+            network,
             sound: Sound::default(),
             zero_copy,
             mailbox,
@@ -745,6 +751,7 @@ impl Session {
         self.last_poll = Some(Instant::now());
         let mut info = self.backend.info();
         api::backend::with_sound(&mut info, self.audio.controls());
+        api::backend::with_network(&mut info, &*self.network);
         self.snapshot = Snapshot::new(self.backend.facts(), info, self.backend.traffic());
         // The name a mixer lists the session's sound under is the one its
         // window's title starts with.

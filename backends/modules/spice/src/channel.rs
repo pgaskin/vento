@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Patrick Gaskin
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! One channel of a session: its own TCP connection, its own link handshake,
-//! its own ticket and its own ack accounting.
+//! One channel of a session: its own connection, its own link handshake, its
+//! own ticket and its own ack accounting.
 //!
 //! A SPICE session is four of these (main, display, inputs, cursor), plus
 //! playback where the server has sound and the session plays it. The session
@@ -19,14 +19,15 @@
 use crate::error::{Error, Result};
 use crate::tls;
 use shakenfist_spice_protocol::constants::{ChannelType, SpiceError};
-use shakenfist_spice_protocol::link::{SpiceLinkMess, SpiceLinkReply, SpiceStream, perform_auth};
+use runtime::Hangup;
+use runtime::net::{EndReason, Liveness, Network, Socket, Timeout};
+use shakenfist_spice_protocol::link::{SpiceLinkMess, SpiceLinkReply, perform_auth};
 use shakenfist_spice_protocol::messages::{MessageHeader, make_message};
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tokio::sync::{Mutex, mpsc};
 
 /// Which channel a message came off, for a session that reads one queue.
@@ -70,6 +71,46 @@ pub mod playback_caps {
     /// Opus rather than PCM: a tenth of the bytes, and what a server with
     /// libopus picks for a client that offers it.
     pub const OPUS: u32 = 1 << 3;
+}
+
+/// A connection's bytes, plain or inside TLS, whichever kind of socket is
+/// under them.
+pub trait Duplex: AsyncRead + AsyncWrite + Unpin + Send {}
+
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> Duplex for T {}
+
+/// Where every channel of a session connects, and through what.
+pub struct Server {
+    pub host: String,
+    pub port: u16,
+    pub network: Arc<dyn Network>,
+    /// Ends a dial in progress, which runs on the runtime's blocking pool
+    /// and so outlives a dropped session future otherwise.
+    pub hangup: Arc<Hangup>,
+}
+
+impl Server {
+    /// A connection to the server, as the session's async I/O takes it, and
+    /// where its route records why it ended.
+    async fn dial(&self, deadline: Duration) -> Result<(Box<dyn Duplex>, EndReason)> {
+        let network = Arc::clone(&self.network);
+        let hangup = Arc::clone(&self.hangup);
+        let (host, port) = (self.host.clone(), self.port);
+        let connection = tokio::task::spawn_blocking(move || {
+            network.connect(&host, port, Timeout::Whole(deadline), &Liveness::default(), &hangup)
+        })
+        .await
+        .map_err(|e| Error::Io(std::io::Error::other(e)))??;
+        let socket = connection.socket;
+        // Input is small messages that must not wait for a full segment.
+        socket.set_nodelay(true).ok();
+        socket.set_nonblocking(true)?;
+        let stream: Box<dyn Duplex> = match socket {
+            Socket::Tcp(s) => Box::new(tokio::net::TcpStream::from_std(s)?),
+            Socket::Unix(s) => Box::new(tokio::net::UnixStream::from_std(s)?),
+        };
+        Ok((stream, connection.end))
+    }
 }
 
 /// One message off the wire, and which channel it came from.
@@ -129,7 +170,7 @@ impl Channel {
     pub async fn open(
         kind: Kind,
         caps: u32,
-        address: (&str, u16),
+        server: &Server,
         session_id: u32,
         password: Option<&str>,
         tls: Option<&tls::Connector>,
@@ -139,13 +180,16 @@ impl Channel {
         traffic: (Arc<AtomicU64>, Arc<AtomicU64>),
         deadline: Duration,
     ) -> Result<Channel> {
-        let tcp = within(deadline, TcpStream::connect(address)).await??;
-        // Input is small messages that must not wait for a full segment.
-        tcp.set_nodelay(true)?;
+        // The network's own deadline, over the lookup and every address:
+        // one per channel, as before the channels went through the network.
+        // Each channel is its own connection, so each has its own end: a
+        // relayed channel's end of stream is explained by what its route says
+        // ended it, so that a reset reads as one either way.
+        let (plain, end) = server.dial(deadline).await?;
 
-        let mut stream = match tls {
+        let mut stream: Box<dyn Duplex> = match tls {
             Some(connector) => {
-                let (stream, fingerprint) = within(deadline, connector.connect(tcp)).await??;
+                let (stream, fingerprint) = within(deadline, connector.connect(plain)).await??;
                 match connector.admit(fingerprint.as_deref(), trust) {
                     Err(Error::Cancelled) => return Err(Error::Cancelled),
                     Err(e) => {
@@ -154,12 +198,14 @@ impl Channel {
                     }
                     Ok(()) => {}
                 }
-                SpiceStream::Tls(stream)
+                Box::new(stream)
             }
-            None => SpiceStream::Plain(tcp),
+            None => plain,
         };
 
-        let reply = within(deadline, link(&mut stream, session_id, kind, caps)).await??;
+        let reply = within(deadline, link(&mut stream, session_id, kind, caps))
+            .await?
+            .map_err(|e| e.explained(&end))?;
         // The link reply's public key is not an identity: QEMU generates an
         // RSA-1024 key per *connection* only to encrypt this ticket, so there
         // is nothing to pin, and on a plain port the password is protected
@@ -173,7 +219,10 @@ impl Channel {
         // since the panel has one traffic row.
         let (received, sent) = traffic;
         let reader = tokio::spawn(async move {
-            let error = read_messages(kind, read, &queue, &received).await.err();
+            let error = read_messages(kind, read, &queue, &received)
+                .await
+                .err()
+                .map(|e| e.explained(&end));
             let _ = ended.send(Ended { kind, error }).await;
         });
 

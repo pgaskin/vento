@@ -17,9 +17,9 @@
 //! the handshake and returns its results.
 
 use crate::error::{Error, Result};
+use runtime::net::Socket;
 use rustls::ClientConnection;
 use rustls::pki_types::CertificateDer;
-use std::net::TcpStream;
 use std::sync::Arc;
 
 /// The far end's identity, from the completed handshake.
@@ -43,7 +43,7 @@ pub use runtime::tls::stream::Handle;
 ///
 /// `server_name` is only required by rustls: nothing checks it, because the
 /// pin is the identity (`runtime::tls::pinning`).
-pub fn connect(socket: &TcpStream, server_name: &str) -> Result<(Handle, Peer)> {
+pub fn connect(socket: &Socket, server_name: &str) -> Result<(Handle, Peer)> {
     let (config, verifier) = runtime::tls::pinning::client_config().map_err(tls_error)?;
     let name = runtime::tls::pinning::server_name(server_name);
     let mut conn = ClientConnection::new(Arc::new(config), name).map_err(tls_error)?;

@@ -101,6 +101,8 @@ final class ConnectionPanel {
     private final ViewGroup soundRow;
     private final ViewGroup facts;
     private final ViewGroup diagnostics;
+    /** The Tunnel group, last, shown only where the connection has one. */
+    private final ViewGroup tunnel;
     private final MaterialButton action;
     private final MaterialButton screenshot;
 
@@ -183,6 +185,7 @@ final class ConnectionPanel {
         soundRow = content.findViewById(R.id.sound);
         facts = content.findViewById(R.id.facts);
         diagnostics = content.findViewById(R.id.diagnostics);
+        tunnel = content.findViewById(R.id.tunnel);
         action = content.findViewById(R.id.action);
         screenshot = content.findViewById(R.id.screenshot);
 
@@ -636,19 +639,24 @@ final class ConnectionPanel {
     private void rebuildFacts(List<ConnectionFact> rows) {
         facts.removeAllViews();
         diagnostics.removeAllViews();
+        tunnel.removeAllViews();
         factValues.clear();
         final LayoutInflater inf = LayoutInflater.from(dialog.getContext());
         int plain = 0;
         int diags = 0;
+        int tunnels = 0;
         for (ConnectionFact f : rows) {
-            final ViewGroup into = f.diagnostic() ? diagnostics : facts;
+            final ViewGroup into = f.field() == ConnectionFact.Field.TUNNEL ? tunnel
+                    : f.diagnostic() ? diagnostics : facts;
             final View row = inf.inflate(R.layout.item_fact, into, false);
             ((TextView) row.findViewById(R.id.label)).setText(f.label());
             final TextView value = row.findViewById(R.id.value);
             value.setText(display(f));
             into.addView(row);
             factValues.add(value);
-            if (f.diagnostic()) {
+            if (into == tunnel) {
+                tunnels++;
+            } else if (f.diagnostic()) {
                 diags++;
             } else {
                 plain++;
@@ -656,8 +664,10 @@ final class ConnectionPanel {
         }
         RowGroups.apply(facts);
         RowGroups.apply(diagnostics);
+        RowGroups.apply(tunnel);
         facts.setVisibility(plain == 0 ? View.GONE : View.VISIBLE);
         diagnostics.setVisibility(diags == 0 ? View.GONE : View.VISIBLE);
+        tunnel.setVisibility(tunnels == 0 ? View.GONE : View.VISIBLE);
     }
 
     /**

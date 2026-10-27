@@ -126,6 +126,7 @@ fn main() {
         // (`vento --probe`) plays the sound.
         audio: None,
         sound: false,
+        network: Arc::new(runtime::net::Direct),
     };
 
     let session = {

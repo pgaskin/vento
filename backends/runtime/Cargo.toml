@@ -1,7 +1,8 @@
 # What every protocol here is written against and no protocol owns: the
 # `Client` a protocol implements, the `Handler` its thread calls, the
 # `Callbacks` a platform answers it with, the `Runner` that runs one on its own
-# thread and the `Bridge` between them, the dial a hang-up can interrupt, the
+# thread and the `Bridge` between them, the connections a session makes
+# (`net`, which a platform may supply) and the dial a hang-up interrupts, the
 # pinned TLS of the protocols that use it, and the address parser, which every
 # client runs before any of that. And what a platform implements: the picture
 # and the sound a session carries (`src/media/`), whose video decoders and
@@ -25,10 +26,10 @@ name = "runtime"
 
 [dependencies]
 log.workspace = true
-# The dial a disconnect can interrupt (`src/hangup.rs`): a socket made before
-# it connects, which std does not offer, and the `poll` that waits on it.
-# Both were in the lock already: RustDesk dials with socket2, and libc is
-# under most of what is here.
+# The dial a disconnect can interrupt (`src/net/`): a socket made before it
+# connects, which std does not offer, and the `poll` that waits on it and
+# relays a socketpair. Both were in the lock already: RustDesk dials with
+# socket2, and libc is under most of what is here.
 socket2 = "0.6"
 libc = "0.2"
 # TLS for the protocols that use it (`src/tls/`): the pin, which is a SHA-256

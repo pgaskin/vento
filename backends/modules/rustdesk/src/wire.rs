@@ -17,7 +17,8 @@
 //! message.
 
 use std::io::{Read, Write};
-use std::net::{Shutdown, TcpStream};
+use runtime::net::Socket;
+use std::net::Shutdown;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -47,13 +48,13 @@ pub struct Traffic {
 }
 
 pub struct Reader {
-    sock: TcpStream,
+    sock: Socket,
     cipher: Option<Box<dyn Cipher>>,
     traffic: Arc<Traffic>,
 }
 
 pub struct Writer {
-    sock: TcpStream,
+    sock: Socket,
     cipher: Option<Box<dyn Cipher>>,
     traffic: Arc<Traffic>,
 }
@@ -62,7 +63,7 @@ pub struct Writer {
 ///
 /// The close handle ends a session from another thread: shutting the socket
 /// down is the only way to wake a read blocked on it.
-pub fn split(sock: TcpStream, traffic: Arc<Traffic>) -> std::io::Result<(Reader, Writer, TcpStream)> {
+pub fn split(sock: Socket, traffic: Arc<Traffic>) -> std::io::Result<(Reader, Writer, Socket)> {
     let write_half = sock.try_clone()?;
     let closer = sock.try_clone()?;
     Ok((
@@ -200,12 +201,12 @@ mod tests {
             let payload = vec![0xa5u8; n];
             let expected = payload.clone();
             let sender = std::thread::spawn(move || {
-                let sock = TcpStream::connect(addr).unwrap();
-                let (_, mut writer, _) = split(sock, Arc::new(Traffic::default())).unwrap();
+                let sock = std::net::TcpStream::connect(addr).unwrap();
+                let (_, mut writer, _) = split(sock.into(), Arc::new(Traffic::default())).unwrap();
                 writer.send_bytes(payload).unwrap();
             });
             let (sock, _) = listener.accept().unwrap();
-            let (mut reader, _, _) = split(sock, Arc::new(Traffic::default())).unwrap();
+            let (mut reader, _, _) = split(sock.into(), Arc::new(Traffic::default())).unwrap();
             assert_eq!(reader.frame().unwrap(), expected, "{n} bytes");
             sender.join().unwrap();
         }

@@ -169,6 +169,10 @@ pub enum Field {
     ViewerPixels,
     /// Anything protocol-specific not covered above.
     Other,
+    /// What carries the connection where it is not this end's own TCP
+    /// connection ([`runtime::net::Network::tunnel`]): its own group, last in
+    /// the panel. Added by the client ([`with_network`]), not the backend.
+    Tunnel,
 }
 
 /// One row of information a backend reports about its connection.
@@ -233,6 +237,25 @@ impl ConnectionFact {
             "Sound",
             &format!("{}{output}{muted}", playback.describe()),
         ))
+    }
+}
+
+impl ConnectionFact {
+    /// The [`Field::Tunnel`] row for a session on `network`: the route's own
+    /// description ("dev-socketpair"), or `None` where the connections are
+    /// this end's own.
+    pub fn tunnel(network: &dyn runtime::net::Network) -> Option<ConnectionFact> {
+        let text = network.tunnel()?;
+        Some(ConnectionFact::of(Field::Tunnel, "Tunnel", &text))
+    }
+}
+
+/// Adds the session's [tunnel row](ConnectionFact::tunnel), if any, to the
+/// end of `info`, after the diagnostics: the panels show it as a group of its
+/// own, last.
+pub fn with_network(info: &mut Vec<ConnectionFact>, network: &dyn runtime::net::Network) {
+    if let Some(row) = ConnectionFact::tunnel(network) {
+        info.push(row);
     }
 }
 

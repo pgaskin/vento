@@ -185,6 +185,9 @@ struct Handle {
     /// `setMuted` mutes and the panel's sound row is read from. `None` for a
     /// library whose protocol has no sound.
     audio: Option<Arc<dyn Outputs>>,
+    /// The session's network, also the backend's: the panel's Tunnel row says
+    /// what carries its connections.
+    network: Arc<dyn runtime::net::Network>,
     /// Kept so that a handle outlives every event it could still deliver; the
     /// outlet holds only a weak reference back to it.
     _mailbox: Arc<Mailbox>,
@@ -365,6 +368,7 @@ fn create<'local>(
     };
     let pair = |w: jint, h: jint| (w > 0 && h > 0).then_some((w as u32, h as u32));
     let audio = (module.audio)();
+    let network: Arc<dyn runtime::net::Network> = Arc::new(runtime::net::Direct);
     let connect = Connect {
         address: &address,
         user: &user,
@@ -382,6 +386,7 @@ fn create<'local>(
         platform: Platform::Android,
         decoders: (module.decoders)(),
         audio: audio.clone(),
+        network: Arc::clone(&network),
     };
     match kind.start(&connect) {
         Ok(backend) => {
@@ -389,6 +394,7 @@ fn create<'local>(
             Ok(Box::into_raw(Box::new(Handle {
                 backend,
                 audio,
+                network,
                 _mailbox: mailbox,
                 outlet,
             })) as jlong)
@@ -657,6 +663,11 @@ fn info<'local>(
     {
         api::backend::with_sound(&mut rows, audio.controls());
     }
+    // What carries the connections, where it is not this end's own: last,
+    // in a group of its own.
+    if !rows.is_empty() {
+        api::backend::with_network(&mut rows, &*h.network);
+    }
     let array = JObjectArray::<JString>::new(env, rows.len() * 4, JString::null())?;
     for (i, row) in rows.iter().enumerate() {
         let cells = [field(row.field), row.label, &row.value, if row.diagnostic { "d" } else { "" }];
@@ -694,6 +705,7 @@ fn field(field: Field) -> &'static str {
         Field::ServerPixels => "SERVER_PIXELS",
         Field::ViewerPixels => "VIEWER_PIXELS",
         Field::Other => "OTHER",
+        Field::Tunnel => "TUNNEL",
     }
 }
 
