@@ -10,16 +10,12 @@ plugins {
 // (`Cargo.toml`, `src/`), which wraps the shim as an `api::Backend` (used
 // directly by the Linux client) and registers the shared JNI layer on the
 // generated natives class; and the provider in `java/`, which holds a session
-// as a `NativeBackend`. The AAR carries the single library CMake links the
-// first two into.
+// as a `NativeBackend`. The AAR carries the single library the Meson build
+// links the first two into.
 //
 // The library itself is not in this directory: it is `third_party/libvncserver`,
 // a submodule at the repository root, pinned by its gitlink and patched from
 // `patches/libvncserver/`.
-
-// The crate at this directory's root, as the static library CMake links in:
-// see `rustStaticLibrary` in :backends.
-final rustLibraries = project(':backends').rustStaticLibrary(project, 'remotedesktop-libvnc')
 
 android {
     namespace = 'net.pgaskin.remotedesktop.backend.libvnc'
@@ -28,28 +24,10 @@ android {
 
     defaultConfig {
         minSdk 34
-        externalNativeBuild {
-            cmake {
-                targets 'remotedesktop_libvnc'
-                arguments "-DVENTO_RUST_LIBRARY_DIR=${rustLibraries}"
-                // Set by scripts/check-warnings.sh, not by normal app builds: see
-                // backends/cmake/warnings.cmake.
-                if (project.hasProperty('strictWarnings')) {
-                    arguments '-DSTRICT_WARNINGS=ON'
-                }
-            }
-        }
         ndk {
             // x86_64 is in that list; lint reads the literal and not the value.
             //noinspection ChromeOsAbiSupport
             abiFilters project(':backends').nativeAbis as String[]
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path 'cpp/CMakeLists.txt'
-            version = '3.30.5'
         }
     }
 
@@ -73,6 +51,9 @@ android {
         }
     }
 }
+
+// libremotedesktop_libvnc.so, from the Meson build: see `nativeLibrary` in :backends.
+project(':backends').nativeLibrary(project, 'libvnc', 'remotedesktop-libvnc')
 
 dependencies {
     api project(':backends')

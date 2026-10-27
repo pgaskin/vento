@@ -10,18 +10,14 @@ plugins {
 // `src/`), which wraps the shim as an `api::Backend` (used directly by the
 // Linux client) and registers the shared JNI layer on the generated natives
 // class; and the provider in `java/`, which holds a session as a
-// `NativeBackend` with the RDP hooks. The AAR carries the single library CMake
-// links the first two into.
+// `NativeBackend` with the RDP hooks. The AAR carries the single library the
+// Meson build links the first two into.
 //
 // As with the libvncclient and TigerVNC backends, the native client is not in
 // this directory: it is `third_party/freerdp`, a submodule at the repository
 // root, plus its dependency `backends/platform/android/ports/openssl` (FreeRDP
 // uses only OpenSSL for crypto). OpenSSL is 64% of what this backend adds to a
 // build.
-
-// Builds the crate at this directory's root as the static library CMake links
-// in: see `rustStaticLibrary` in :backends.
-final rustLibraries = project(':backends').rustStaticLibrary(project, 'remotedesktop-freerdp')
 
 android {
     namespace = 'net.pgaskin.remotedesktop.backend.freerdp'
@@ -30,28 +26,10 @@ android {
 
     defaultConfig {
         minSdk 34
-        externalNativeBuild {
-            cmake {
-                targets 'remotedesktop_freerdp'
-                arguments "-DVENTO_RUST_LIBRARY_DIR=${rustLibraries}"
-                // Set only by scripts/check-warnings.sh, not by app builds: see
-                // backends/cmake/warnings.cmake.
-                if (project.hasProperty('strictWarnings')) {
-                    arguments '-DSTRICT_WARNINGS=ON'
-                }
-            }
-        }
         ndk {
             // x86_64 is in that list; lint reads the literal and not the value.
             //noinspection ChromeOsAbiSupport
             abiFilters project(':backends').nativeAbis as String[]
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path 'cpp/CMakeLists.txt'
-            version = '3.30.5'
         }
     }
 
@@ -75,6 +53,9 @@ android {
         }
     }
 }
+
+// libremotedesktop_freerdp.so, from the Meson build: see `nativeLibrary` in :backends.
+project(':backends').nativeLibrary(project, 'freerdp', 'remotedesktop-freerdp')
 
 dependencies {
     api project(':backends')

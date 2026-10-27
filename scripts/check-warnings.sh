@@ -9,9 +9,9 @@
 #   1. **Third-party code is silenced and ours is not.** Fixing a warning in a
 #      vendored tree takes a diff that will not go upstream and a patch this
 #      repository would carry for ever. Silence it at the *target*, never
-#      globally and never on a target of ours: `backends/cmake/warnings.cmake`
-#      for the C, `--cap-lints` for anything cargo fetched, and `lint` reads only
-#      this project.
+#      globally and never on a target of ours: `vendored_args` in the root
+#      `meson.build` for the C, `--cap-lints` for anything cargo fetched, and
+#      `lint` reads only this project.
 #   2. **A warning of ours is fixed or answered at the line it is about.** Not in
 #      a baseline file and not by switching the check off: `@SuppressWarnings`,
 #      `@SuppressLint`, `tools:ignore` and `#[allow]` each say why, there, where
@@ -27,7 +27,7 @@
 #      which includes the rebuild check-reproducible.sh exists to verify.
 #
 # So this is the third part. It is not in `check` because most of it cannot be: a
-# strict native build is a different CMake configure and a strict Java one is a
+# strict native build is a different Meson option and a strict Java one is a
 # different compiler argument, which is a second Gradle invocation either way.
 #
 # One caveat worth knowing before it fires: `RUSTFLAGS=-Dwarnings` reaches the
@@ -38,8 +38,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# The first strict native build configures CMake a second time, so it rebuilds
-# every vendored tree into a directory of its own. That is minutes, once.
+# A strict native build recompiles only our own C sources, whose flags are the
+# ones that change; so does the next ordinary build after it.
 echo "== javac -Xlint:all -Werror, cargo -Dwarnings, lint warningsAsErrors, clang -Werror"
 
 # The Android target compiles `platform_android`'s JNI layer and each crate's

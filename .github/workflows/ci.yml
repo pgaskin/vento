@@ -61,7 +61,8 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
           cache: gradle
-      - run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses; ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager 'cmake;3.30.5' 'ndk;28.2.13676358' 'build-tools;36.0.0'
+      - run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses; ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager 'ndk;28.2.13676358' 'build-tools;36.0.0'
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build # for Meson, which Gradle fetches
       - run: ./patch.sh -n
       - run: ./gradlew :backends:fetchCryptoSources
       - run: rustup toolchain install
@@ -93,7 +94,16 @@ jobs:
         with:
           submodules: true
       - run: git -C third_party/mcpelauncher-linker submodule update --init --depth 1 # need recursive submodules for mcpelauncher-linker
-      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev meson nasm ninja-build m4 zlib1g-dev # note: we use the runner cmake
+      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev nasm ninja-build m4 zlib1g-dev
+      - name: Install the Meson backends/build.gradle pins
+        run: |
+          set -euo pipefail
+          version=$(sed -n "s/^ *mesonVersion *= *'\(.*\)'/\1/p" backends/build.gradle)
+          sha256=$(sed -n "s/^ *mesonSha256 *= *'\(.*\)'/\1/p" backends/build.gradle)
+          curl -fsSLo meson.tar.gz "https://github.com/mesonbuild/meson/releases/download/$version/meson-$version.tar.gz"
+          echo "$sha256  meson.tar.gz" | sha256sum -c
+          mkdir "$RUNNER_TEMP/meson" && tar -C "$RUNNER_TEMP/meson" --strip-components=1 -xf meson.tar.gz
+          echo "MESON=$RUNNER_TEMP/meson/meson.py" >> "$GITHUB_ENV"
       - run: ./patch.sh -n
       - run: rustup toolchain install # install the toolchain pinned by rust-toolchain.toml
       - run: cargo check --locked --manifest-path linux/Cargo.toml --verbose

@@ -3,11 +3,11 @@
 # config, live options, info rows and security prompt. The library is
 # `vento_realvnc`: the session in `cpp/` over the hosting layer in
 # `cpp/host/`, which runs RealVNC's Android viewer core in a glibc process.
-# The client's build compiles it with CMake along with the other C backends,
+# The client's build compiles it with Meson along with the other C backends,
 # and only under clang.
 #
 # For that reason it is loaded rather than linked (`src/lib.rs`): whether the
-# library exists is known only after the client's build script has run CMake,
+# library exists is known only after the client's build script has run Meson,
 # too late to be a feature of this crate. This crate always builds, and opens
 # `libvento_realvnc.so` when a session needs it, or reports why it cannot.
 #

@@ -10,7 +10,7 @@ plugins {
 // session lifecycle, the prompts, the options, and a small native library that
 // reads a counter the core's exported functions do not offer. This directory's
 // `cpp/` also holds the host side of this backend (`realvnc_session.cxx`,
-// built by `backends/CMakeLists.txt` and never by this file), which runs the
+// built only for Linux), which runs the
 // same core in a Linux process, and the module root holds the Linux client's
 // adapter over that (`Cargo.toml`, `src/`), a crate no Gradle build uses.
 //
@@ -25,27 +25,10 @@ android {
 
     defaultConfig {
         minSdk 34
-        externalNativeBuild {
-            cmake {
-                targets 'remotedesktop_realvnc'
-                // Set only by scripts/check-warnings.sh, never when building
-                // the app: see backends/cmake/warnings.cmake.
-                if (project.hasProperty('strictWarnings')) {
-                    arguments '-DSTRICT_WARNINGS=ON'
-                }
-            }
-        }
         ndk {
             // x86_64 is in that list; lint reads the literal and not the value.
             //noinspection ChromeOsAbiSupport
             abiFilters project(':backends').nativeAbis as String[]
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path 'cpp/CMakeLists.txt'
-            version = '3.30.5'
         }
     }
 
@@ -69,6 +52,9 @@ android {
         }
     }
 }
+
+// libremotedesktop_realvnc.so, from the Meson build: see `nativeLibrary` in :backends.
+project(':backends').nativeLibrary(project, 'realvnc', null)
 
 dependencies {
     // `Backend` and the interfaces around it: the only part of the app this

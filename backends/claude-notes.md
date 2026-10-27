@@ -9,26 +9,28 @@ backends, or both clients, share — `runtime/` what a protocol client is
 written against and a platform is written to, its picture and sound
 (`runtime::media`) included, and `api/` what a client holds a session by;
 and what one platform needs of all of them lives under that platform,
-`platform/<os>/` — its crate, its C, its CMake half and, for the phone, its
+`platform/<os>/` — its crate, its C, its Meson half and, for the phone, its
 Java, the generator of the Java each module compiles, and its ports. Inside
 a module, each language has one place: the Rust crate at its root, the C in
 `cpp/`, the Java in `java/`, the options in `catalog.rs`. What is left at
-the top is what builds them all: the Gradle parent, its tasks, the host
-CMake root and the CMake both builds include.
+the top is what builds them all: the Gradle parent, its tasks, the Meson
+file that takes the ports and modules in, and the ports.
 
     backends/
       claude-notes.md, UPGRADING.md
       build.gradle      the :backends Gradle module, parent of the modules
       buildSrc/         the Gradle tasks its helpers use
-      CMakeLists.txt    the host build of the C backends
-      cmake/            warnings.cmake, reproducible.cmake
+      meson.build       the C backends and their libraries, in order
+                        (the project is the repository root's meson.build)
+      ports/            our build files for the vendored trees both
+                        platforms compile
       runtime/          what a protocol and a platform are written to,
                         src/media/ too
       api/              what a client holds a session by
       modules/<name>/   one per backend (eight)
       platform/
-        android/        crate, codegen/, java/, javatest/, cpp/, cmake/, ports/
-        linux/          crate, cpp/, cmake/, probe/, tests/
+        android/        crate, codegen/, java/, javatest/, cpp/, meson.build, ports/
+        linux/          crate, cpp/, meson.build, ports/, probe/, tests/
       build/            the :backends module's Gradle output, untracked
 
 ## The backends: `modules/<name>/`
@@ -43,8 +45,9 @@ in `settings.gradle`): `rfb`, `libvnc`, `tigervnc`, `freerdp`, `ironrdp`,
   Compiled by `api` by path (`api/src/catalog.rs`), so that
   `vento-codegen` builds from `api` alone; Gradle's `codegenSources`
   lists every one.
-- `build.gradle` — the Android module, its source sets and its CMake
-  pointed at the directories below rather than at AGP's `src/main/`.
+- `build.gradle` — the Android module, its source sets pointed at the
+  directories below rather than at AGP's `src/main/`, and for a C backend its
+  native library (`nativeLibrary` in `:backends`).
 - `Cargo.toml`, `src/`, `build.rs`, `examples/` — the backend's crate, at
   the module's root, which holds its adapter to `api`'s `Backend`: the
   protocol itself for the four in Rust (and its `probe` example, behind the
@@ -61,8 +64,8 @@ in `settings.gradle`): `rfb`, `libvnc`, `tigervnc`, `freerdp`, `ironrdp`,
   Java) and empty on any other target; its library is built only under
   clang.
 - `cpp/` (the four C backends) — the C/C++ session over the upstream
-  library, its CMake for both builds, the host probe's `main`
-  (`-DVENTO_PROBES=ON`), and `include/vento/<name>.h`, the backend's own C
+  library, its `meson.build` for both platforms, the host probe's `main`
+  (`-Dprobes=true`), and `include/vento/<name>.h`, the backend's own C
   API: its config, its constructor and its live calls. RealVNC's also holds
   `host/`, the hosting layer that runs their Android viewer core in a Linux
   process (built only on the host, only with clang).
@@ -70,8 +73,7 @@ in `settings.gradle`): `rfb`, `libvnc`, `tigervnc`, `freerdp`, `ironrdp`,
   in Java: the `.java` files themselves, with no package directories over
   them (javac goes by each file's `package` line). `resources/` — its
   `META-INF/services` registration.
-- `build/`, and `.cxx/` for a C backend — Gradle's and the NDK's CMake's
-  outputs, untracked.
+- `build/` — Gradle's outputs, and a C backend's Meson trees, untracked.
 
 ## What they share
 
@@ -113,8 +115,8 @@ in `settings.gradle`): `rfb`, `libvnc`, `tigervnc`, `freerdp`, `ironrdp`,
   and its natives class — at build time, out of `api` and this crate's JNI
   table alone, so that it needs none of the backends' crates, bindgen or
   libclang; `cpp/`, the logcat logger and the export map a C
-  backend's library is linked with; `cmake/vento_android.cmake`, a C
-  backend's Android half (`vento_android_library`); and `ports/`, the
+  backend's library is linked with; `meson.build`, the NDK's flags and how a
+  C backend becomes its module's library; and `ports/`, the
   generated Android builds of openssl, nettle and gnutls (`gen.sh` in each
   regenerates its `gen/`).
 - `platform/linux/` (`remotedesktop-platform-linux`) — the Linux client's
@@ -123,14 +125,13 @@ in `settings.gradle`): `rfb`, `libvnc`, `tigervnc`, `freerdp`, `ironrdp`,
   C those decoders call and the stderr logger a C backend links (whose
   `vento_log_line` the client's Rust logger and FFmpeg's log write through
   too, `src/stderr.rs`);
-  `cmake/vento_linux.cmake`, a C backend's host half (`vento_backend_library`,
-  `vento_backend_probe`, `VENTO_SHARED`, `VENTO_PROBES`,
-  `VENTO_FFMPEG_PREFIX`); `cmake/gnutls.cmake`, GnuTLS and nettle for the
-  host, built at build time by their own autotools build from the tarballs
-  the Android ports use (downloaded at configure time when they are not in
-  `third_party/`), and `cmake/openssl.cmake`, OpenSSL for the host,
-  built the same way by its own Configure from the submodule the Android
-  port uses; `probe/`, the development tools — the C probes'
+  `meson.build`, how a C backend becomes `libvento_<name>.so` and the FFmpeg
+  it links (`ffmpeg_prefix`); `ports/`, nettle and GnuTLS for Linux, built at
+  build time by their own autotools build from the tarballs the Android ports
+  use (downloaded at configure time when they are not in `third_party/`),
+  OpenSSL, built the same way by its own Configure from the submodule the
+  Android port uses (`build-upstream.py` runs both), and the RealVNC hosting
+  layer's four libraries; `probe/`, the development tools — the C probes'
   shared body and the two sound rigs (`--features probe`); and `tests/`, the
   decoders' fixture tests.
 
@@ -138,18 +139,20 @@ in `settings.gradle`): `rfb`, `libvnc`, `tigervnc`, `freerdp`, `ironrdp`,
 
 - `build.gradle` — the `:backends` Gradle module, whose sources it points
   at `platform/android/java/` and `javatest/`, and the helpers every backend
-  module calls (`generateCatalog`, `generateNatives`, `rustStaticLibrary`,
-  `codegenSources`).
-- `buildSrc/` — the Gradle tasks those helpers use (cargo, codegen, tarballs,
-  patch check), pulled in by the root `buildSrc`.
+  module calls (`generateCatalog`, `generateNatives`, `nativeLibrary`,
+  `codegenSources`), and the Meson pin (`mesonVersion`, `fetchMeson`).
+- `buildSrc/` — the Gradle tasks those helpers use (cargo, Meson, codegen,
+  tarballs, patch check), pulled in by the root `buildSrc`.
 - `crypto-sources.txt` — the version, SHA-256 and mirrors of the nettle and
-  GnuTLS release tarballs, read by Gradle's `fetchCryptoSources` and by the
-  host CMake build, which both unpack them into `third_party/`.
-- `CMakeLists.txt` — the host CMake build of the C backends, which
-  `linux/build.rs` runs (`VENTO_SHARED=ON`) and which builds the C probes
-  with `-DVENTO_PROBES=ON`. Each platform's half of a C backend's CMake is
-  that platform's (`platform/<os>/cmake/`); `cmake/` holds what both builds
-  include, `warnings.cmake` and `reproducible.cmake`.
+  GnuTLS release tarballs, read by Gradle's `fetchCryptoSources` and by
+  `fetch-crypto-sources.py`, which the Linux Meson build runs; both unpack
+  them into `third_party/`.
+- `meson.build` and `ports/` — the native build of the C backends, from the
+  Meson project at the repository root (`meson.build`, `meson.options`):
+  Gradle's `MesonBuildTask` builds each C module's library for Android, and
+  `linux/build.rs` every backend's for the Linux client; with
+  `-Dprobes=true` it builds the C probes and the tests `meson test` runs.
+  UPGRADING.md, "The native build", says what is where.
 - `UPGRADING.md` — how the upstreams behind the backends are moved, and what
   adding a backend touches.
 

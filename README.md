@@ -42,11 +42,13 @@ Only Linux x86_64 is supported for building the app due to the native builds and
 
 JDK 21 is required. Use `JAVA_HOME` to point to it if it isn't the default.
 
-The `sdk.dir` option in `local.properties` must point to your Android SDK installation, which must have `ndk;28.2.13676358`, `build-tools;36.0.0`, and `cmake;3.30.5`.
+The `sdk.dir` option in `local.properties` must point to your Android SDK installation, which must have `ndk;28.2.13676358` and `build-tools;36.0.0`.
 
 The NDK should be set in `local.properties` and `ANDROID_NDK_HOME`.
 
-To build the Linux client, `libclang`, `nasm`, `m4`, `make`, `meson`, `perl`, and `python3` are also required.
+The C backends are built with Meson, which needs `python3` and `ninja`. The required meson pre-builts will be automatically fetched by Gradle.
+
+To build the Linux client, `libclang`, `nasm`, `m4`, `make`, `perl`, and Meson 1.11 or later (`meson` on the `PATH`, or `MESON`) are also required.
 
 ```bash
 # fetch and patch dependencies
@@ -63,6 +65,9 @@ git submodule update --init
 # build the rustdesk backend plugin apk
 ./gradlew :plugins:rustdesk:assembleDebug
 
+# export android compile_commands for clangd (can also set flags like -Pabi=x86_64 or -Pvariant=release)
+./gradlew :backends:exportCompileCommands
+
 # fetch additional linux-only dependencies
 git -C third_party/mcpelauncher-linker submodule update --init
 
@@ -71,6 +76,9 @@ cargo build --locked --manifest-path linux/Cargo.toml
 
 # build linux client (release)
 docker build -f linux/Dockerfile --output type=local,dest=build/linux .
+
+# export linux compile_commands for clangd
+VENTO_COMPILE_COMMANDS=build/compile_commands.json cargo build --locked --manifest-path linux/Cargo.toml
 ```
 
 Backend plugins must be signed with the same key (enforced since the main app loads code from it) and built from the same version (the API isn't stable).

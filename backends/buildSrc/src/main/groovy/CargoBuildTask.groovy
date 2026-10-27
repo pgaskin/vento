@@ -26,9 +26,9 @@ import java.util.regex.Pattern
  * {@code <abi>/} directory each, holding the crate's library.
  *
  * <p>That library is a {@code cdylib} for a backend whose library is its Rust
- * crate, and a {@code staticlib} for one whose library CMake links: the C
+ * crate, and a {@code staticlib} for one whose library Meson links: the C
  * backends, where the crate is the adapter and the JNI layer that go into the
- * C library's {@code .so}, and CMake is told where to find it. The crate type
+ * C library's {@code .so}, and Meson is told where to find it. The crate type
  * is given on the command line ({@code cargo rustc --crate-type}) rather than
  * declared in the crate, so that the host build, which links the crate as an
  * ordinary dependency, does not also build an unused static library of it.
@@ -130,7 +130,7 @@ abstract class CargoBuildTask extends DefaultTask {
         }
         final outDir = outputDir.get().asFile
         // A static library is replaced only when it changed (below), so that
-        // CMake, which links it, does not relink every library on every build.
+        // Meson, which links it, does not relink every library on every build.
         if (!staticlib) {
             outDir.deleteDir()
         }

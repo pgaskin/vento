@@ -23,7 +23,7 @@ it.
 
 - In scope: the submodules, the two tarballs, the ports' `gen/` output, our
   shims, and any new option an upstream change makes worth offering.
-- Out of scope unless asked: the toolchain pins (NDK, cmake, rust channel,
+- Out of scope unless asked: the toolchain pins (NDK, Meson, rust channel,
   cargo-ndk, Gradle/AGP, JDK) and the app's own Java/Gradle dependencies.
   Rust crate bumps beyond what a moved submodule's manifests force are also
   out; `cargo update` is its own job.
@@ -36,8 +36,8 @@ Nothing runs in parallel: every step needs a clean tree to commit from.
 1. libjpeg-turbo (libvnc, tigervnc)
 2. pixman (tigervnc)
 3. openssl (freerdp), via `backends/platform/android/ports/openssl/gen.sh`
-   (the host build's `backends/platform/linux/cmake/openssl.cmake` has
-   nothing to regenerate)
+   (the Linux build's `backends/platform/linux/ports/openssl` has nothing to
+   regenerate)
 4. nettle, then gnutls (libvnc, tigervnc), via the tarball pins and
    `backends/platform/android/ports/{nettle,gnutls}/gen.sh`
 5. libvncserver, tigervnc, freerdp, ironrdp, rustdesk with hbb_common, ryll
@@ -89,8 +89,9 @@ For each upstream, one orchestrating agent (the strongest model available)
 that spawns two subagents in turn and then reviews their work itself:
 
 1. **Evaluate** (strong model). Reads the real diff between `base` and the
-   candidate, not the changelog: every API item, setting, callback, CMake
-   option and target our shim uses, checked against the target; patches
+   candidate, not the changelog: every API item, setting and callback our
+   shim uses, and every build file our port mirrors (see "The native
+   build"), checked against the target; patches
    dry-run against a scratch worktree (`git apply --check`); release vs
    development-tip judged for a phone app; candidate options proposed with
    key, label, summary, type, choices, default, scope and live. Concrete
@@ -160,18 +161,18 @@ target.
 
 A tarball: bump `<name>.version`, `<name>.sha256` and both `<name>.url`
 lines in `backends/crypto-sources.txt`, the one place they live (Gradle's
-`fetchCryptoSources` and the host CMake build both read it), verify the
+`fetchCryptoSources` and the Linux Meson build both read it), verify the
 hash against upstream's signature or announcement (not against the
 download), `./gradlew :backends:fetchCryptoSources` (it replaces a tree
 whose `.pin` is another hash), then the port's `gen.sh`. gnutls' gen builds
 nettle itself, so a nettle bump reruns gnutls' gen too and may change its
-`gen/`. The host build has no `gen/`: `platform/linux/cmake/gnutls.cmake`
-replaces a tree whose `.pin` is not the pinned hash at configure time, the
-same way, then runs both tarballs' own configure and make at build time,
-in a directory named after both versions, so a bump is a fresh build there
-with nothing to regenerate; a configure option the new release renames or
-drops shows up in its configure log (under that directory's
-`src/*-stamp/`).
+`gen/`. The Linux build has no `gen/`: its configure
+(`fetch-crypto-sources.py`) replaces a tree whose `.pin` is not the pinned
+hash, the same way, and then runs both tarballs' own configure and make at
+build time, again for a new `.pin`, so a bump has nothing to regenerate there;
+a configure option the new release renames or drops shows up in its
+configure log (`backends/platform/linux/ports/<name>/build/configure.log` in
+the build tree).
 
 A port's `gen.sh` rerun at the same pin must produce an empty diff. If it
 does not, fix the script first as its own commit, regenerated at the old
@@ -180,6 +181,45 @@ broken this: a build date baked in (pin it to the commit date via
 `SOURCE_DATE_EPOCH`), a path recorded relative to a `mktemp` directory (build
 in a fixed directory under the port; `build` is gitignored), and `sort`
 under the host locale (`export LC_ALL=C`).
+
+## The native build
+
+Every C and C++ library a backend links is built by the Meson project at the
+repository root (`meson.build`, `meson.options`) from build files of ours; no
+upstream build file is read. `backends/meson.build` takes, for the backends
+selected (`-Dbackends=`), the platform's half
+(`backends/platform/{android,linux}/meson.build`), the ports, and each
+module's `cpp/meson.build`, which makes the module's library. A port says
+what upstream's own build would compile for our configuration: the sources,
+the definitions and flags, and the answers its configure would write into
+its config headers, which are generated from upstream's own templates.
+
+- `backends/ports/<name>`: libjpeg-turbo, pixman, libvncserver, tigervnc
+  and freerdp (whose `generate.py` writes the two files upstream's CMake
+  writes by running code, `settings_keys.h` and the channel table
+  `tables.c`).
+- `backends/platform/android/ports/<name>`: OpenSSL, GnuTLS and nettle for
+  Android, with configure's output in `gen/` (`gen.sh`).
+- `backends/platform/linux/ports/<name>`: OpenSSL, nettle and GnuTLS for
+  Linux, built by their own build systems at build time
+  (`build-upstream.py`), and the RealVNC hosting layer's four libraries.
+
+Gradle builds each C module's library (`MesonBuildTask`, a tree per variant
+and ABI under the module's `build/meson/`) with the Meson `backends/build.gradle`
+pins (`mesonVersion`, unpacked into the Gradle user home by `fetchMeson`);
+`linux/build.rs` builds every backend for Linux in one tree, with the `meson`
+on the path or `MESON`.
+
+Moving a port's pin: a port is what upstream's build files say, so read their
+diff between `base` and the target (`git diff base <target> --
+'*CMakeLists.txt' '*.cmake' meson.build '*.in'`) and carry each change over: a
+source added to or removed from a library we build, a new definition or
+flag, a new template variable or `#cmakedefine` (Meson leaves a
+`#cmakedefine` it has no answer for undefined, as CMake does an unset
+variable, and warns about an unknown `@VAR@`), and the lines the ports read
+versions from (by string splitting, which fails the configure when a line
+moves). A removed source fails the configure; an added one that something
+calls fails the link, and one that nothing calls shows only in the diff.
 
 ## Adapting the shim
 
@@ -191,8 +231,8 @@ under the host locale (`export LC_ALL=C`).
   reads that header into Rust (its `build.rs`, with bindgen), fills the
   backend's `vento_<name>_config` from the options and words its rows; it is what the Linux client holds,
   and on the phone it is linked into the module's library as a static
-  library (`rustStaticLibrary` in `backends/build.gradle`,
-  `backends/platform/android/cmake/vento_android.cmake`) with the one JNI layer in
+  library (`nativeLibrary` in `backends/build.gradle`,
+  `backends/platform/android/meson.build`) with the one JNI layer in
   `backends/platform/android`. On Linux the crate opens
   `libvento_<name>.so` at run time (`api::c::library`) through the table
   its `build.rs` has bindgen generate there, and calls the header's
@@ -204,10 +244,9 @@ under the host locale (`export LC_ALL=C`).
   change reaches the session file;
   the crate changes only when the config does, and so does `<name>_probe.c`,
   the host probe's `main` beside them. The module's
-  CMakeLists is one file for both builds, `if(ANDROID)` and `else()` around
-  a shared middle: a vendored tree's new option goes in the middle, a new
-  port or NDK library in the Android half, a new system library in the host
-  half (see `backends/CMakeLists.txt`).
+  `meson.build` makes its library on both platforms; the vendored tree's
+  configuration is its port's (`backends/ports/<name>`), so a new option
+  goes there.
 - A Rust backend's shim is its protocol crate, and its adapter is that
   crate's `src/backend.rs`: the `Kind`, the config read from the options, and
   the rows. An upstream change (IronRDP, RustDesk, ryll) reaches the
@@ -220,9 +259,9 @@ under the host locale (`export LC_ALL=C`).
   keeps the adapter's `Kind` building has nothing to change on that side.
 - TigerVNC's H.264 decoder context is the shim's own on both platforms
   (`H264VentoDecoderContext`, made by the module's own definition of their
-  factory, `H264DecoderContext::createContext`, compiled into `rfbclient` in
-  place of their `H264DecoderContext.cxx`, which the module's CMakeLists takes
-  out of that target; their libav one is not built, `HAVE_LIBAV` unset), and
+  factory, `H264DecoderContext::createContext`, linked into the module's
+  library in place of their `H264DecoderContext.cxx`, which the port leaves
+  out; their libav one is not built, `HAVE_LIBAV` unset), and
   hands each rectangle to vento's video decoders through `vento/video.h`'s
   table. Its QEMU audio is
   played on vento's sound output through `vento/audio.h`'s table
@@ -248,14 +287,15 @@ under the host locale (`export LC_ALL=C`).
   build timestamp or a host path (`USE_VERSION_FROM_GIT_TAG`,
   `BUILD_TIMESTAMP`). Pin them; `strings` the built `.so` for a date, a
   hostname or a path.
-- Warnings in a vendored tree are silenced at the target
-  (`backends/cmake/warnings.cmake`), never on ours and never globally.
+- Warnings in a vendored tree are silenced at the target (`vendored_args` in
+  the root `meson.build`), never on ours and never globally.
 - The README's list of blob directories under `third_party/`, and the
   licence file paths `app/build.gradle` reads, are both things a moved pin
   can invalidate.
-- New host tools an upstream starts looking for (JSON parsers, Opus,
-  uriparser) are switched off by name, so the configure result does not
-  depend on what the build machine has installed.
+- New libraries an upstream's build starts looking for (JSON parsers, Opus,
+  uriparser) are not looked for by the ports, which name every library they
+  link, so the result does not depend on what the build machine has
+  installed; check that the port's configuration answers say the same.
 
 ## Options
 
@@ -294,8 +334,8 @@ line or one file somewhere that already has seven:
   hand on), or a C shim in `cpp/` over
   `vento/backend.h` with its config in its own header,
   `cpp/include/vento/<name>.h` (on the include path of the module's targets
-  through `vento_backend_library` and `vento_android_library`), a host probe
-  `<name>_probe.c` (built with `-DVENTO_PROBES=ON`), and a small crate at the
+  through its `meson.build`), a host probe
+  `<name>_probe.c` (built with `-Dprobes=true`), and a small crate at the
   module's root (`remotedesktop-api` with the `c` feature;
   `api::c::start` and a `Behaviour` do the rest) whose `build.rs` reads
   the header with bindgen, its own items only, over `api::c::ffi` —
@@ -314,20 +354,20 @@ line or one file somewhere that already has seven:
 - **The workspace.** The crate's directory in the root `Cargo.toml`'s
   `members` and `default-members`, which name each one.
 - **The Linux client.** The crate in `linux/Cargo.toml` and its `KIND` in
-  `linux/src/backends/mod.rs`'s `all()`; a C module also goes into
-  `backends/CMakeLists.txt`, which `linux/build.rs` builds, and into the
-  lists of directories and libraries there that it watches and puts in
-  `lib/`.
+  `linux/src/backends/mod.rs`'s `all()`; a C module also goes into the
+  `backends` option (`meson.options`) and `backends/meson.build`, which
+  `linux/build.rs` builds, and into the lists of directories and libraries
+  there that it watches and puts in `lib/`.
 - **The phone's library.** One `platform_android::natives!` line in the
   crate's `lib.rs` under `cfg(target_os = "android")`, naming the module's
   natives class and the `Kind` (`decoders =` for a backend whose picture is
   video, `on_load =` for a linked library that wanted a `JNI_OnLoad` of its
   own), with `remotedesktop-platform-android` as an Android-only dependency.
   A Rust module's `build.gradle` has cargo-ndk build the cdylib into its
-  `jniLibs` (rfb's, copied); a C module's builds the crate as a static library
-  (`rustStaticLibrary`), passes CMake `-DVENTO_RUST_LIBRARY_DIR`, and its
-  CMakeLists calls `vento_android_library(<target> <crate>)` from
-  `backends/platform/android/cmake/vento_android.cmake` in its Android half.
+  `jniLibs` (rfb's, copied); a C module's calls `nativeLibrary` from
+  `:backends` with its backend's and crate's names, which builds the crate as
+  a static library and the module's library with Meson, and its `meson.build`
+  links the crate (`crate_library_dir`) as libvnc's does.
 - **The phone's Java.** The module's `build.gradle` registers
   `generateCatalog` and `generateNatives` from `:backends`; its
   `<Name>Provider` answers from `<Name>Catalog` and creates a
@@ -362,9 +402,9 @@ the viewer APK, so a change to `realvnc/.../Library.java`'s pins, to
 `realvnc_traffic.h`'s walk or to the four host-only submodules is proven
 here and nowhere else:
 
-    CC=clang CXX=clang++ cmake -S backends -B build/scratch/host -G Ninja \
-        -DSTRICT_WARNINGS=ON -DVENTO_PROBES=ON
-    cmake --build build/scratch/host
+    CC=clang CXX=clang++ meson setup build/scratch/host -Dstrict_warnings=true -Dprobes=true
+    meson compile -C build/scratch/host
+    meson test -C build/scratch/host
 
 Rust modules:
 
@@ -384,9 +424,9 @@ aside:
         --probe wait=3,out=build/scratch/<backend>.ppm
 
 `linux/build.rs` does not watch the submodules, so after a pin moves its
-`cargo build` keeps the C libraries it already built: `touch
-backends/CMakeLists.txt` first, and check that the library under
-`linux/target/debug/lib/` names the new version.
+`cargo build` keeps the C libraries it already built: `touch meson.build`
+first, and check that the library under `linux/target/debug/lib/` names the
+new version.
 
 Always `./patch.sh check`. After an options change, `cargo test --locked -p
 remotedesktop-api` and `./gradlew :backends:testDebugUnitTest`: the
@@ -405,7 +445,7 @@ under `scripts/` (`testvnc`, `testrdp`, `testspice`, `testrustdesk`;
 nest in). Say in the report which were run and which were not, rather than
 implying otherwise; the other harnesses under `scripts/` need VMs.
 
-Build in the repository's own `target/` and `.cxx`. `/tmp` is a RAM-backed
+Build in the repository's own `target/` and the modules' `build/`. `/tmp` is a RAM-backed
 tmpfs: no cargo target directories, scratch workspaces, unpacks or clones
 there, including in the agent scratchpad. A scratch build goes under
 `build/scratch/` (gitignored) and is deleted afterwards.
@@ -429,12 +469,12 @@ One commit per upstream, after review, by the lead:
 
 ## What each upstream is, as of the September 2026 round
 
-- **libjpeg-turbo** 3.2.0. One patch (add_subdirectory from downstream).
+- **libjpeg-turbo** 3.2.0. No patches.
   `main` is the 3.2 line; `3.1.x` is ESR. arm64 SIMD is Neon intrinsics;
-  x86 SIMD stays off (needs NASM).
+  x86 SIMD is upstream's NASM assembly on Linux where NASM is installed, and
+  off on Android, so that an APK does not depend on the build machine.
 - **pixman** 0.46.4. No patches. Hand-written source list in
-  `backends/modules/tigervnc/cpp/cmake/pixman.cmake`; only the region
-  API is reached. The checkout's origin is freedesktop's gitlab while
+  `backends/ports/pixman/meson.build`; only the region API is reached. The checkout's origin is freedesktop's gitlab while
   `.gitmodules` names the X11Libre mirror; they match.
 - **openssl** 3.5.9, LTS to 2030. No patches. Both builds configure
   `no-quic` and `no-dtls`: FreeRDP is a TLS client and makes no QUIC or
@@ -445,17 +485,17 @@ One commit per upstream, after review, by the lead:
   (FreeRDP calls none), so the linked libraries no longer hold "OpenSSL 3.5.9 ..." or the build date; the
   version they carry is the default provider's bare `3.5.9` (`strings
   <lib> | grep -x`). Moving to 4.x needs `no-ech`,
-  and the engine references in `gen.sh` and the port's CMakeLists go. The
-  host build (`platform/linux/cmake/openssl.cmake`) runs Configure with the
+  and the engine references in `gen.sh` and the port's `meson.build` go. The
+  Linux build (`platform/linux/ports/openssl`) runs Configure with the
   port's options without `no-legacy`, the assembly on as there, plus
   `no-autoload-config` and OPENSSLDIR `/etc/ssl`, in a directory named after
   the version, so a bump is a fresh build there; an option the new release
-  renames or drops shows up in its configure log (under that directory's
-  `src/*-stamp/`).
+  renames or drops shows up in its configure log (`configure.log` in that
+  directory of the build tree).
 - **nettle** 4.0, **gnutls** 3.8.13 (the release that added nettle-4
   support; newest in the 3.8 line). nettle 4.1 warns of further API changes.
   `MINI_GMP_ENABLE_FLOAT=0` is an answer configure puts in CFLAGS, so the
-  port sets it itself. The host build (`platform/linux/cmake/gnutls.cmake`)
+  port sets it itself. The Linux build (`platform/linux/ports/{nettle,gnutls}`)
   configures the same tarballs with the port's options but for the
   assembly, which it leaves on, a CA bundle path and a system priority
   file path.
@@ -486,7 +526,7 @@ One commit per upstream, after review, by the lead:
   a `poll()` change of its own, check the connect wait's direction.
 - **tigervnc** master ed951a41, reporting 1.16.80; six patches (the PAM one
   dropped, the libav context's pixel format fix with that context, and the
-  H.264 context's factory replaced from the module's CMakeLists). The
+  H.264 context's factory replaced from the module). The
   client API is upstream's after their October 2026 cleanup: `writer()` is
   protected, so pointer events and layouts go through `sendPointerEvent` and
   `requestScreenLayout`, and `getUserPasswd` has no `secure`. Their `setPF`
@@ -503,8 +543,7 @@ One commit per upstream, after review, by the lead:
   `select()` overflowed its `fd_set` at descriptor 1024 or above (Windows
   keeps `select()`); the shim's loop also polls for `POLLOUT` while the
   socket's stream holds unsent output.
-  Builds `common/` only, with `config.h` written by our
-  CMake and, on Android, an empty `pthread` target for the link.
+  Builds `common/` only, with `config.h` written by its port.
 - **freerdp** 3.32.2; one patch, `0001`, codec/h264: `WITH_H264_EXTERNAL`,
   a slot for an application's subsystem, `g_Subsystem_external`, tried
   first, and `WITH_GFX_H264` following it. The second, upstream's
@@ -545,8 +584,7 @@ One commit per upstream, after review, by the lead:
   the Close PDU still does not reach the device (it closes its own stream
   when idle). No `WITH_PULSE`, `WITH_ALSA`, `WITH_OSS`, `WITH_SNDIO`,
   `WITH_OPENSLES`, `WITH_AAUDIO` (3.32.1's, on by default on Android when
-  the NDK has libaaudio, which `find_package(AAudio)` is also kept from
-  looking for) or `WITH_DSP_FFMPEG`; their "fake" device is still built
+  the NDK has libaaudio) or `WITH_DSP_FFMPEG`; their "fake" device is still built
   and is what Sound = off gets. On Linux `WITH_SWSCALE` is the one FFmpeg
   switch on, and `WITH_FFMPEG` is off so that their swscale branch does not
   link libavcodec for the camera channel's MJPEG; check that scaling still
@@ -559,8 +597,8 @@ One commit per upstream, after review, by the lead:
   (`WITH_TIMEZONE_ICU` stays off by default), and that `readelf -d
   libvento_freerdp.so` names no `libicu*`. Android keeps
   `unicode_android.c`, Java's String.
-  `LegacyTls` row for TLS 1.0 at level 0; `remotedesktop_vendored_warnings`
-  silences their tree.
+  `LegacyTls` row for TLS 1.0 at level 0; `vendored_args` silences their
+  tree.
 - **ironrdp** e899a826 (October 2026), the commit tagged
   ironrdp-session-v0.12.0, ironrdp-connector-v0.11.0,
   ironrdp-blocking-v0.11.0 and the other crates' releases. One patch,

@@ -8,10 +8,12 @@
 
 !Cargo.toml
 !rust-toolchain.toml
+!meson.build
+!meson.options
 !backends/
 !linux/
 !patches/
-# The RealVNC module's CMakeLists reads its pins from here.
+# The RealVNC module's meson.build reads its pins from here.
 !realvnc/src/main/java/com/realvnc/vncviewer/jni/Library.java
 
 !third_party/dav1d/

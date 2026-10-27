@@ -24,11 +24,13 @@ import org.gradle.process.ExecOperations
  * upstream source, a SHA-256 names it exactly, and the downloaded file is
  * verified before it is unpacked.
  *
- * <p>No build task depends on this: the Android build never fetches anything,
- * and CMake reports a missing tree with the command that fetches it. The host
- * CMake build unpacks a missing tree itself, from the same pins
+ * <p>No build task depends on a source tarball: the Android build never
+ * fetches one, and its Meson configure reports a missing tree with the
+ * command that fetches it. The Linux Meson build unpacks a missing tree
+ * itself ({@code backends/fetch-crypto-sources.py}), from the same pins
  * ({@code backends/crypto-sources.txt}) and into the same layout, {@code .pin}
- * included.
+ * included. The other tarball is Meson's own release, which the C modules'
+ * builds depend on ({@code fetchMeson} in {@code backends/build.gradle}).
  */
 abstract class DownloadSourceTarball extends DefaultTask {
 

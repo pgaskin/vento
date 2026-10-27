@@ -1,7 +1,7 @@
 # The TigerVNC backend's `Kind`, over the shared adapter for the C backends
 # (`remotedesktop-api`'s `c` feature), with this backend's own config, live
 # options and info rows. The library is the shim in `cpp/` over TigerVNC's
-# viewer core, built by CMake. The Linux client opens it at run time
+# viewer core, built by Meson. The Linux client opens it at run time
 # (`api::c::library`), and on Android it is linked together with this crate.
 # This crate never links it, so there is no test binary.
 [package]
@@ -28,7 +28,7 @@ libloading = "0.8"
 
 # The Android half: the JNI layer, registered on this module's generated
 # natives class from the `JNI_OnLoad` in `src/lib.rs`. The library the app
-# loads is still the one CMake links; this crate goes into it as a static
+# loads is still the one Meson links; this crate goes into it as a static
 # library (`CargoBuildTask` with `crateType = 'staticlib'`).
 [target.'cfg(target_os = "android")'.dependencies]
 remotedesktop-platform-android.workspace = true

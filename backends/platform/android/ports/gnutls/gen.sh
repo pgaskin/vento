@@ -11,7 +11,7 @@
 #
 # The source list is read out of the objects the build produced, grouped by the
 # Makefile that compiled them, because that grouping is what the include paths
-# in CMakeLists.txt are per.
+# in meson.build are per.
 #
 # Host prereqs: cc (for nettle's eccdata), make, and the NDK below.
 set -eu
@@ -112,7 +112,7 @@ done
 cd "$tmp/arm64-v8a/gnutls"
 # Not `find … | while read`: that loop is a subshell of a pipeline, so its
 # `exit 1` would end only the subshell, the pipeline would take sort's status,
-# and set -e would see a success, leaving a sources.cmake silently missing
+# and set -e would see a success, leaving a gen/meson.build silently missing
 # whatever could not be mapped.
 find lib gl -name '*.o' -not -path '*/.libs/*' > "$tmp/objects"
 : > "$tmp/mapped"
@@ -129,16 +129,19 @@ done < "$tmp/objects"
 sort "$tmp/mapped" > "$tmp/grouped"
 cut -d' ' -f1 "$tmp/grouped" | uniq > "$tmp/groups"
 
+# A Meson dictionary, Makefile directory to sources, which meson.build reads
+# with subdir().
 {
     echo "# Written by gen.sh: every object gnutls' own build produced, grouped"
     echo "# by the Makefile that compiled it."
     echo
+    echo "gnutls_sources = {"
     while read -r group; do
-        echo "set(GNUTLS_SOURCES_$(echo "$group" | tr '/' '_')"
-        awk -v g="$group" '$1 == g { print "        " $2 }' "$tmp/grouped"
-        echo ")"
-        echo
+        echo "  '$group': ["
+        awk -v g="$group" -v q="'" '$1 == g { print "    " q $2 q "," }' "$tmp/grouped"
+        echo "  ],"
     done < "$tmp/groups"
-} > "$port/gen/sources.cmake"
+    echo "}"
+} > "$port/gen/meson.build"
 
 echo "> done; check git status for unexpected diffs"

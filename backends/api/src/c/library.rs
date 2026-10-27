@@ -52,7 +52,7 @@ pub struct Library<T: 'static> {
 
 #[cfg(target_os = "linux")]
 impl<T> Library<T> {
-    /// `name` is the file name the client's CMake build writes, found through
+    /// `name` is the file name the client's Meson build writes, found through
     /// the binary's rpath (or `LD_LIBRARY_PATH`); `header` is the header the
     /// table was generated from, for the error when the file is a different
     /// library; `bind` is the generated table's `from_library`.

@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 A native Linux client for the backends under `backends/`. One process that can
 hold a session on any of the eight protocols — the four Rust ones directly, the
-four C/C++ ones through the shared libraries this crate's `build.rs` has CMake
+four C/C++ ones through the shared libraries this crate's `build.rs` has Meson
 build — written against the same `Backend` trait the Android app is. It is an
 egui window over that trait, and a headless probe for proving a backend
 without one.
@@ -42,7 +42,7 @@ clients, and what differs between them is each client's own code.
   (`backends/modules/{rfb,ironrdp,rustdesk,spice}`), and a small crate
   beside each C library (`backends/modules/{libvnc,tigervnc,freerdp,realvnc}`,
   the C in its `cpp/`) over the `api` crate's C adapter, linked on the
-  phone into the library CMake makes of the C — but for RealVNC's, which is
+  phone into the library Meson makes of the C — but for RealVNC's, which is
   this client's alone, since its library hosts the viewer's own core (the
   phone's RealVNC backend is its own Java over the viewer's JNI), and which
   opens that library at run time rather than linking it (see
@@ -100,8 +100,10 @@ from this directory, or with `--manifest-path linux/Cargo.toml` from the root;
 its binary lands in `linux/target/`.
 
 Host packages (the same the C host build needs, plus a libclang for bindgen):
-cmake, ninja, make, m4, perl (with its core modules: Fedora's perl-core),
-meson, pkg-config, nasm (on x86, for the video decoders'
+Meson 1.11 or later (`meson` on the path, or `MESON`; `mesonVersion` in
+`backends/build.gradle` is the version releases are built with), ninja, make,
+m4, perl (with its core modules: Fedora's perl-core), python3, pkg-config,
+nasm (on x86, for the video decoders'
 assembly; without it they are built in plain C, with a build note, and decode
 several times slower), a C/C++ compiler — **clang** for the RealVNC backend
 (libc-shim does not build under GCC; without clang that one backend's library
@@ -114,7 +116,7 @@ distribution's (whose libjpeg is `libjpeg.so.62` on Fedora and Debian and
 `libjpeg.so.8` on Ubuntu). NASM gives libjpeg-turbo its SIMD too. Not GnuTLS
 or nettle either: the phone's release tarballs of both (GnuTLS 3.8, nettle 4.0
 with its mini-gmp) are configured and built by their own autotools build in
-the CMake tree, once (about a minute and a half), and linked into the libvnc
+the Meson tree, once (about a minute and a half), and linked into the libvnc
 and TigerVNC libraries, since nettle's soname changes with nearly every
 release. The tarballs are not submodules: the first build downloads them
 from the mirrors in `backends/crypto-sources.txt`, checks them against the
@@ -128,7 +130,7 @@ built in C, with a build note. GnuTLS takes its CA certificates from
 it), which decides nothing here: every certificate goes to the known hosts
 (**Known hosts**, below). Not OpenSSL either: `third_party/openssl` (3.5,
 the submodule the phone's port builds) is configured by its own perl
-Configure and built in the CMake tree, once (about half a minute), and
+Configure and built in the Meson tree, once (about half a minute), and
 linked into the FreeRDP library, since its soname differs between
 distributions (`libssl.so.1.1` on Ubuntu 18.04, `libssl.so.3` on current
 ones). It reads no `openssl.cnf` (the system's is written for the system's
@@ -151,8 +153,8 @@ again only when that changes), with the compiler as `CC` runs it, a launcher
 such as `CC="ccache gcc"` included,
 as static libraries that the Rust decoders (RustDesk's video, and TigerVNC's
 and FreeRDP's H.264; FreeRDP's AAC and Opus sound) and FreeRDP's scaling
-link — FreeRDP through `VENTO_FFMPEG_PREFIX`, which `build.rs` hands the
-CMake build, and only libswscale and libavutil of it. For a target other
+link — FreeRDP through `ffmpeg_prefix`, which `build.rs` hands the
+Meson build, and only libswscale and libavutil of it. For a target other
 than the build machine, FFmpeg's configure is told so
 (`--enable-cross-compile`, the arch and OS, and cc-rs's compiler and archiver
 for the target: `CC_<target>`, `AR_<target>`) and dav1d gets a Meson cross
@@ -425,9 +427,9 @@ cargo run -- freerdp 127.0.0.1:3389 --user proto --password protopass \
     --trust --probe wait=2,resize=1280x720,wait=3,out=/tmp/rdp.ppm
 ```
 
-`build.rs` runs `backends/CMakeLists.txt` with `-DVENTO_SHARED=ON`, which makes
-each backend a `libvento_<name>.so` carrying its vendored static dependencies
-and the stderr logger. The binary links none of them: each backend's crate
+`build.rs` runs the Meson build at the repository root, which makes each
+backend a `libvento_<name>.so` carrying its vendored static dependencies and
+the stderr logger. The binary links none of them: each backend's crate
 opens its library by name the first time it is needed (see *Backend
 libraries* under *Installing*). It finds them through the binary's rpath,
 **`$ORIGIN/lib`**: the `lib/`
@@ -437,8 +439,8 @@ directory out that way, the libraries hard-linked into
 without anything on `LD_LIBRARY_PATH`; a second entry, `$ORIGIN/../lib`, is
 what the test harness in `target/<profile>/deps/` finds them by. Nothing
 absolute is in the rpath. The C probes are not built
-here: they are a plain `cmake -S backends -B … -DVENTO_PROBES=ON` of their own
-(the root README), static, as before; the option is off by default, so this
+here: they are a plain `meson setup … -Dprobes=true` of their own
+(backends/UPGRADING.md, Verification); the option is off by default, so this
 build compiles none of them.
 
 ### Installing
@@ -458,7 +460,7 @@ docker build -f linux/Dockerfile --output type=local,dest=build/dist/vento .
 
 The binary needs the glibc symbol versions it was linked against, so it runs
 on the build's glibc and later ones. The Dockerfile builds on Ubuntu 18.04
-(glibc 2.27), with clang 18, CMake, Meson and NASM fetched at pinned
+(glibc 2.27), with clang 18, Meson and NASM fetched at pinned
 versions, and Rust at `rust-toolchain.toml`'s channel; the glibc baseline is
 the Dockerfile's alone. It copies the checkout (`linux/Dockerfile.dockerignore`
 limits what is sent), applies `patches/` to submodules still at their pinned

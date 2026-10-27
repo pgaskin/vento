@@ -26,7 +26,7 @@
 #
 # The other client is `linux/`: a desktop binary that holds a session on any of
 # the eight backends through those adapters, with the C libraries built by
-# CMake from its build.rs. It is a separate workspace, excluded here, because
+# Meson from its build.rs. It is a separate workspace, excluded here, because
 # Cargo unifies features across a workspace for all platforms at once: as a
 # member, its GUI stack enabled optional features of crates shared with the app
 # (`bytemuck/derive`, `zerocopy/derive`) and their proc-macro crates appeared

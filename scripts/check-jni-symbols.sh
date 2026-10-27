@@ -18,7 +18,7 @@
 #               other backend, which is one JNI layer (backends/platform/android)
 #               registered on each module's generated natives class: a cdylib
 #               of the protocol crate for the four in Rust, and for the three
-#               in C the same layer linked into the library CMake makes, where
+#               in C the same layer linked into the library Meson makes, where
 #               `JNI_OnLoad` is the only export. There is no symbol to look
 #               for, so what is checked is what registration is made of:
 #                 - the library exports `JNI_OnLoad` and names the class it
@@ -53,11 +53,11 @@ cd "$(dirname "$0")/.."   # the build is at the repository root
 # built : how it binds
 MODULES=(
     "rfb:net/pgaskin/remotedesktop/backend/rfb/RfbNatives:remotedesktop_rfb:cargo:registered"
-    "libvnc:net/pgaskin/remotedesktop/backend/libvnc/LibVncNatives:remotedesktop_libvnc:cmake:registered"
-    "tigervnc:net/pgaskin/remotedesktop/backend/tigervnc/TigerVncNatives:remotedesktop_tigervnc:cmake:registered"
+    "libvnc:net/pgaskin/remotedesktop/backend/libvnc/LibVncNatives:remotedesktop_libvnc:meson:registered"
+    "tigervnc:net/pgaskin/remotedesktop/backend/tigervnc/TigerVncNatives:remotedesktop_tigervnc:meson:registered"
     "ironrdp:net/pgaskin/remotedesktop/backend/ironrdp/IronRdpNatives:remotedesktop_ironrdp:cargo:registered"
-    "freerdp:net/pgaskin/remotedesktop/backend/freerdp/FreeRdpNatives:remotedesktop_freerdp:cmake:registered"
-    "realvnc:net/pgaskin/remotedesktop/backend/realvnc/RealVncTraffic:remotedesktop_realvnc:cmake:exported"
+    "freerdp:net/pgaskin/remotedesktop/backend/freerdp/FreeRdpNatives:remotedesktop_freerdp:meson:registered"
+    "realvnc:net/pgaskin/remotedesktop/backend/realvnc/RealVncTraffic:remotedesktop_realvnc:meson:exported"
     "rustdesk:net/pgaskin/remotedesktop/backend/rustdesk/RustDeskNatives:remotedesktop_rustdesk:cargo:registered"
     "spice:net/pgaskin/remotedesktop/backend/spice/SpiceNatives:remotedesktop_spice:cargo:registered"
 )
@@ -71,7 +71,7 @@ if [ "${NOBUILD:-0}" != 1 ]; then
         IFS=: read -r module _ _ built bound <<<"$entry"
         case "$built" in
             cargo) tasks+=(":backends:${module}:cargoBuildDebugNative") ;;
-            cmake) tasks+=(":backends:${module}:assembleDebug") ;;
+            meson) tasks+=(":backends:${module}:mesonBuildDebug") ;;
         esac
         # A generated class is only on disk once it has been compiled.
         [ "$bound" = registered ] && tasks+=(":backends:${module}:compileDebugJavaWithJavac")
@@ -152,13 +152,13 @@ for entry in "${MODULES[@]}"; do
 
     case "$built" in
         cargo) root="backends/modules/$module/build/generated/rustNativeLibs" ;;
-        cmake) root="backends/modules/$module/build/intermediates/cxx" ;;
+        meson) root="backends/modules/$module/build/generated/mesonLibs" ;;
     esac
-    # The newest, not the first: a CMake module's build tree keeps a directory
-    # per configuration, so `find | head -1` can hand back a library from an
-    # older one, and the check would then report on a binary that is not
-    # shipped, in both directions (a MISSING for a method that had been there
-    # for a stage, for example).
+    # The newest, not the first: a C module keeps a directory per variant, so
+    # `find | head -1` can hand back a library from an older build, and the
+    # check would then report on a binary that is not shipped, in both
+    # directions (a MISSING for a method that had been there for a stage, for
+    # example).
     so="$(find "$root" -name "lib${lib}.so" -printf '%T@ %p\n' 2>/dev/null \
             | sort -rn | head -1 | cut -d' ' -f2-)"
     if [ -z "$so" ]; then

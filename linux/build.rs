@@ -1,22 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Patrick Gaskin
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The C backends, for the Rust binary: `backends/CMakeLists.txt` run with
-//! `VENTO_SHARED` on. (The declarations of `vento/backend.h` are read into
-//! Rust by `remotedesktop-api`'s own build script, under its `c`
-//! feature, and each backend's own header by its crate's; the backends'
-//! crates link nothing, so the libraries are made here.)
+//! The C backends, for the Rust binary: the Meson build at the repository
+//! root, which Gradle runs for Android, run for this machine. (The
+//! declarations of `vento/backend.h` are read into Rust by
+//! `remotedesktop-api`'s own build script, under its `c` feature, and each
+//! backend's own header by its crate's; the backends' crates link nothing,
+//! so the libraries are made here.)
 //!
-//! This runs the host build the C probes are built on (with
-//! `-DVENTO_PROBES=ON`) through the `cmake` crate rather than describing it
-//! again, with the one switch that makes each
-//! `vento_<name>` a shared library carrying its vendored static dependencies
-//! and the stderr `vento_log`. The probes are left at their default, off:
-//! nothing here runs them. The `.so` files land under `lib/` in the CMake
-//! tree, and the binary links none of them: each backend's crate opens its
-//! own by name the first time it is asked for (`api::c::library`), so that a
-//! library that cannot be loaded makes that one backend not available
-//! rather than stopping the binary from starting.
+//! This is the build the C probes are built on (`-Dprobes=true`), with the
+//! probes left off: nothing here runs them. Each backend is a shared library,
+//! `libvento_<name>.so`, carrying its vendored static dependencies and the
+//! stderr `vento_log`, and the binary links none of them: each backend's crate
+//! opens its own by name the first time it is asked for (`api::c::library`),
+//! so that a library that cannot be loaded makes that one backend not
+//! available rather than stopping the binary from starting.
 //!
 //! **Where they are found: `$ORIGIN/lib`.** The installed layout is the
 //! binary with a `lib/` directory beside it holding every `libvento_*.so`,
@@ -34,7 +32,7 @@
 //!
 //! RealVNC's hosting layer builds only under clang, so where `clang` is on the
 //! path both compilers are set to it for the whole tree (the three open
-//! backends build under either), and where it is not, the CMake root skips
+//! backends build under either), and where it is not, the Meson build skips
 //! that module with a message rather than an error. `remotedesktop-realvnc`
 //! opens it as the others are opened, through the same rpath (a `dlopen` from
 //! the binary searches the binary's), and says the backend is not available
@@ -42,10 +40,16 @@
 //! until it runs, so it cannot be a feature of a crate built before then.
 //!
 //! That choice is made again whenever `PATH`, `CC` or `CXX` changes, and a
-//! tree configured for other compilers is thrown away and configured afresh:
-//! CMake keeps the compiler it was first configured with in its cache, and
-//! the configure step is skipped while there is one, so installing clang
+//! tree configured for other compilers or another FFmpeg is configured afresh:
+//! Meson keeps the compilers it was first configured with, so installing clang
 //! after a gcc build would otherwise never bring RealVNC in.
+//!
+//! Meson is `MESON`, or `meson` on the path; `meson.build` sets the oldest
+//! version it accepts. It runs ninja, which has to be on the path too.
+//!
+//! `VENTO_COMPILE_COMMANDS=<path>` copies the tree's `compile_commands.json`
+//! there after each build, for clangd; a relative path is from the
+//! repository root.
 //!
 //! It also decodes the window icon, `metadata/icon.png`, into the RGBA rows
 //! winit takes (see `window_icon`), so that the binary carries no PNG
@@ -58,27 +62,32 @@ use std::process::Command;
 
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let backends = manifest
-        .join("../backends")
+    let root = manifest
+        .join("..")
         .canonicalize()
-        .expect("backends/ beside linux/");
+        .expect("the repository root above linux/");
+    let backends = root.join("backends");
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     window_icon(&manifest.join("metadata/icon.png"), &out.join("icon.rgba"));
 
-    // The C build's inputs, as far as cargo watches them: the build files,
-    // the GnuTLS and nettle pins (a bump reruns CMake, which fetches the new
-    // release), the neutral headers, each module's host half and the Linux
-    // platform's C and CMake half (not its `probe/`, which this build leaves
-    // off). The vendored trees are not watched: they are submodules, and a
-    // change there needs an explicit rebuild.
+    // The C build's inputs, as far as cargo watches them: the build files and
+    // ports, the GnuTLS and nettle pins (a bump reconfigures, which fetches
+    // the new release), the neutral headers, each module's C half and the
+    // Linux platform's (not its `probe/`, which this build leaves off). The
+    // vendored trees are not watched: they are submodules, and a change there
+    // needs an explicit rebuild.
+    println!("cargo:rerun-if-changed={}", root.join("meson.build").display());
+    println!("cargo:rerun-if-changed={}", root.join("meson.options").display());
     for path in [
-        "CMakeLists.txt",
+        "meson.build",
         "crypto-sources.txt",
-        "cmake",
+        "fetch-crypto-sources.py",
+        "ports",
         "api/include",
+        "platform/linux/meson.build",
         "platform/linux/cpp",
-        "platform/linux/cmake",
+        "platform/linux/ports",
         "modules/libvnc/cpp",
         "modules/tigervnc/cpp",
         "modules/freerdp/cpp",
@@ -89,7 +98,7 @@ fn main() {
     // The inputs that decide the compilers (see `compilers`). Printing any
     // rerun line means cargo watches only what is printed, so these have to
     // be listed.
-    for var in ["PATH", "CC", "CXX"] {
+    for var in ["PATH", "CC", "CXX", "MESON"] {
         println!("cargo:rerun-if-env-changed={var}");
     }
     // The static FFmpeg the Linux platform crate built (its build script,
@@ -102,7 +111,7 @@ fn main() {
             .expect("remotedesktop-platform-linux says where its FFmpeg is"),
     );
 
-    let lib = build_c_backends(&backends, &out, &ffmpeg);
+    let tree = build_c_backends(&root, &out, &ffmpeg);
     // The rpath (see the module's comment). Passed to the linker as written,
     // with no shell between, so `$ORIGIN` reaches the binary as the loader
     // wants it.
@@ -110,14 +119,20 @@ fn main() {
     // The three open backends' libraries are made by every build: the binary
     // runs without one, but a build that lost one is broken.
     for name in ["libvnc", "tigervnc", "freerdp"] {
-        let path = lib.join(format!("libvento_{name}.so"));
+        let path = library(&tree, name);
         assert!(path.is_file(), "the C build did not produce {}", path.display());
     }
-    beside_the_binary(&lib, &out);
+    beside_the_binary(&tree, &out);
+    println!("cargo:rerun-if-env-changed=VENTO_COMPILE_COMMANDS");
+    if let Some(dest) = env::var_os("VENTO_COMPILE_COMMANDS") {
+        let dest = root.join(dest);
+        fs::copy(tree.join("compile_commands.json"), &dest)
+            .unwrap_or_else(|e| panic!("copying compile_commands.json to {}: {e}", dest.display()));
+    }
     // Whether RealVNC's library was made, for the binary (`backends::all`),
     // which then reports it as not built rather than as not found by the
     // loader.
-    let realvnc = lib.join("libvento_realvnc.so").is_file();
+    let realvnc = library(&tree, "realvnc").is_file();
     println!("cargo:rustc-env=VENTO_REALVNC_BUILT={}", u8::from(realvnc));
     if realvnc {
         println!("cargo:warning=RealVNC backend: in (built with clang)");
@@ -310,41 +325,55 @@ fn blur(mask: &[f64], side: usize) -> Vec<f64> {
     pass(&pass(mask, 1, 0), 0, 1)
 }
 
-/// Runs the host CMake build with the shared switch on and returns the
-/// directory the libraries were written to.
-fn build_c_backends(backends: &Path, out: &Path, ffmpeg: &Path) -> PathBuf {
+/// Configures the Meson build under `out` where it is not configured yet, or
+/// was configured for other compilers or another FFmpeg, then builds it, and
+/// returns the build tree.
+fn build_c_backends(root: &Path, out: &Path, ffmpeg: &Path) -> PathBuf {
     let clang = compilers();
-    reconfigure_if_changed(out, &clang, ffmpeg);
-    let mut cfg = cmake::Config::new(backends);
-    cfg.define("VENTO_SHARED", "ON")
-        .define("VENTO_FFMPEG_PREFIX", ffmpeg)
-        // The CMake root's own default: -O0 is too slow for a probe or a
-        // decoder.
-        .profile("RelWithDebInfo")
-        // The `cmake` crate would otherwise pass the `cc` crate's flags; the
-        // tree has its own, and FreeRDP bakes CMAKE_C_FLAGS
-        // into a build string, so the host build is kept the same as a plain
-        // `cmake -S backends`.
-        .define("CMAKE_C_FLAGS", "")
-        .define("CMAKE_CXX_FLAGS", "")
-        // Everything, not an install: the tree neuters `install()` for the
-        // vendored projects, and the libraries are found where they are built.
-        .build_target("all")
-        // The configure step of three vendored trees is slow, and ninja
-        // re-runs it on its own when a CMake file changes; a change of
-        // compilers, which it does not see, is `reconfigure_if_changed`'s.
-        .always_configure(false);
-    if on_path("ninja") {
-        cfg.generator("Ninja");
+    let tree = out.join("meson");
+    let configured = tree.join("build.ninja").is_file();
+    let changed = configuration_changed(out, &clang, ffmpeg);
+    if !configured || changed {
+        let mut setup = meson(&clang);
+        setup.arg("setup");
+        if configured {
+            setup.arg("--wipe");
+        }
+        setup
+            .arg(format!("-Dffmpeg_prefix={}", ffmpeg.display()))
+            .arg(&tree)
+            .arg(root);
+        run(&mut setup, "meson setup");
     }
-    if let Some((cc, cxx)) = &clang {
-        cfg.define("CMAKE_C_COMPILER", cc)
-            .define("CMAKE_CXX_COMPILER", cxx);
+    // ninja reconfigures on its own when a build file changes.
+    run(meson(&clang).arg("compile").arg("-C").arg(&tree), "meson compile");
+    tree
+}
+
+/// Where the build tree has `libvento_<name>.so`.
+fn library(tree: &Path, name: &str) -> PathBuf {
+    tree.join(format!("backends/modules/{name}/cpp/libvento_{name}.so"))
+}
+
+/// Meson, with the compilers chosen here and none of the flags of the
+/// environment cargo runs this in: the tree has its own, and FreeRDP reports
+/// them in its build-flags header.
+fn meson(clang: &Option<(PathBuf, PathBuf)>) -> Command {
+    let mut cmd = Command::new(env::var_os("MESON").unwrap_or_else(|| "meson".into()));
+    for var in ["CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS"] {
+        cmd.env_remove(var);
     }
-    let dst = cfg.build();
-    // `build()` returns the install prefix; the build tree is `build/` under
-    // it, and `lib/` is where vento_linux.cmake sends the libraries.
-    dst.join("build").join("lib")
+    if let Some((cc, cxx)) = clang {
+        cmd.env("CC", cc).env("CXX", cxx);
+    }
+    cmd
+}
+
+fn run(cmd: &mut Command, what: &str) {
+    let status = cmd
+        .status()
+        .unwrap_or_else(|e| panic!("running {what}: {e} (is Meson installed, or MESON set?)"));
+    assert!(status.success(), "{what} failed ({status})");
 }
 
 /// Puts the libraries where the binary's rpath looks: `lib/` in the
@@ -356,13 +385,13 @@ fn build_c_backends(backends: &Path, out: &Path, ffmpeg: &Path) -> PathBuf {
 /// libraries. A library this build no longer makes (RealVNC's, after a switch
 /// away from clang) is removed from there too, or the binary would open what
 /// an earlier build left.
-fn beside_the_binary(lib: &Path, out: &Path) {
+fn beside_the_binary(tree: &Path, out: &Path) {
     let profile = out.ancestors().nth(3).expect("OUT_DIR is target/<profile>/build/<crate>/out");
     let dest = profile.join("lib");
     fs::create_dir_all(&dest).expect("creating lib/ beside the binary");
     for name in ["libvnc", "tigervnc", "freerdp", "realvnc"] {
-        let file = format!("libvento_{name}.so");
-        let (from, to) = (lib.join(&file), dest.join(&file));
+        let from = library(tree, name);
+        let to = dest.join(format!("libvento_{name}.so"));
         match fs::remove_file(&to) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -375,8 +404,8 @@ fn beside_the_binary(lib: &Path, out: &Path) {
 }
 
 /// clang and clang++ where both are on the path and run, as the paths `PATH`
-/// finds them at; `None` for whatever the `cmake` crate picks otherwise
-/// (`CC` and `CXX`, or `cc` and `c++`).
+/// finds them at; `None` for whatever Meson picks otherwise (`CC` and `CXX`,
+/// or `cc` and `c++`).
 fn compilers() -> Option<(PathBuf, PathBuf)> {
     let found = |program: &str| {
         on_path(program).then(|| which(program).unwrap_or_else(|| PathBuf::from(program)))
@@ -384,18 +413,13 @@ fn compilers() -> Option<(PathBuf, PathBuf)> {
     Some((found("clang")?, found("clang++")?))
 }
 
-/// Deletes the CMake tree under `out` when it was configured for other
-/// compilers than these, or another FFmpeg, so that the `cmake` crate, which
-/// only configures a tree that has no cache, configures it again. Every
-/// object in it would be rebuilt anyway, and a stale `libvento_realvnc.so`
-/// from a clang tree must not outlive a switch away from clang. (The FFmpeg's
-/// prefix is the platform crate's `OUT_DIR`, which moves only when that
-/// crate's build does.)
-///
-/// The tree's configuration is recorded in a line written beside it. A tree
-/// without that line is judged by its cache's C compiler instead (clang or
-/// not, which is the decision that matters).
-fn reconfigure_if_changed(out: &Path, clang: &Option<(PathBuf, PathBuf)>, ffmpeg: &Path) {
+/// Whether the tree under `out` was configured for other compilers than
+/// these or another FFmpeg, as recorded in a file written beside it, which is
+/// rewritten either way. Every object in the tree would be rebuilt anyway, and
+/// a stale `libvento_realvnc.so` from a clang tree must not outlive a switch
+/// away from clang. (The FFmpeg's prefix is the platform crate's `OUT_DIR`,
+/// which moves only when that crate's build does.)
+fn configuration_changed(out: &Path, clang: &Option<(PathBuf, PathBuf)>, ffmpeg: &Path) -> bool {
     let var = |name: &str| env::var(name).unwrap_or_default();
     let compilers = match clang {
         Some((cc, cxx)) => format!("clang {} {}", cc.display(), cxx.display()),
@@ -408,32 +432,15 @@ fn reconfigure_if_changed(out: &Path, clang: &Option<(PathBuf, PathBuf)>, ffmpeg
         ),
     };
     let want = format!("{compilers}\nffmpeg {}", ffmpeg.display());
-    let tree = out.join("build");
-    let stamp = out.join("vento-compilers");
-    let cache = fs::read_to_string(tree.join("CMakeCache.txt")).ok();
-    let stale = match (fs::read_to_string(&stamp).ok(), &cache) {
-        (Some(had), Some(_)) => had.trim() != want.trim(),
-        (None, Some(cache)) => {
-            let was_clang = cache
-                .lines()
-                .find_map(|l| l.strip_prefix("CMAKE_C_COMPILER:"))
-                .and_then(|l| l.split_once('='))
-                .is_some_and(|(_, path)| {
-                    Path::new(path)
-                        .file_name()
-                        .is_some_and(|f| f.to_string_lossy().contains("clang"))
-                });
-            was_clang != clang.is_some()
-        }
-        (_, None) => false,
-    };
-    if stale {
+    let stamp = out.join("vento-configuration");
+    let changed = fs::read_to_string(&stamp).is_ok_and(|had| had.trim() != want.trim());
+    if changed {
         println!(
             "cargo:warning=C backends: the compilers or the FFmpeg changed, configuring afresh for {want}"
         );
-        fs::remove_dir_all(&tree).expect("deleting the stale CMake tree");
     }
-    fs::write(&stamp, format!("{want}\n")).expect("writing the compilers stamp");
+    fs::write(&stamp, format!("{want}\n")).expect("writing the configuration stamp");
+    changed
 }
 
 fn on_path(program: &str) -> bool {

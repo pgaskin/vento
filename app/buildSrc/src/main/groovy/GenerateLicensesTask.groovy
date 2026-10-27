@@ -69,7 +69,7 @@ abstract class GenerateLicensesTask extends DefaultTask {
     /**
      * Third-party components that are not crates: {@code [name, spdx, text]}
      * each. The Cargo lock covers everything under a Rust protocol module and a
-     * C module's adapter crate, but not the C library a CMake module builds or
+     * C module's adapter crate, but not the C library a C module builds or
      * anything in the app's own dependency block, so libraries vendored as
      * submodules and libraries resolved from Maven have to be listed here.
      */

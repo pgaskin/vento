@@ -66,24 +66,25 @@ cp config.h version.h ecc-*.h "$port/gen/"
 
 # The source lists are read back out of the archives rather than out of the
 # Makefile: what an archive holds is what the library is, conditionals and all.
+# They are Meson arrays, which meson.build reads with subdir().
 list() {
-    ar t "$tmp/arm64-v8a/$1.a" | sed 's/\.o$/.c/' | sort | sed 's/^/        /'
+    ar t "$tmp/arm64-v8a/$1.a" | sed 's/\.o$/.c/' | sort | sed "s/.*/  '&',/"
 }
 {
     echo "# Written by gen.sh: the members of libnettle.a and libhogweed.a as"
     echo "# nettle's own build produced them, and the headers it installed."
     echo
-    echo "set(NETTLE_SOURCES"
+    echo "nettle_sources = ["
     list libnettle
-    echo ")"
+    echo "]"
     echo
-    echo "set(HOGWEED_SOURCES"
+    echo "hogweed_sources = ["
     list libhogweed
-    echo ")"
+    echo "]"
     echo
-    echo "set(NETTLE_HEADERS"
-    (cd "$tmp/arm64-v8a/root/include/nettle" && ls *.h) | sort | sed 's/^/        /'
-    echo ")"
-} > "$port/gen/sources.cmake"
+    echo "nettle_headers = ["
+    (cd "$tmp/arm64-v8a/root/include/nettle" && ls *.h) | sort | sed "s/.*/  '&',/"
+    echo "]"
+} > "$port/gen/meson.build"
 
 echo "> done; check git status for unexpected diffs"

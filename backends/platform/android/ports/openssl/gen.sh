@@ -141,22 +141,27 @@ for abi in $abis; do
             for (i = 1; i <= NF; i++) if ($i ~ /^-D/) print group, "DEFINES", substr($i, 3)
             obj = ""
         }' Makefile | sort -u > "$tmp/grouped"
+    # A Meson dictionary, archive to its definitions and sources, which
+    # meson.build reads with subdir().
     {
         echo "# Written by gen.sh: every object openssl's own build produced for"
         echo "# $abi, grouped by the archive it goes into."
         echo
+        echo "openssl_archives = {"
         # libtemplate is a provider skeleton upstream compiles and archives into
         # nothing; it is in neither library, so it is not here either.
         for group in libcrypto-lib libcommon-lib libdefault-lib libssl-lib; do
+            echo "  '${group%-lib}': {"
             for kind in DEFINES SOURCES GENERATED; do
-                echo "set(OPENSSL_${kind}_$(echo "$group" | tr '-' '_')"
-                awk -v g="$group" -v k="$kind" '$1 == g && $2 == k { print "        " $3 }' \
-                    "$tmp/grouped"
-                echo ")"
-                echo
+                echo "    '$(echo "$kind" | tr '[:upper:]' '[:lower:]')': ["
+                awk -v g="$group" -v k="$kind" -v q="'" \
+                    '$1 == g && $2 == k { print "      " q $3 q "," }' "$tmp/grouped"
+                echo "    ],"
             done
+            echo "  },"
         done
-    } > "$port/gen/$abi/sources.cmake"
+        echo "}"
+    } > "$port/gen/$abi/meson.build"
 done
 
 echo "> done; check git status for unexpected diffs"
