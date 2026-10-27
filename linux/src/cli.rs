@@ -22,7 +22,13 @@ const fn flag(long: &'static str, short: Option<char>, value: bool) -> Flag {
     Flag { long, short, value }
 }
 
-/// Every option, in the help's order.
+/// The options the help leaves out: a developer's, which behave as any
+/// other option otherwise.
+#[cfg(test)]
+const HIDDEN: &[&str] = &["dev-force-socketpair"];
+
+/// Every option, in the help's order, then the ones it leaves out
+/// (`HIDDEN`).
 pub const FLAGS: &[Flag] = &[
     flag("help", Some('h'), false),
     flag("version", Some('V'), false),
@@ -48,6 +54,10 @@ pub const FLAGS: &[Flag] = &[
     flag("no-send-clipboard", None, false),
     flag("no-recv-clipboard", None, false),
     flag("no-grab-keyboard", None, false),
+    // Every connection a backend makes through vento is relayed through a
+    // socketpair (`runtime::net::Socketpair`), to test the backends on a
+    // socket that is not TCP.
+    flag("dev-force-socketpair", None, false),
 ];
 
 /// One word of the command line, taken apart.
@@ -560,7 +570,7 @@ mod tests {
     fn the_help_and_the_parser_have_the_same_options() {
         let help = usage(&Defaults { extlib_dir: "E".into(), state_dir: "S".into() });
         let lines: Vec<&str> = help.lines().filter(|l| l.starts_with("  -") || l.starts_with("      --")).collect();
-        for flag in FLAGS {
+        for flag in FLAGS.iter().filter(|f| !HIDDEN.contains(&f.long)) {
             let names = match flag.short {
                 Some(c) => format!("  -{c}, --{}", flag.long),
                 None => format!("      --{}", flag.long),
@@ -575,7 +585,11 @@ mod tests {
         }
         for line in &lines {
             let long = line.split_whitespace().find_map(|w| w.strip_prefix("--")).unwrap();
-            assert!(FLAGS.iter().any(|f| f.long == long), "{line:?}");
+            assert!(FLAGS.iter().any(|f| f.long == long && !HIDDEN.contains(&f.long)), "{line:?}");
+        }
+        for long in HIDDEN {
+            assert!(FLAGS.iter().any(|f| f.long == *long), "--{long} is not an option");
+            assert!(!help.contains(long), "--{long} is in the help");
         }
     }
 

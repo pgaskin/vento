@@ -61,6 +61,11 @@ pub struct Settings {
     /// known hosts match is still taken as matching. Command line only
     /// (`--trust`).
     pub trust: bool,
+    /// Every connection a backend makes through vento goes through a
+    /// socketpair, with vento relaying it to the server, to test the
+    /// backends on a socket that is not TCP. Command line only
+    /// (`--dev-force-socketpair`, which the help leaves out); not drawn.
+    pub force_socketpair: bool,
 }
 
 impl Default for Settings {
@@ -77,6 +82,7 @@ impl Default for Settings {
             fit_window: false,
             view_only: false,
             trust: false,
+            force_socketpair: false,
         }
     }
 }

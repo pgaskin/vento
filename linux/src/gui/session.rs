@@ -349,7 +349,7 @@ impl Session {
             request.options.set("ViewOnly", "true");
         }
         let identity = known_hosts::saved_identity(&dirs.config, request.kind, &request.address);
-        let network: Arc<dyn runtime::net::Network> = Arc::new(runtime::net::Direct);
+        let network = backends::network(settings.force_socketpair);
         let connect = Connect {
             address: &request.address,
             user: &request.user,

@@ -143,6 +143,8 @@
     <string name="settings_previews_summary">Locally save encrypted preview screenshots of the remote desktop. Disabling this deletes all existing screenshots.</string>
     <string name="settings_external_launch">Allow external apps to launch connections</string>
     <string name="settings_external_launch_summary">Allow SessionActivity to be started by other apps or ADB.</string>
+    <string name="settings_force_socketpair">Relay connections through a socketpair</string>
+    <string name="settings_force_socketpair_summary">Force direct connections to use the tunnel mechanism (unix socketpair).</string>
     <string name="settings_connection_defaults">Connection defaults</string>
     <string name="settings_reset">Reset</string>
     <string name="settings_reset_summary">Set all values above back to their defaults.</string>

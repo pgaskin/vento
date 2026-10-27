@@ -5,9 +5,9 @@ package net.pgaskin.remotedesktop.backend.realvnc;
 
 /**
  * A session's connections, routed under the viewer core, which dials the
- * server itself: on a network that is not direct (one that relays
- * connections through a socketpair), the core's socket calls are hooked in
- * memory and dial through the session's network, as on Linux.
+ * server itself: on a network that is not direct (the developer setting
+ * that relays connections through a socketpair), the core's socket calls are
+ * hooked in memory and dial through the session's network, as on Linux.
  * {@code cpp/realvnc_got.c} and {@code cpp/realvnc_net.h} say how.
  *
  * <p>Nothing the core calls says which session it is for, and it keys what it

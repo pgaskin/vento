@@ -58,9 +58,9 @@ public record ConnectionFact(Field field, String label, String value, boolean di
         OTHER,
         /**
          * What carries the connection where it is not this end's own TCP
-         * connection (the session's network says what). Added by the native
-         * layer after the backend's rows, and shown last, in a group of its
-         * own.
+         * connection (the session's network says, as "dev-socketpair" for the
+         * developer setting). Added by the native layer after the backend's
+         * rows, and shown last, in a group of its own.
          */
         TUNNEL
     }

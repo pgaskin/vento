@@ -109,10 +109,13 @@ public final class NativeBackend implements Backend {
          *                   what an RDP {@code DesktopSize=remote} asks for
          * @param clientName what the far end lists this phone as
          * @param filesDir   where a library may keep what outlives a session
+         * @param forceSocketpair relay each connection through a socketpair
+         *                   ({@link Backends#forceSocketpair()})
          */
         long create(NativeBackend events, String tag, String address, String userName,
                     String password, String[] options, int screenWidth, int screenHeight,
-                    int lastWidth, int lastHeight, String clientName, String filesDir);
+                    int lastWidth, int lastHeight, String clientName, String filesDir,
+                    boolean forceSocketpair);
 
         /**
          * The answer to {@link #onCredentialsNeeded}: what was typed, with a
@@ -344,7 +347,7 @@ public final class NativeBackend implements Backend {
                 // What the far end shows and logs while this session is up.
                 // The phone rather than the app: the desktop's owner wants to
                 // know which device is connected.
-                Build.MODEL, context.getFilesDir().getPath());
+                Build.MODEL, context.getFilesDir().getPath(), Backends.forceSocketpair());
         if (h == 0) {
             closed("Could not start the connection");
             return;

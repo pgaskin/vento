@@ -425,6 +425,8 @@ public final class SessionActivity extends Activity
         // this activity.
         final Map<String, String> options = connection != null
                 ? Options.forConnection(this, connection) : optionsFromIntent();
+        // For every backend in the process, read as the session starts.
+        Backends.setForceSocketpair(AppSettings.forceSocketpair(this));
         final Backend backend = Backends.create(getApplicationContext(), backendId(), address,
                 connection != null ? connection.userName() : getIntent().getStringExtra("user"),
                 connection != null ? connection.password()

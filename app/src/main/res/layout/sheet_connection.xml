@@ -148,7 +148,8 @@
 
         <!--
             What carries the connection where it is not this end's own TCP
-            connection (a tunnel): last, and gone where there is none.
+            connection (a tunnel, or the socketpair developer setting): last,
+            and gone where there is none.
         -->
         <LinearLayout
             android:id="@+id/tunnel"

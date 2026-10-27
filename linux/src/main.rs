@@ -90,6 +90,9 @@ mod host {
         hw_decode: backends::Hardware,
         /// `--audio`: where the far end's sound plays.
         audio_output: backends::AudioOutput,
+        /// `--dev-force-socketpair`: every connection relayed through a
+        /// socketpair.
+        force_socketpair: bool,
         /// Whether `--password` has been given to a credentials prompt.
         /// It is given once: a second prompt is the far end saying it was
         /// wrong, and answering that with the same password again is a loop
@@ -274,6 +277,7 @@ mod host {
                 "no-send-clipboard" => settings.clipboard_out = false,
                 "no-recv-clipboard" => settings.clipboard_in = false,
                 "no-grab-keyboard" => settings.grab_keyboard = false,
+                "dev-force-socketpair" => settings.force_socketpair = true,
                 "probe" => steps = Some(cli::steps(&value).map_err(|e| format!("--probe: {e}"))?),
                 other => unreachable!("--{other} is in cli::FLAGS but not parsed"),
             }
@@ -375,6 +379,7 @@ mod host {
             clipboard_in: settings.clipboard_in,
             hw_decode: settings.hardware(),
             audio_output: settings.audio_output,
+            force_socketpair: settings.force_socketpair,
             answered: Cell::new(false),
             refused: Cell::new(false),
         })))
@@ -422,7 +427,7 @@ mod host {
 
             println!("{}", (self.kind.version)());
             let mailbox = Mailbox::new(None);
-            let network: Arc<dyn runtime::net::Network> = Arc::new(runtime::net::Direct);
+            let network = backends::network(self.force_socketpair);
             let backend = {
                 let client_name = backends::client_name();
                 let identity = known_hosts::saved_identity(&self.dirs.config, self.kind, &self.address);
@@ -1016,6 +1021,20 @@ mod host {
             assert_eq!(forced.request.unwrap().options.get("ViewOnly"), "true");
             let probe = probe(&["rfb", "127.0.0.1:1", "-Pwait=1", "--view-only"]);
             assert_eq!(probe.options.get("ViewOnly"), "true");
+        }
+
+        /// The help leaves it out (`cli::HIDDEN`), and every mode takes it.
+        #[test]
+        fn the_socketpair_is_for_the_window_and_the_probe() {
+            assert!(!launch(&[]).settings.force_socketpair);
+            assert!(launch(&["--dev-force-socketpair"]).settings.force_socketpair);
+            assert!(launch(&["rfb", "127.0.0.1:1", "--connect", "--dev-force-socketpair"]).settings.force_socketpair);
+            assert!(probe(&["rfb", "127.0.0.1:1", "--dev-force-socketpair", "-Pwait=1"]).force_socketpair);
+            assert!(!probe(&["rfb", "127.0.0.1:1", "-Pwait=1"]).force_socketpair);
+            assert_eq!(
+                parsed(&["--dev-force-socketpair=1"]).err().unwrap(),
+                "--dev-force-socketpair takes no value"
+            );
         }
 
         #[test]

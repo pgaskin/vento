@@ -11,7 +11,7 @@
 use api::c::ffi::vento_net;
 
 /// Fills in `out` with a session's network, relayed through a socketpair
-/// where `force_socketpair` (`Backends.forceSocketpair()`) says so, and
+/// where `force_socketpair` (the app's developer setting) says so, and
 /// returns true; returns false and leaves `out` alone where the network is
 /// direct, which the core dials itself. The caller owns the table from
 /// then on (`vento_net.release`).

@@ -436,13 +436,16 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
             });
             screen.addPreference(previews);
 
-            // A developer row, in its own group since it is not about how a
-            // session behaves.
+            // The developer rows, in their own group since they are not about
+            // how a session behaves.
             if (AppSettings.developerMode(requireContext())) {
                 screen.addPreference(heading(0));
                 screen.addPreference(switchPref(AppSettings.KEY_EXTERNAL_LAUNCH,
                         R.string.settings_external_launch,
                         R.string.settings_external_launch_summary, false));
+                screen.addPreference(switchPref(AppSettings.KEY_FORCE_SOCKETPAIR,
+                        R.string.settings_force_socketpair,
+                        R.string.settings_force_socketpair_summary, false));
             }
             store.built();
         }

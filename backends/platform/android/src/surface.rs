@@ -46,7 +46,7 @@ pub const NATIVES: &[Native] = &[
         name: "create",
         descriptor: "(Lnet/pgaskin/remotedesktop/backend/NativeBackend;Ljava/lang/String;\
                      Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;\
-                     IIIILjava/lang/String;Ljava/lang/String;)J",
+                     IIIILjava/lang/String;Ljava/lang/String;Z)J",
         params: &[
             "events",
             "tag",
@@ -60,6 +60,7 @@ pub const NATIVES: &[Native] = &[
             "lastHeight",
             "clientName",
             "filesDir",
+            "forceSocketpair",
         ],
     },
     Native {

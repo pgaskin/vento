@@ -3,9 +3,9 @@
 
 //! Every connection handed over as one end of a socketpair, with vento
 //! carrying the bytes between the other end and the real connection: what a
-//! tunnel will do, without a tunnel. A test mode, for finding out what each
-//! backend needs of an fd that is not a TCP socket, before any route depends
-//! on the answer.
+//! tunnel will do, without a tunnel. A test mode (the Linux client's
+//! `--dev-force-socketpair`), for finding out what each backend needs of an
+//! fd that is not a TCP socket, before any route depends on the answer.
 //!
 //! The relay is one thread per connection, polling both sockets, with a
 //! buffer of [`BUFFER`] each way. It reads a side only once what it last read

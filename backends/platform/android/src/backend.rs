@@ -231,6 +231,7 @@ pub const METHODS: &[NativeMethod] = &[
             last_height: jint,
             client_name: JString,
             files_dir: JString,
+            force_socketpair: jboolean,
         ) -> jlong,
         error_policy = LogErrorAndDefault,
     },
@@ -310,7 +311,10 @@ fn version<'local>(env: &mut Env<'local>, _this: JObject<'local>) -> Result<JStr
 /// `options` is the connection's options as key, value, key, value, with
 /// the catalog's defaults filled in. `lastWidth` × `lastHeight` is the size
 /// the far end was left at last time where the app stores it, and zero where
-/// it does not.
+/// it does not. `forceSocketpair` relays every connection the backend dials
+/// through vento through a socketpair: the app's developer setting for
+/// testing the backends on a socket that is not TCP, as the Linux client's
+/// `--dev-force-socketpair` is.
 #[allow(clippy::too_many_arguments)]
 fn create<'local>(
     env: &mut Env<'local>,
@@ -327,6 +331,7 @@ fn create<'local>(
     last_height: jint,
     client_name: JString<'local>,
     files_dir: JString<'local>,
+    force_socketpair: jboolean,
 ) -> Result<jlong, Error> {
     crate::log::init(&string(env, &tag)?.unwrap_or_else(|| "NativeBackend".into()));
     let module = module();
@@ -368,7 +373,7 @@ fn create<'local>(
     };
     let pair = |w: jint, h: jint| (w > 0 && h > 0).then_some((w as u32, h as u32));
     let audio = (module.audio)();
-    let network: Arc<dyn runtime::net::Network> = Arc::new(runtime::net::Direct);
+    let network = network(force_socketpair);
     let connect = Connect {
         address: &address,
         user: &user,

@@ -647,11 +647,13 @@ public final class Backends {
 
     /**
      * Whether each connection a session dials through vento is relayed through
-     * a socketpair, to test the backends on a socket that is not TCP. Shared
-     * with add-ons, and read by the RealVNC backend when a session starts:
-     * its core, which dials the server itself, has its socket calls hooked to
-     * dial through the session's network ({@code RealVncNet} in its module),
-     * its UDP transport included.
+     * a socketpair: a developer setting for testing the backends on a socket
+     * that is not TCP, as the Linux client's {@code --dev-force-socketpair} is.
+     * The app sets it for every backend in the process, add-ons' included, and
+     * a session reads it when it starts. RealVNC's core, which dials the
+     * server itself, has its socket calls hooked to dial through the same
+     * network ({@code RealVncNet} in its module), its UDP transport
+     * included.
      */
     public static boolean forceSocketpair() {
         return forceSocketpair;

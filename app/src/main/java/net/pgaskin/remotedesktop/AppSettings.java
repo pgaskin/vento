@@ -38,6 +38,7 @@ public final class AppSettings {
     public static final String KEY_SESSION_TIMEOUT = "sessionTimeout";  // minutes off screen
     public static final String KEY_DEVELOPER_MODE = "developerMode";    // the hidden rows
     public static final String KEY_EXTERNAL_LAUNCH = "externalLaunch";  // a hidden row
+    public static final String KEY_FORCE_SOCKETPAIR = "forceSocketpair"; // a hidden row
 
     /**
      * Every key in this file with its default value. The getters below read it,
@@ -73,6 +74,7 @@ public final class AppSettings {
         m.put(KEY_SESSION_TIMEOUT, "0");
         m.put(KEY_DEVELOPER_MODE, false);
         m.put(KEY_EXTERNAL_LAUNCH, false);
+        m.put(KEY_FORCE_SOCKETPAIR, false);
         return Collections.unmodifiableMap(m);
     }
 
@@ -311,7 +313,8 @@ public final class AppSettings {
 
     /**
      * Whether the developer rows are shown: the playground's two recorders,
-     * the row that deletes their recordings, and {@link #externalLaunch}.
+     * the row that deletes their recordings, {@link #externalLaunch} and
+     * {@link #forceSocketpair}.
      *
      * <p>Unlocked like Android's own developer options, with ten taps on the
      * version row, because the recorders are of no use to other users: they
@@ -342,6 +345,18 @@ public final class AppSettings {
      */
     public static boolean externalLaunch(Context ctx) {
         return developerMode(ctx) && get(ctx, KEY_EXTERNAL_LAUNCH);
+    }
+
+    /**
+     * Whether each connection a session dials through vento is relayed through
+     * a socketpair ({@code Backends.forceSocketpair()}), to test the backends
+     * on a socket that is not TCP.
+     *
+     * <p>A developer row, in effect only in developer mode, as
+     * {@link #externalLaunch} is.
+     */
+    public static boolean forceSocketpair(Context ctx) {
+        return developerMode(ctx) && get(ctx, KEY_FORCE_SOCKETPAIR);
     }
 
     /** The row's choices, in minutes, in the order shown. */

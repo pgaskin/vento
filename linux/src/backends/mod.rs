@@ -16,6 +16,7 @@ pub use api::trust::{Pinned, pinned_as};
 
 pub use platform_linux::audio::{Audio, Output as AudioOutput};
 pub use platform_linux::ffmpeg::{FFmpeg, Hardware, hardware_name, hardware_named};
+use runtime::net::{Direct, Network, Socketpair};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -128,6 +129,21 @@ pub fn decoders(hardware: Hardware) -> Arc<FFmpeg> {
 /// streams are listed under its name (`title`) in a mixer.
 pub fn audio(title: &str, output: AudioOutput) -> Arc<Audio> {
     Arc::new(Audio::new(title, output))
+}
+
+/// Where a session's connections go: this end's own TCP connections, as
+/// [`Connect::network`] has on both platforms, or with `force_socketpair`
+/// (`--dev-force-socketpair`) each of them relayed through a socketpair
+/// (`runtime::net::Socketpair`), to test the backends on a socket that is
+/// not TCP. RealVNC's core, which dials for itself, has its connections put
+/// through the network by its session (`realvnc_net.h` in its module).
+pub fn network(force_socketpair: bool) -> Arc<dyn Network> {
+    if force_socketpair {
+        log::info!("--dev-force-socketpair: connections dialled through vento are relayed through a socketpair");
+        Arc::new(Socketpair::new(Arc::new(Direct)))
+    } else {
+        Arc::new(Direct)
+    }
 }
 
 /// Every backend this binary has, in the picker's order. The C backends are
