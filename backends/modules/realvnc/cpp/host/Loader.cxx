@@ -22,6 +22,7 @@
 #include "Gai.h"
 #include "Host.h"
 #include "Looper.h"
+#include "realvnc_net.h"
 
 namespace vento_realvnc {
 
@@ -106,6 +107,26 @@ std::unordered_map<std::string, void *> libcSymbols() {
     libc["__cxa_atexit"] = (void *) &noAtexit;
     // The shim's resolver returns glibc's error codes (see Gai.h).
     wrapResolver(libc);
+    // The session's network under the core's connections, in front of all
+    // of the above: each hook passes on to what it replaces here, which is
+    // all it does for a session on a direct route (realvnc_net.h). Every
+    // hook or none, so that a route that is not direct is refused rather
+    // than half routed.
+    std::string missing;
+    for (const realvnc_net_hook &h : realvnc_net_hooks) {
+        if (!libc.count(h.name)) {
+            missing = h.name;
+        }
+    }
+    if (missing.empty()) {
+        for (const realvnc_net_hook &h : realvnc_net_hooks) {
+            *h.next = libc.at(h.name);
+            libc[h.name] = h.hook;
+        }
+        realvnc_net_installed(1, nullptr);
+    } else {
+        realvnc_net_installed(0, (missing + " is not in the symbol map").c_str());
+    }
     return libc;
 }
 

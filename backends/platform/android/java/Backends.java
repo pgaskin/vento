@@ -109,6 +109,7 @@ public final class Backends {
     private static List<Plugin> plugins = List.of();
     private static List<BackendProvider> discovered = List.of();
     private static volatile Chain chain;
+    private static volatile boolean forceSocketpair;
 
     /** What an add-on's code threw where a screen called it, by package. */
     private static final Map<String, String> failedAtUse = new ConcurrentHashMap<>();
@@ -642,6 +643,23 @@ public final class Backends {
                 failed(p.id(), t);
             }
         }
+    }
+
+    /**
+     * Whether each connection a session dials through vento is relayed through
+     * a socketpair, to test the backends on a socket that is not TCP. Shared
+     * with add-ons, and read by the RealVNC backend when a session starts:
+     * its core, which dials the server itself, has its socket calls hooked to
+     * dial through the session's network ({@code RealVncNet} in its module),
+     * its UDP transport included.
+     */
+    public static boolean forceSocketpair() {
+        return forceSocketpair;
+    }
+
+    /** @see #forceSocketpair() */
+    public static void setForceSocketpair(boolean on) {
+        forceSocketpair = on;
     }
 
     public static Backend create(Context context, String id, String address, String userName,

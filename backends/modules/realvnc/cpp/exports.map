@@ -1,0 +1,9 @@
+/* The exports of the phone's `libremotedesktop_realvnc.so`: the natives Java
+   finds by name. The Rust static library linked into it, and the hooks,
+   stay local. */
+{
+    global:
+        Java_*;
+    local:
+        *;
+};

@@ -41,9 +41,11 @@ android_log_c = files('cpp/vento_log.c')
 # backends/build.gradle). Nothing in the C calls into it, so JNI_OnLoad is
 # named as undefined to pull it in, and it is the only symbol exported
 # (cpp/exports.map says why). The NDK libraries are the crate's
-# native-static-libs. RealVNC's library is the one without a crate.
+# native-static-libs. RealVNC's crate is the session's network under its core's
+# connections, which its hooks call, and its library has exports of its own
+# (modules/realvnc/cpp/meson.build).
 crate_library_dir = get_option('crate_library_dir')
-if crate_library_dir == '' and backends != ['realvnc']
+if crate_library_dir == ''
   error('crate_library_dir is not set: Gradle passes the directory cargo-ndk built the crates into')
 endif
 crate_library_dir = crate_library_dir / {'aarch64': 'arm64-v8a', 'x86_64': 'x86_64'}[cpu]

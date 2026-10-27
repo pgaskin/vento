@@ -154,8 +154,9 @@ final fetchMeson = tasks.register('fetchMeson', DownloadSourceTarball) {
  * (MesonBuildTask) and the module packages as its jniLibs. `crate` is the
  * module's crate (the backend as an `api::Backend` over the C library's
  * vtable, and the JNI layer in `platform/android` registered on the module's
- * natives class), which cargo-ndk builds first as a static library per ABI
- * for the library to link in; null for RealVNC's, which has no crate.
+ * natives class; for RealVNC, the session's network under its core's
+ * connections), which cargo-ndk builds first as a static library per ABI
+ * for the library to link in.
  *
  * The crate is built once for every variant, since each builds it
  * `--release` the same way.
@@ -166,19 +167,16 @@ ext.nativeLibrary = { Project module, String backendName, String crate ->
     final abis = nativeAbis
     final cargoNdk = cargoNdkVersion
     final strict = project.hasProperty('strictWarnings')
-    def crateTask = null
-    if (crate != null) {
-        crateTask = module.tasks.register('cargoBuildStaticNative', CargoBuildTask) { task ->
-            task.workspaceDir.set(cargoWorkspace)
-            task.cargoPackage.set(crate)
-            task.crateType.set('staticlib')
-            task.ndkDirectory.set(ndk)
-            task.rustToolchainFile.set(cargoRustToolchain)
-            task.cargoNdkVersion.set(cargoNdk)
-            task.abiFilters.set(abis)
-            task.minSdkVersion.set(api)
-            task.outputDir.set(module.layout.buildDirectory.dir('generated/rustStaticLibs'))
-        }
+    final crateTask = module.tasks.register('cargoBuildStaticNative', CargoBuildTask) { task ->
+        task.workspaceDir.set(cargoWorkspace)
+        task.cargoPackage.set(crate)
+        task.crateType.set('staticlib')
+        task.ndkDirectory.set(ndk)
+        task.rustToolchainFile.set(cargoRustToolchain)
+        task.cargoNdkVersion.set(cargoNdk)
+        task.abiFilters.set(abis)
+        task.minSdkVersion.set(api)
+        task.outputDir.set(module.layout.buildDirectory.dir('generated/rustStaticLibs'))
     }
     module.androidComponents.onVariants(module.androidComponents.selector().all()) { variant ->
         final cap = variant.name.substring(0, 1).toUpperCase(Locale.ROOT) + variant.name.substring(1)
@@ -189,9 +187,7 @@ ext.nativeLibrary = { Project module, String backendName, String crate ->
             task.minSdkVersion.set(api)
             task.variant.set(variant.buildType == 'debug' ? 'debug' : 'release')
             task.strictWarnings.set(strict)
-            if (crateTask != null) {
-                task.crateLibraryDir.set(crateTask.flatMap { it.outputDir })
-            }
+            task.crateLibraryDir.set(crateTask.flatMap { it.outputDir })
             task.mesonDir.set(mesonHome)
             task.ndkDirectory.set(ndk)
             task.sourceDir.set(rootProject.layout.projectDirectory)

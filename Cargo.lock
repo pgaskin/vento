@@ -2603,6 +2603,8 @@ dependencies = [
  "libloading 0.8.9",
  "log",
  "remotedesktop-api",
+ "remotedesktop-platform-android",
+ "remotedesktop-runtime",
 ]
 
 [[package]]

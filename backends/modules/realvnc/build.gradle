@@ -8,11 +8,13 @@ plugins {
 // `Backend` implemented over RealVNC's viewer core. A protocol module like the
 // others: `:realvnc-jni` holds the declarations, and this module holds the
 // session lifecycle, the prompts, the options, and a small native library that
-// reads a counter the core's exported functions do not offer. This directory's
-// `cpp/` also holds the host side of this backend (`realvnc_session.cxx`,
-// built only for Linux), which runs the
-// same core in a Linux process, and the module root holds the Linux client's
-// adapter over that (`Cargo.toml`, `src/`), a crate no Gradle build uses.
+// reads a counter the core's exported functions do not offer and puts the
+// session's network under the core's connections. This directory's `cpp/`
+// also holds the host side of this backend (`realvnc_session.cxx`, built only
+// for Linux), which runs the same core in a Linux process, and the module root
+// holds the crate (`Cargo.toml`, `src/`): the Linux client's adapter over
+// that, and on the phone only the session's network, linked into the native
+// library (`src/android.rs`).
 //
 // Nothing of RealVNC's is in this module or in anything built from it. It is
 // the only backend shipped in an add-on rather than in the app, because all
@@ -53,8 +55,9 @@ android {
     }
 }
 
-// libremotedesktop_realvnc.so, from the Meson build: see `nativeLibrary` in :backends.
-project(':backends').nativeLibrary(project, 'realvnc', null)
+// libremotedesktop_realvnc.so, from the Meson build, with this module's crate
+// (the session's network) linked in: see `nativeLibrary` in :backends.
+project(':backends').nativeLibrary(project, 'realvnc', 'remotedesktop-realvnc')
 
 dependencies {
     // `Backend` and the interfaces around it: the only part of the app this

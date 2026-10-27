@@ -30,6 +30,7 @@
 #include <stdbool.h>
 
 #include <vento/backend.h>
+#include <vento/net.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -82,6 +83,28 @@ typedef struct vento_realvnc_config {
     /* 0 or less for the Android backend's twenty seconds. Needed, as
        RealVncBackend says: a connection that fails reports nothing at all. */
     int connect_timeout_ms;
+
+    /* The session's network where its route is not direct: the core's
+       connections are then dialled through it (`realvnc_net.h` in this
+       module's C says how), each within `connect_timeout_ms`, RealVNC's UDP
+       transport included where the route carries datagrams (where it does
+       not, the core falls back to TCP at once). The session owns it from
+       `create` on, as the other
+       C backends' configs say of theirs, and releases it on every path.
+       NULL for a direct route, where the core dials the server itself. */
+    const vento_net *net;
+    /* What carries `net` (`Network::tunnel`), which tells two routes apart:
+       a session to a server another session is connected to on a route
+       with another `tunnel` (or none: direct) is refused, since the core's
+       connections to one server cannot be told apart. NULL with `net`
+       NULL. */
+    const char *tunnel;
+
+    /* For tests (the Linux client's debug builds set it from an environment
+       variable): act as if the core's socket calls could not be hooked, for
+       this session and every later one in the process, so that a session
+       with `net` refuses to start instead of dialling directly. */
+    bool test_unhooked;
 } vento_realvnc_config;
 
 /* Fills in RealVncProvider's defaults, which `createSession` sees on the

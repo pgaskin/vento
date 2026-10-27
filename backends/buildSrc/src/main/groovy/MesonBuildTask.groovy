@@ -76,7 +76,7 @@ abstract class MesonBuildTask extends DefaultTask {
     abstract Property<Boolean> getStrictWarnings()
 
     /** The {@code crate_library_dir} option: where cargo-ndk left the
-     * backend's crate as {@code <abi>/lib<crate>.a}; none for RealVNC. */
+     * backend's crate as {@code <abi>/lib<crate>.a}. */
     @InputDirectory
     @PathSensitive(PathSensitivity.RELATIVE)
     @Optional

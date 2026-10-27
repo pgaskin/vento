@@ -6,14 +6,15 @@
 # The client's build compiles it with Meson along with the other C backends,
 # and only under clang.
 #
-# For that reason it is loaded rather than linked (`src/lib.rs`): whether the
+# For that reason it is loaded rather than linked (`src/linux.rs`): whether the
 # library exists is known only after the client's build script has run Meson,
 # too late to be a feature of this crate. This crate always builds, and opens
 # `libvento_realvnc.so` when a session needs it, or reports why it cannot.
 #
-# Used only by the Linux client. The phone's RealVNC backend is the module's
-# Java over the viewer's own JNI, in the add-on, with no Rust in it; on any
-# target but Linux this crate is empty, and no Gradle build uses it.
+# The phone's RealVNC backend is the module's Java over the viewer's own JNI,
+# in the add-on. There this crate is only the session's network for the
+# module's native library, which links it as a static library
+# (`src/android.rs`); on any other target it is empty.
 [package]
 name = "remotedesktop-realvnc"
 version.workspace = true
@@ -32,6 +33,13 @@ remotedesktop-api = { workspace = true, features = ["c"] }
 # for dlopen, dlsym and errors naming the failed call. Already in the
 # dependency graph through bindgen's libclang.
 libloading = "0.8"
+
+# The phone's side: the session's network for the module's native library,
+# which links this crate as a static library (`android.rs`).
+[target.'cfg(target_os = "android")'.dependencies]
+remotedesktop-api = { workspace = true, features = ["c"] }
+remotedesktop-runtime.workspace = true
+remotedesktop-platform-android.workspace = true
 
 [build-dependencies]
 # Generates the bindings for `vento/realvnc.h` (build.rs) instead of

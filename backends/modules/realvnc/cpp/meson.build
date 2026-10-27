@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # The RealVNC backend's native code. On Android, libremotedesktop_realvnc.so
-# is realvnc_traffic.c alone, the estimator read: it links against nothing,
-# since the viewer core is already in the process and the read goes through a
-# pointer from the core's own Java. It ships in the RealVNC add-on. On Linux,
+# is the estimator read (realvnc_traffic.c) and the hooks that put the
+# session's network under the core's connections (realvnc_net.c,
+# realvnc_got.c). It links against nothing of the core's: the viewer core is
+# already in the process, the read goes through a pointer from the core's own
+# Java, and the hooks find the core through the dynamic linker. It ships in
+# the RealVNC add-on. On Linux,
 # libvento_realvnc.so is the session in realvnc_session.cxx over the hosting
 # layer in host/, which runs the core's Android build in a glibc process
 # (backends/platform/linux/ports/realvnc-host), with a probe and the tests.
@@ -12,8 +15,19 @@
 # RealVNC's to build.
 
 if android
-  shared_library('remotedesktop_realvnc', 'realvnc_traffic.c',
-    c_args: warning_args)
+  # The session's network the hooks dial through is this module's crate as a
+  # static library (nativeLibrary in backends/build.gradle). Only the JNI
+  # entry points are exported (exports.map); the NDK libraries the crate's
+  # archive brings that the library does not use are dropped.
+  shared_library('remotedesktop_realvnc', 'realvnc_traffic.c', 'realvnc_net.c', 'realvnc_got.c',
+    android_log_c,
+    include_directories: vento_inc,
+    c_args: warning_args,
+    link_args: ['-Wl,--version-script=' + meson.current_source_dir() / 'exports.map',
+                '-Wl,--gc-sections', '-Wl,--as-needed'],
+    link_depends: files('exports.map'),
+    dependencies: [cc.find_library('remotedesktop_realvnc', dirs: crate_library_dir, static: true)]
+                  + backend_deps)
 else
   # The pins of the core build the declarations were read from, from the one
   # place they are stated: Library.java. The session refuses any other build.
@@ -40,7 +54,7 @@ else
   realvnc_inc = [vento_inc, include_directories('.', 'include', 'host')]
   # Linked without -Bsymbolic: the client opens this library in the global
   # scope, for the core it loads.
-  realvnc_lib = shared_library('vento_realvnc', 'realvnc_session.cxx', 'host/DesktopCore.cxx',
+  realvnc_lib = shared_library('vento_realvnc', 'realvnc_session.cxx', 'realvnc_net.c', 'host/DesktopCore.cxx',
     'host/Loader.cxx', 'host/Looper.cxx', 'host/Classes.cxx', 'host/Files.cxx', realvnc_pins_h,
     linux_log_c,
     include_directories: realvnc_inc,
@@ -59,5 +73,12 @@ else
       include_directories: include_directories('host'),
       cpp_args: warning_args,
       dependencies: libc_shim_dep))
+    # The hooks under the core's connections (realvnc_net.c), driven as the
+    # core calls them, over a fake network.
+    test('vento_realvnc_net_test', executable('vento_realvnc_net_test', 'realvnc_net_test.c',
+      'realvnc_net.c',
+      include_directories: [vento_inc, include_directories('.')],
+      c_args: warning_args,
+      dependencies: threads_dep))
   endif
 endif

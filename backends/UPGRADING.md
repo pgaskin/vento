@@ -239,8 +239,9 @@ calls fails the link, and one that nothing calls shows only in the diff.
   functions with `api::call!`, which is the extern declaration on the phone;
   a function added to `vento/<name>.h` is one more the table requires, so a
   library without it is "not available". RealVNC's crate is the Linux
-  client's alone (the phone's RealVNC backend is its Java over the viewer's
-  JNI), and its library is built only under clang. An upstream
+  client's backend (the phone's RealVNC backend is its Java over the viewer's
+  JNI; on the phone the crate is only the session's network, linked into the
+  module's native library), and its library is built only under clang. An upstream
   change reaches the session file;
   the crate changes only when the config does, and so does `<name>_probe.c`,
   the host probe's `main` beside them. The module's

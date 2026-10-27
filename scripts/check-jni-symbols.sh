@@ -12,8 +12,9 @@
 # question:
 #
 #   exported    by mangled name, `Java_<class>_<method>`: RealVNC's traffic
-#               counter, the one native left outside the generic layer. Every
-#               native the class declares must be a dynamic symbol.
+#               counter and its network hooks, the natives left outside the
+#               generic layer. Every native the class declares must be a
+#               dynamic symbol.
 #   registered  by `RegisterNatives` from the library's `JNI_OnLoad`: every
 #               other backend, which is one JNI layer (backends/platform/android)
 #               registered on each module's generated natives class: a cdylib
@@ -58,6 +59,7 @@ MODULES=(
     "ironrdp:net/pgaskin/remotedesktop/backend/ironrdp/IronRdpNatives:remotedesktop_ironrdp:cargo:registered"
     "freerdp:net/pgaskin/remotedesktop/backend/freerdp/FreeRdpNatives:remotedesktop_freerdp:meson:registered"
     "realvnc:net/pgaskin/remotedesktop/backend/realvnc/RealVncTraffic:remotedesktop_realvnc:meson:exported"
+    "realvnc:net/pgaskin/remotedesktop/backend/realvnc/RealVncNet:remotedesktop_realvnc:meson:exported"
     "rustdesk:net/pgaskin/remotedesktop/backend/rustdesk/RustDeskNatives:remotedesktop_rustdesk:cargo:registered"
     "spice:net/pgaskin/remotedesktop/backend/spice/SpiceNatives:remotedesktop_spice:cargo:registered"
 )

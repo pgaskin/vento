@@ -90,9 +90,12 @@ pub struct Connect<'a> {
     /// this session only. With `None`, the sound is dropped.
     pub audio: Option<Arc<dyn Outputs>>,
     /// Where the session's connections go: [`Direct`](runtime::net::Direct)
-    /// for this end's own TCP connections, as every client has. The Rust
-    /// backends dial through it, and the C backends through its table in
-    /// `vento/net.h` (`api::c::net`). RealVNC's core dials for itself.
+    /// for this end's own TCP connections, as every client has by default.
+    /// The Rust backends dial through it, and the C backends through its
+    /// table in `vento/net.h` (`api::c::net`). RealVNC's core dials for
+    /// itself: on a network that is not direct its socket calls are hooked
+    /// to go through this one (`realvnc_net.h` in its module), and on a
+    /// direct one it dials as it always has.
     pub network: Arc<dyn Network>,
 }
 

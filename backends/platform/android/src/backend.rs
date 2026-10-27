@@ -406,6 +406,29 @@ fn create<'local>(
     }
 }
 
+/// Where a session's connections go: [`Direct`](runtime::net::Direct), as on
+/// Linux, or with `force_socketpair` each connection relayed through a
+/// socketpair.
+///
+/// Direct is this platform's network too. Its sockets are bound to no
+/// network, so they go where the app's go: the default network, or the VPN
+/// where one applies to the app. Its lookup is bionic's `getaddrinfo`, which
+/// is the resolver's whole lookup (search domains, the hosts file, `.local`
+/// names over mDNS, the order of the addresses). `android_res_nquery` could
+/// be cancelled, but it sends one query for the name as given and leaves the
+/// rest to the caller; Direct already stops waiting for a lookup at a
+/// hang-up. Also the RealVNC module's, whose backend is not behind this
+/// layer.
+pub fn network(force_socketpair: bool) -> Arc<dyn runtime::net::Network> {
+    let direct = Arc::new(runtime::net::Direct);
+    if force_socketpair {
+        log::info!("connections dialled through vento are relayed through a socketpair (developer setting)");
+        Arc::new(runtime::net::Socketpair::new(direct))
+    } else {
+        direct
+    }
+}
+
 /// A `null` or empty password cancels, which ends the session: the only
 /// answer a prompt has besides a secret. The user name is what was typed,
 /// empty for none; the adapter fills it from the session's and, for RDP,

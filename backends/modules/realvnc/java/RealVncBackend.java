@@ -16,6 +16,7 @@ import com.realvnc.vncviewer.jni.ConnectionInfoBindings;
 import com.realvnc.vncviewer.jni.SessionBindings;
 
 import net.pgaskin.remotedesktop.backend.Backend;
+import net.pgaskin.remotedesktop.backend.Backends;
 import net.pgaskin.remotedesktop.backend.ConnectionFact;
 import net.pgaskin.remotedesktop.backend.KnownHosts;
 import net.pgaskin.remotedesktop.backend.Prompt;
@@ -93,6 +94,11 @@ public final class RealVncBackend implements Backend,
 
     private volatile boolean dead; // destroy() has run: every native call is a no-op after
 
+    /** {@link RealVncNet#attach}'s, set and detached on the session thread. */
+    private volatile int route;
+    /** What carries the core's connections, for the Tunnel row; null where they are its own. */
+    private volatile String tunnel;
+
     /** {@link #connect} has started the core, so the session thread exists. */
     private volatile boolean coreStarted;
 
@@ -126,6 +132,8 @@ public final class RealVncBackend implements Backend,
     private static RealVncBackend connecting;
     private static final java.util.ArrayDeque<RealVncBackend> connectWaiters = new java.util.ArrayDeque<>();
     private boolean waitingToConnect;
+    /** Read at {@link #connect}, as the other backends read it when they start. */
+    private boolean forceSocketpair;
 
     /**
      * Prompts on screen. The timeout is for a session that has gone silent, and
@@ -166,6 +174,7 @@ public final class RealVncBackend implements Backend,
     public RealVncBackend(Context context, String address, String userName, String password,
                           Map<String, String> extraOptions) {
         this.context = context.getApplicationContext();
+        RealVncNet.context(this.context);
         this.address = address;
         // Empty is not a password: the core authenticates with whatever it is
         // given, so "" fails the connection outright instead of asking. Null
@@ -231,6 +240,8 @@ public final class RealVncBackend implements Backend,
             return;
         }
         state = State.CONNECTING;
+        // Read now, as the other backends read it when they start.
+        forceSocketpair = Backends.forceSocketpair();
         RealVncCore.start(context);
         coreStarted = true;
         onMain(() -> fireState(State.CONNECTING, connectingTo()));
@@ -253,17 +264,35 @@ public final class RealVncBackend implements Backend,
 
     /**
      * The connect itself, on the session thread, once this session holds the
-     * gate (see {@link #connecting}): the timeout armed and
-     * {@code createSession} called.
+     * gate (see {@link #connecting}): the timeout armed, the route attached,
+     * and {@code createSession} called.
      */
     private void beginConnect() {
         RealVncCore.postDelayed(connectTimeout, CONNECT_TIMEOUT_MS);
+        // Before createSession, after which the core's first connection
+        // follows at once.
+        final Map<String, String> sessionOptions = new HashMap<>(options);
+        final boolean udp = Boolean.parseBoolean(sessionOptions.getOrDefault("EnableUdpRfb", "true"));
+        try {
+            route = RealVncNet.attach(address, (int) CONNECT_TIMEOUT_MS, forceSocketpair);
+        } catch (java.io.IOException e) {
+            // Never dialled directly, or for another session, instead.
+            Log.w(TAG, "not started: " + e.getMessage());
+            RealVncCore.cancel(connectTimeout);
+            closed("RealVNC cannot connect through this connection's tunnel: " + e.getMessage());
+            return;
+        }
+        if (route > 0) {
+            tunnel = RealVncNet.tunnel(forceSocketpair);
+            Log.i(TAG, "the core's connections go through the session's network"
+                    + (udp ? "" : " (UDP off)"));
+        }
         final long t0 = System.nanoTime();
         RealVncPrompts.connecting(this);
         SessionBindings.Session s = null;
         try {
             s = SessionBindings.createSession(this, this, address, password,
-                    new HashMap<>(options));
+                    sessionOptions);
         } catch (Throwable t) {
             Log.e(TAG, "createSession failed", t);
         } finally {
@@ -355,6 +384,10 @@ public final class RealVncBackend implements Backend,
      */
     @Override
     public void disconnect() {
+        // First, from this thread: a dial through the network in progress
+        // ends at once, its connect left in progress, as the core leaves a
+        // direct one it closes.
+        RealVncNet.cancel(route);
         if (session != null) {
             reap(true);
         } else {
@@ -365,7 +398,17 @@ public final class RealVncBackend implements Backend,
     @Override
     public void destroy() {
         dead = true;
+        RealVncNet.cancel(route);
         reap(true);
+        // After the close reap posted, on the same thread, where the route
+        // is attached: posted whenever connect() has started the core, since
+        // its attach may still be queued.
+        if (coreStarted) {
+            RealVncCore.post(() -> {
+                RealVncNet.detach(route);
+                route = 0;
+            });
+        }
         // The app destroys a session without disconnecting it first, and
         // nothing calls closed() for one waiting to connect (it has no core
         // session to close), so it leaves the connect gate here, as a timed
@@ -498,7 +541,7 @@ public final class RealVncBackend implements Backend,
                 facts.add(ConnectionFact.of(ConnectionFact.Field.PROTOCOL, "Protocol",
                         ConnectionInfoBindings.getProtoVersion(s)));
                 facts.add(ConnectionFact.of(ConnectionFact.Field.CONNECTION, "Connection",
-                        ConnectionInfoBindings.getConnectionType(s)));
+                        connectionRow(ConnectionInfoBindings.getConnectionType(s), route > 0)));
                 facts.add(ConnectionFact.of(ConnectionFact.Field.SECURITY, "Security",
                         ConnectionInfoBindings.getSecurityDesc(s)));
                 facts.add(ConnectionFact.of(ConnectionFact.Field.ENCODING, "Encoding",
@@ -516,9 +559,28 @@ public final class RealVncBackend implements Backend,
                         "Server pixels", ConnectionInfoBindings.getServerPixelFormat(s)));
                 facts.add(ConnectionFact.diagnostic(ConnectionFact.Field.VIEWER_PIXELS,
                         "Viewer pixels", ConnectionInfoBindings.getViewerPixelFormat(s)));
+                // Last, as the native layer adds it for the other backends.
+                final String carried = tunnel;
+                if (carried != null) {
+                    facts.add(ConnectionFact.of(ConnectionFact.Field.TUNNEL, "Tunnel", carried));
+                }
             }
             main.post(() -> callback.accept(facts));
         });
+    }
+
+    /**
+     * The core's "Connection" row for a session whose connections go through
+     * a network that is not direct: the core reports its own socket ("Direct
+     * TCP"), which the network carries, so "Direct" is dropped and the Tunnel
+     * row says what carries it. As {@code connectionRow} in
+     * {@code realvnc_session.cxx}.
+     */
+    static String connectionRow(String core, boolean relayed) {
+        if (!relayed || core == null || !core.startsWith("Direct ")) {
+            return core;
+        }
+        return core.substring("Direct ".length()) + " (tunnel)";
     }
 
     @Override
@@ -1029,6 +1091,8 @@ public final class RealVncBackend implements Backend,
         // The connect is over (it may never have begun, or ended before
         // connSuccess): release the gate and start the next waiter.
         finishConnect();
+        // Nothing the core dials from here on is this session's.
+        RealVncNet.closed(route);
         onMain(() -> {
             if (state == State.CLOSED) {
                 return;
