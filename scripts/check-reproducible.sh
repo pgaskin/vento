@@ -16,7 +16,7 @@
 # together and are all built from these sources.
 #
 # Neither build is this working tree's, which is deliberate: a development tree
-# has a warm CMake cache, and a cache that has outlived the option it holds
+# has configured Meson trees, and a tree that has outlived an option it holds
 # produces a library the current sources would not. Both copies carry the whole
 # working tree less every build directory, so each compiles the native halves
 # and the crates from scratch.
@@ -64,7 +64,6 @@ for dir in "$a" "$b"; do
         --exclude='/target/' \
         --exclude='/linux/target/' \
         --exclude='build/' \
-        --exclude='.cxx/' \
         --exclude='.gradle/' \
         --exclude='/notes/sessions/' \
         "$here/" "$dir/"

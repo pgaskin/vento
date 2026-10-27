@@ -61,7 +61,8 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
           cache: gradle
-      - run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses; ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager 'cmake;3.30.5' 'ndk;28.2.13676358' 'build-tools;36.0.0'
+      - run: yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses; ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager 'ndk;28.2.13676358' 'build-tools;36.0.0'
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build # for Meson, which Gradle fetches
       - run: ./patch.sh -n
       - run: ./gradlew :backends:fetchCryptoSources
       - run: rustup toolchain install

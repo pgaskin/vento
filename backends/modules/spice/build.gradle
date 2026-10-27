@@ -44,8 +44,8 @@ dependencies {
 }
 
 // The crate builds from a patched submodule, so it runs the same check as the
-// CMake modules: no build from sources that look pristine but are not, or from
-// an uninitialised submodule.
+// C modules: no build from sources that look pristine but are not, or from an
+// uninitialised submodule.
 def patchCheck = tasks.register('patchCheck', PatchCheckTask) {
     patchScript.set(rootProject.file('patch.sh'))
 }

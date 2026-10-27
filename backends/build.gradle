@@ -78,6 +78,11 @@ ext {
     // rather than from the environment. r27 and later align to 16 KB by default.
     nativeNdkVersion = '28.2.13676358'
     nativeAbis = ['arm64-v8a', 'x86_64']
+    // The Meson the C backends are built with, as its release tarball: the
+    // version is an input of the libraries' bytes, so it is pinned exactly.
+    // The project's meson.build sets the oldest version it accepts.
+    mesonVersion = '1.11.2'
+    mesonSha256 = '698feae069cef3ecd4d7aaf281d7df359bdfcf555a9a1564383d3b913fa8a736'
 }
 
 /*
@@ -129,37 +134,77 @@ ext.generateNatives = { Project module, variant, String className, String librar
 }
 
 /*
- * A C backend's Rust half, for its CMake to link: the module's crate (the
- * backend as an `api::Backend` over the C library's vtable, and the JNI layer
- * in `platform/android` registered on the module's natives class) as a static
- * library per ABI, under the returned directory, which the module passes to
- * CMake as `VENTO_RUST_LIBRARY_DIR` (`platform/android/cmake/vento_android.cmake`
- * links it).
- *
- * One task for every variant, since each builds the crate `--release` the same
- * way, and it runs before any CMake build, which links its output; CMake only
- * names the file, so configuring does not need it.
+ * Meson, unpacked from its pinned release tarball into the Gradle user home,
+ * where every checkout shares it. A release runs from its own directory
+ * (meson.py) with the python3 on the PATH.
  */
-ext.rustStaticLibrary = { Project module, String crate ->
-    final out = module.layout.buildDirectory.dir('generated/rustStaticLibs')
-    final task = module.tasks.register('cargoBuildStaticNative', CargoBuildTask) {
-        workspaceDir.set(cargoWorkspace)
-        cargoPackage.set(crate)
-        crateType.set('staticlib')
-        ndkDirectory.set(module.androidComponents.sdkComponents.ndkDirectory)
-        rustToolchainFile.set(cargoRustToolchain)
-        cargoNdkVersion.set(project.cargoNdkVersion)
-        abiFilters.set(nativeAbis)
-        minSdkVersion.set(module.provider {
-            final v = module.android.defaultConfig.minSdk
-            (v instanceof com.android.build.api.variant.AndroidVersion) ? v.apiLevel : v
-        })
-        outputDir.set(out)
+final mesonHome = new File(gradle.gradleUserHomeDir, "vento/meson-${mesonVersion}")
+final fetchMeson = tasks.register('fetchMeson', DownloadSourceTarball) {
+    group = 'build setup'
+    description = "Unpacks Meson ${mesonVersion}, which builds the C backends."
+    urls.set(["https://github.com/mesonbuild/meson/releases/download/${mesonVersion}/meson-${mesonVersion}.tar.gz".toString()])
+    sha256.set(mesonSha256)
+    stripComponents.set(1)
+    outputDir.set(mesonHome)
+}
+
+/*
+ * A C backend's native library, libremotedesktop_<backend>.so, which the
+ * Meson build at the repository root makes for every ABI of each variant
+ * (MesonBuildTask) and the module packages as its jniLibs. `crate` is the
+ * module's crate (the backend as an `api::Backend` over the C library's
+ * vtable, and the JNI layer in `platform/android` registered on the module's
+ * natives class), which cargo-ndk builds first as a static library per ABI
+ * for the library to link in; null for RealVNC's, which has no crate.
+ *
+ * The crate is built once for every variant, since each builds it
+ * `--release` the same way.
+ */
+ext.nativeLibrary = { Project module, String backendName, String crate ->
+    final ndk = module.androidComponents.sdkComponents.ndkDirectory
+    final api = module.provider { minSdk(module) }
+    final abis = nativeAbis
+    final cargoNdk = cargoNdkVersion
+    final strict = project.hasProperty('strictWarnings')
+    def crateTask = null
+    if (crate != null) {
+        crateTask = module.tasks.register('cargoBuildStaticNative', CargoBuildTask) { task ->
+            task.workspaceDir.set(cargoWorkspace)
+            task.cargoPackage.set(crate)
+            task.crateType.set('staticlib')
+            task.ndkDirectory.set(ndk)
+            task.rustToolchainFile.set(cargoRustToolchain)
+            task.cargoNdkVersion.set(cargoNdk)
+            task.abiFilters.set(abis)
+            task.minSdkVersion.set(api)
+            task.outputDir.set(module.layout.buildDirectory.dir('generated/rustStaticLibs'))
+        }
     }
-    module.tasks.matching { it.name.startsWith('buildCMake') }.configureEach {
-        dependsOn task
+    module.androidComponents.onVariants(module.androidComponents.selector().all()) { variant ->
+        final cap = variant.name.substring(0, 1).toUpperCase(Locale.ROOT) + variant.name.substring(1)
+        final mesonTask = module.tasks.register("mesonBuild${cap}", MesonBuildTask) { task ->
+            task.dependsOn(fetchMeson)
+            task.backend.set(backendName)
+            task.abiFilters.set(abis)
+            task.minSdkVersion.set(api)
+            task.variant.set(variant.buildType == 'debug' ? 'debug' : 'release')
+            task.strictWarnings.set(strict)
+            if (crateTask != null) {
+                task.crateLibraryDir.set(crateTask.flatMap { it.outputDir })
+            }
+            task.mesonDir.set(mesonHome)
+            task.ndkDirectory.set(ndk)
+            task.sourceDir.set(rootProject.layout.projectDirectory)
+            task.buildDir.set(module.layout.buildDirectory.dir("meson/${variant.name}"))
+            task.outputDir.set(module.layout.buildDirectory.dir("generated/mesonLibs/${variant.name}"))
+        }
+        variant.sources.jniLibs.addGeneratedSourceDirectory(mesonTask) { it.outputDir }
     }
-    return out.get().asFile.absolutePath
+}
+
+static int minSdk(Project module) {
+    final v = module.android.defaultConfig.minSdk
+    return (v instanceof com.android.build.api.variant.AndroidVersion) ? v.apiLevel : v
 }
 
 /*
@@ -170,10 +215,10 @@ ext.rustStaticLibrary = { Project module, String crate ->
  * hash rather than by a gitlink, is the upstream source here.
  *
  * Their versions, hashes and mirrors are in `crypto-sources.txt`, which the
- * host CMake build reads too: a host build unpacks a missing tree itself, as
- * the tasks here do. The Android build fetches nothing;
- * `./gradlew fetchCryptoSources` does, and its CMake fails with a message
- * when a tree is missing.
+ * Linux Meson build reads too (`fetch-crypto-sources.py`): a Linux build
+ * unpacks a missing tree itself, as the tasks here do. The Android build
+ * fetches neither; `./gradlew fetchCryptoSources` does, and its Meson
+ * configure fails with a message when a tree is missing.
  */
 ext.cryptoSources = [:]
 file('crypto-sources.txt').eachLine { line ->

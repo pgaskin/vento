@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Patrick Gaskin
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+option('backends', type: 'array',
+  choices: ['libvnc', 'tigervnc', 'freerdp', 'realvnc'],
+  value: ['libvnc', 'tigervnc', 'freerdp', 'realvnc'],
+  description: 'The C backends to build. On Linux, RealVNC is left out with a message unless the compilers are clang.')
+option('variant', type: 'combo', choices: ['release', 'debug'], value: 'release',
+  description: 'The Gradle variant: debug turns on FreeRDP\'s verbose asserts and the NDK\'s debug-info flags')
+option('strict_warnings', type: 'boolean', value: false,
+  description: 'Fail the build on a warning in our own sources (scripts/check-warnings.sh)')
+option('probes', type: 'boolean', value: false,
+  description: 'Linux: build a probe in front of each backend, and the tests meson test runs')
+option('ffmpeg_prefix', type: 'string', value: '',
+  description: 'Linux: the static FFmpeg built by backends/platform/linux/build.rs; empty for the system\'s libswscale and libavutil')
+option('crate_library_dir', type: 'string', value: '',
+  description: 'Android: the directory of <abi>/lib<crate>.a files cargo-ndk made, each C backend\'s Rust crate as a static library (Gradle passes it)')
+option('realvnc_trace', type: 'boolean', value: false,
+  description: 'Linux: trace every JNI call the RealVNC core makes (jnivm\'s JNI_TRACE)')

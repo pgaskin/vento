@@ -104,7 +104,7 @@ android {
 // A table rather than a dependency list, because the licence page needs the
 // second column: the Cargo workspace holds a crate per protocol, including the
 // ones that ship in an add-on, and the page is about this APK. A C backend has
-// a crate too (its adapter, a static library its CMake links into the
+// a crate too (its adapter, a static library the Meson build links into the
 // backend's own `.so`), and the C library itself is listed under
 // `otherComponents`.
 final backendModules = [
@@ -172,7 +172,7 @@ androidComponents {
                 ]]
             })
             // The Cargo lock covers every Rust protocol module and each C
-            // module's adapter, but not the C libraries built by CMake or
+            // module's adapter, but not the C libraries built by Meson or
             // anything in `dependencies` above, so those are listed here.
             otherComponents.set(provider {
                 final Closure<String> licenceText = { String path -> GenerateLicensesTask.licenceText(project, path) }
