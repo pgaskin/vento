@@ -31,6 +31,7 @@ use std::thread::{self, ThreadId};
 pub mod audio;
 pub mod ffi;
 pub mod library;
+pub mod net;
 pub mod video;
 
 // The clipboard limit `vento/text.h` gives the C session files must equal

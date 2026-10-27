@@ -15,6 +15,7 @@
 
 #include <vento/audio.h>
 #include <vento/backend.h>
+#include <vento/net.h>
 #include <vento/video.h>
 
 #ifdef __cplusplus
@@ -45,7 +46,13 @@ typedef struct vento_tigervnc_config {
        even if this call fails. NULL for none, and the server's sound is then
        never asked for whatever `audio` says. */
     const vento_audio *audio_output;
-    int connect_timeout_ms;  /* 0 or less for no deadline */
+    int connect_timeout_ms;  /* 0 or less for the network's default */
+    /* What the connection is made through: the session's network
+       (vento/net.h), copied, and owned by the session from here on, released
+       when it ends, even if this call fails. NULL to have the library dial
+       for itself, with no deadline and not ended by a disconnect (the
+       probe). */
+    const vento_net *net;
 } vento_tigervnc_config;
 
 /* "TigerVNC x.y.z": the one call that proves the whole path. */

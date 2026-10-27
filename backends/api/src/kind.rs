@@ -91,8 +91,8 @@ pub struct Connect<'a> {
     pub audio: Option<Arc<dyn Outputs>>,
     /// Where the session's connections go: [`Direct`](runtime::net::Direct)
     /// for this end's own TCP connections, as every client has. The Rust
-    /// backends dial through it; the C libraries and RealVNC's core dial for
-    /// themselves.
+    /// backends dial through it, and the C backends through its table in
+    /// `vento/net.h` (`api::c::net`). RealVNC's core dials for itself.
     pub network: Arc<dyn Network>,
 }
 

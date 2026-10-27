@@ -544,9 +544,18 @@ One commit per upstream, after review, by the lead:
   keeps `select()`); the shim's loop also polls for `POLLOUT` while the
   socket's stream holds unsent output.
   Builds `common/` only, with `config.h` written by its port.
-- **freerdp** 3.32.2; one patch, `0001`, codec/h264: `WITH_H264_EXTERNAL`,
+- **freerdp** 3.32.2; two patches. `0001`, codec/h264: `WITH_H264_EXTERNAL`,
   a slot for an application's subsystem, `g_Subsystem_external`, tried
-  first, and `WITH_GFX_H264` following it. The second, upstream's
+  first, and `WITH_GFX_H264` following it. `0002`, core/connection: with a
+  `TCPConnect` other than the library's own (the module's, which dials
+  through the session's network), a server redirection's target names are
+  not looked up with the local resolver before the reconnect; the first in
+  the preferred order is taken as it is, and the module's connect falls
+  back to the target's net addresses when the network cannot resolve it.
+  Check that `rdp_client_redirect` still chooses the target in
+  `connection.c` and nothing else in a client session resolves a name
+  outside `TCPConnect` (the RPC gateway's lookup is unreachable while the
+  gateway is never enabled). An earlier patch, upstream's
   FreeRDP/FreeRDP@190167212b9af27d375b09e75a8e3e41aa7d0284 cherry-picked
   for 3.32.0's channel reassembly (a static channel's message of more than
   one chunk whose length is not a multiple of 128, such as a far-end

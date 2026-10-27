@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! With the `c` feature, generates Rust bindings for `src/c/ffi.rs` from
-//! `vento/backend.h`, `vento/video.h`, `vento/audio.h` and `vento/text.h`
+//! `vento/backend.h`, `vento/video.h`, `vento/audio.h`, `vento/net.h` and
+//! `vento/text.h`
 //! (only its constants: its functions are inline and the Rust side has its
 //! own) in this crate's `include/`.
 //!
@@ -35,6 +36,7 @@ fn generate_bindings() {
             "#include <vento/backend.h>\n\
              #include <vento/video.h>\n\
              #include <vento/audio.h>\n\
+             #include <vento/net.h>\n\
              #include <vento/text.h>\n",
         )
         .clang_arg(format!("-I{}", include.display()))

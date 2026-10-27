@@ -51,3 +51,8 @@ bindgen = { workspace = true, optional = true }
 # For the options cases in `tests/options.json` (tests/vectors.rs),
 # which the Java tests read too. Already in the graph through IronRDP (picky).
 serde_json = "1"
+# For `c::net`'s tests, which check the flags of the fds it hands out.
+libc = "0.2"
+# For `c::net`'s tests, which reset a connection (SO_LINGER 0). Already in the
+# graph through `runtime`.
+socket2 = "0.6"

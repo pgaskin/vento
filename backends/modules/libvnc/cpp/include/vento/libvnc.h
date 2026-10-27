@@ -11,6 +11,7 @@
 #include <stdbool.h>
 
 #include <vento/backend.h>
+#include <vento/net.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,6 +34,11 @@ typedef struct vento_libvnc_config {
     int quality_level;       /* 0–9 for Tight's JPEG, or -1 for lossless */
     int color_level;         /* 0 for 32-bit, 1 for 64 colours, 2 for 8 */
     int connect_timeout_ms;  /* 0 or less for the library's default */
+    /* What the connection is made through: the session's network
+       (vento/net.h), copied, and owned by the session from here on, released
+       when it ends, even if this call fails. NULL to have the library dial
+       for itself, which a disconnect does not interrupt (the probe). */
+    const vento_net *net;
 } vento_libvnc_config;
 
 /* "LibVNCServer x.y.z". Calling it also checks that the library loads and

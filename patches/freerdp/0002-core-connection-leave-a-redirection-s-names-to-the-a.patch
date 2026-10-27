@@ -1,0 +1,82 @@
+From 5537e6f33bcce821efee50706d60dac84126077b Mon Sep 17 00:00:00 2001
+From: "Claude Opus 5.5" <noreply@anthropic.com>
+Date: Mon, 26 Oct 2026 12:18:50 -0400
+Subject: [PATCH 2/2] core,connection: leave a redirection's names to the
+ application's connect
+
+When a server redirects the client, the target is chosen by looking each
+of its names up with the local resolver first (the FQDN, then the NetBIOS
+name), and a name that does not resolve is passed over. An application
+that replaces TCPConnect resolves the names it is given itself, possibly
+somewhere other than on this machine (a tunnel that resolves at its far
+end), so the local lookup sends the server's internal names to a
+resolver the connection was meant to avoid, and its answer can pick the
+wrong target.
+
+With a TCPConnect other than the library's own, no name is looked up
+here: the first one in the preferred order is taken as it is, and the
+application's connect can fall back to the target's net addresses when
+it cannot resolve it.
+
+diff --git a/libfreerdp/core/connection.c b/libfreerdp/core/connection.c
+index 5388c6311..b080301ad 100644
+--- a/libfreerdp/core/connection.c
++++ b/libfreerdp/core/connection.c
+@@ -603,11 +603,11 @@ static BOOL rdp_client_redirect_resolvable(const char* host)
+ 	return TRUE;
+ }
+ 
+-static BOOL rdp_client_redirect_try_fqdn(rdpSettings* settings)
++static BOOL rdp_client_redirect_try_fqdn(rdpSettings* settings, BOOL resolve)
+ {
+ 	if (settings->RedirectionFlags & LB_TARGET_FQDN)
+ 	{
+-		if (settings->GatewayEnabled ||
++		if (settings->GatewayEnabled || !resolve ||
+ 		    rdp_client_redirect_resolvable(settings->RedirectionTargetFQDN))
+ 		{
+ 			return (freerdp_settings_set_string(settings, FreeRDP_ServerHostname,
+@@ -629,11 +629,11 @@ static BOOL rdp_client_redirect_try_ip(rdpSettings* settings)
+ 	return FALSE;
+ }
+ 
+-static BOOL rdp_client_redirect_try_netbios(rdpSettings* settings)
++static BOOL rdp_client_redirect_try_netbios(rdpSettings* settings, BOOL resolve)
+ {
+ 	if (settings->RedirectionFlags & LB_TARGET_NETBIOS_NAME)
+ 	{
+-		if (settings->GatewayEnabled ||
++		if (settings->GatewayEnabled || !resolve ||
+ 		    rdp_client_redirect_resolvable(settings->RedirectionTargetNetBiosName))
+ 		{
+ 			return (freerdp_settings_set_string(settings, FreeRDP_ServerHostname,
+@@ -669,6 +669,13 @@ BOOL rdp_client_redirect(rdpRdp* rdp)
+ 	{
+ 		BOOL haveRedirectAddress = FALSE;
+ 		UINT32 redirectionMask = settings->RedirectionPreferType;
++		/* An application with a TCPConnect of its own resolves the names it
++		 * is given there (possibly somewhere other than on this machine, as a
++		 * tunnel does), so a name is not looked up here first: the first one
++		 * in the preferred order is taken as it is, and the application's
++		 * connect can fall back to the target's net addresses. */
++		const rdpTransportIo* io = freerdp_get_io_callbacks(rdp->context);
++		const BOOL resolve = !io || io->TCPConnect == freerdp_tcp_default_connect;
+ 
+ 		do
+ 		{
+@@ -677,13 +684,13 @@ BOOL rdp_client_redirect(rdpRdp* rdp)
+ 			const BOOL tryNetbios = (redirectionMask & 0x04) == 0;
+ 
+ 			if (tryFQDN && !haveRedirectAddress)
+-				haveRedirectAddress = rdp_client_redirect_try_fqdn(settings);
++				haveRedirectAddress = rdp_client_redirect_try_fqdn(settings, resolve);
+ 
+ 			if (tryNetAddress && !haveRedirectAddress)
+ 				haveRedirectAddress = rdp_client_redirect_try_ip(settings);
+ 
+ 			if (tryNetbios && !haveRedirectAddress)
+-				haveRedirectAddress = rdp_client_redirect_try_netbios(settings);
++				haveRedirectAddress = rdp_client_redirect_try_netbios(settings, resolve);
+ 
+ 			redirectionMask >>= 3;
+ 		} while (!haveRedirectAddress && (redirectionMask != 0));

@@ -75,7 +75,7 @@ fn create(c: &Connect) -> Result<std::sync::Arc<dyn Backend>, String> {
     let user = (!c.user.is_empty()).then(|| CString::new(c.user).unwrap_or_default());
     let password = c.password.and_then(|p| CString::new(p).ok());
     let encoding = CString::new(encodings(o.get("Encoding"))).unwrap_or_default();
-    let config = ffi::vento_libvnc_config {
+    let mut config = ffi::vento_libvnc_config {
         address: address.as_ptr(),
         user_name: user.as_ref().map_or(std::ptr::null(), |u| u.as_ptr()),
         password: password.as_ref().map_or(std::ptr::null(), |p| p.as_ptr()),
@@ -86,12 +86,20 @@ fn create(c: &Connect) -> Result<std::sync::Arc<dyn Backend>, String> {
         quality_level: level(o.get("Quality")),
         color_level: colour(o.get("ColorLevel")),
         connect_timeout_ms: CONNECT_TIMEOUT_MS,
+        net: std::ptr::null(),
     };
     log::info!("connecting to {}", c.address);
     let backend = start(
         c,
         &BEHAVIOUR,
-        |callbacks| unsafe { api::call!(LIBRARY.loaded(), ffi::vento_libvnc_create(&config, callbacks)) },
+        |callbacks| {
+            // The connection is made through the session's network, passed
+            // here: the session owns it from this call and releases it when
+            // it ends (or at once, if it does not start).
+            let net = api::c::net::table(c.network.clone());
+            config.net = &net;
+            unsafe { api::call!(LIBRARY.loaded(), ffi::vento_libvnc_create(&config, callbacks)) }
+        },
         None,
     )?;
     backend.set_view_only(o.bool("ViewOnly"));

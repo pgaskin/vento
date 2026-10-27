@@ -122,6 +122,7 @@ fn create(c: &Connect) -> Result<std::sync::Arc<dyn Backend>, String> {
         connect_timeout_ms: CONNECT_TIMEOUT_MS,
         video: std::ptr::null(),
         audio: std::ptr::null(),
+        net: std::ptr::null(),
     };
     log::info!("connecting to {} ({}x{})", c.address, width, height);
     let backend = start(
@@ -142,6 +143,10 @@ fn create(c: &Connect) -> Result<std::sync::Arc<dyn Backend>, String> {
             if let Some(audio) = &audio {
                 config.audio = audio;
             }
+            // Every connection the library makes goes through the session's
+            // network, owned by the session after the call the same way.
+            let net = api::c::net::table(c.network.clone());
+            config.net = &net;
             unsafe { api::call!(LIBRARY.loaded(), ffi::vento_freerdp_create(&config, callbacks)) }
         },
         None,

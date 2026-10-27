@@ -33,7 +33,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -55,6 +54,7 @@
 #include <vento/backend.h>
 #include <vento/libvnc.h>
 #include <vento/log.h>
+#include <vento/net.h>
 #include <vento/text.h>
 
 #define TAG "LibVnc"
@@ -189,6 +189,11 @@ typedef struct {
     char *applied;
     int colorLevel;
     int connectTimeoutMs;
+    /* The session's network, which makes the connection (see `dial`); its
+       `connect` is NULL where the library dials for itself. */
+    vento_net net;
+    /* The session's connection, for `net.ended`; 0 before it is made. */
+    int connection;
 
     /* The connection's facts for op_info, under the writer lock: published
        by the protocol thread once the handshake is done (publishFacts), and
@@ -1068,116 +1073,59 @@ static void drainWake(Session *s) {
     }
 }
 
-/* Whether the session has been asked to end. */
-static int quitting(Session *s) {
-    pthread_mutex_lock(&s->lock);
-    const int quit = s->quit;
-    pthread_mutex_unlock(&s->lock);
-    return quit;
-}
-
-/* The second half of a non-blocking connect, polled together with the wake
-   pipe: a writable socket means the connect finished (`SO_ERROR` gives the
-   result), and a wake with `quit` set means the session was ended. Returns 0
-   and sets `*err` if it did not connect. */
-static int waitConnected(Session *s, int fd, int timeoutMs, int *err) {
-    struct timespec start;
-    clock_gettime(CLOCK_MONOTONIC, &start);
-    for (;;) {
-        struct timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        const long elapsed = (now.tv_sec - start.tv_sec) * 1000L + (now.tv_nsec - start.tv_nsec) / 1000000L;
-        if (elapsed >= timeoutMs) {
-            *err = ETIMEDOUT;
-            return 0;
-        }
-        struct pollfd fds[2] = {{fd, POLLOUT, 0}, {s->wake[0], POLLIN, 0}};
-        const int r = poll(fds, 2, (int) (timeoutMs - elapsed));
-        if (r < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            *err = errno;
-            return 0;
-        }
-        if (fds[1].revents) {
-            /* Any other wake is a command, and the ring is drained once the
-               session is up whether or not the pipe still has bytes. */
-            drainWake(s);
-            if (quitting(s)) {
-                *err = ECANCELED;
-                return 0;
-            }
-        }
-        if (fds[0].revents) {
-            int soError = 0;
-            socklen_t len = sizeof soError;
-            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &soError, &len) != 0) {
-                soError = errno;
-            }
-            *err = soError;
-            return soError == 0;
-        }
-    }
-}
-
-/* libvncclient's dial, done here so that a disconnect can end it. The
-   library's (`ConnectClientToTcpAddr6WithTimeout`) keeps its socket private
-   and waits out `connectTimeout` in its own `select`, so a session ended
-   while dialling an unreachable address waited for the full timeout, and so
-   did `op_destroy`'s join. Otherwise this is the same dial (every address in
-   turn, each with the whole timeout, the socket left non-blocking with
-   `TCP_NODELAY` as the library leaves it), with the wake pipe polled
-   alongside the socket. */
+/* The connection, made by the session's network (vento/net.h) rather than by
+   the library, whose dial (`ConnectClientToTcpAddr6WithTimeout`) keeps its
+   socket private and waits out `connectTimeout` in its own `select`, so a
+   session ended while dialling an unreachable address waited for the full
+   timeout, and so did `op_destroy`'s join. The network tries every address in
+   turn, each with the whole timeout, and `stop` cancels it. The socket is left
+   non-blocking with `TCP_NODELAY`, as the library leaves its own; on a
+   socketpair (a tunnel) there is no such option to set. */
 static rfbSocket dial(Session *s, const char *host, int port, int timeoutMs) {
-    char service[8];
-    snprintf(service, sizeof service, "%d", port);
-    struct addrinfo hints;
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    struct addrinfo *res = NULL;
-    const int gai = getaddrinfo(host[0] ? host : "localhost", service, &hints, &res);
-    if (gai != 0) {
-        logErr("Could not find %s: %s", host, gai_strerror(gai));
-        return RFB_INVALID_SOCKET;
-    }
-    int err = EHOSTUNREACH;
-    rfbSocket sock = RFB_INVALID_SOCKET;
-    for (struct addrinfo *ai = res; ai && sock == RFB_INVALID_SOCKET && err != ECANCELED; ai = ai->ai_next) {
-        const int fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-        if (fd < 0) {
-            err = errno;
-            continue;
-        }
-        const int fl = fcntl(fd, F_GETFL, 0);
-        if (fl < 0 || fcntl(fd, F_SETFL, fl | O_NONBLOCK) < 0) {
-            err = errno;
-            close(fd);
-            continue;
-        }
-        if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0) {
-            sock = fd;
-        } else if (errno != EINPROGRESS) {
-            err = errno;
-            close(fd);
-        } else if (waitConnected(s, fd, timeoutMs, &err)) {
-            sock = fd;
-        } else {
-            close(fd);
-        }
-    }
-    freeaddrinfo(res);
-    if (sock == RFB_INVALID_SOCKET) {
+    vento_net_peer peer;
+    char why[256] = "";
+    const int fd = s->net.connect(s->net.user, host[0] ? host : "localhost", port, timeoutMs, NULL, &peer,
+                                  why, sizeof why);
+    if (fd < 0) {
         /* A dial ended by the session itself is not reported. */
-        if (err != ECANCELED) {
-            logErr("Unable to connect to VNC server: %s", strerror(err));
+        if (fd == VENTO_NET_ERESOLVE) {
+            logErr("Could not find %s: %s", host, why);
+        } else if (fd != VENTO_NET_ECANCELLED) {
+            logErr("Unable to connect to VNC server: %s", why);
         }
         return RFB_INVALID_SOCKET;
     }
-    const int one = 1;
-    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (const char *) &one, sizeof one);
-    return sock;
+    const int fl = fcntl(fd, F_GETFL, 0);
+    if (fl < 0 || fcntl(fd, F_SETFL, fl | O_NONBLOCK) < 0) {
+        logErr("Unable to connect to VNC server: %s", strerror(errno));
+        close(fd);
+        return RFB_INVALID_SOCKET;
+    }
+    if (peer.route == VENTO_NET_DIRECT) {
+        const int one = 1;
+        setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (const char *) &one, sizeof one);
+    }
+    s->connection = peer.connection;
+    return fd;
+}
+
+/* Why the session's connection ended, for the message. A reset or a timeout
+   reads as the end of the stream on a relayed connection, and as an error on
+   a direct one, which the library logs and this shim words the same as the
+   end of the stream either way; the route's answer goes to the log. Only a
+   tunnel's own failure is worth more words, which are its own. */
+static void lostWords(Session *s, char *out, size_t len) {
+    snprintf(out, len, "The connection was lost");
+    if (!s->net.ended || s->connection <= 0) {
+        return;
+    }
+    char why[256] = "";
+    const int end = s->net.ended(s->net.user, s->connection, NULL, why, sizeof why);
+    if (end == VENTO_NET_END_TUNNEL) {
+        snprintf(out, len, "The connection was lost: %s", why);
+    } else if (why[0]) {
+        LOGI("connection end reason from the session's network: %s", why);
+    }
 }
 
 /* `rfbInitClient` with our own connect step (see `dial`): the library's two
@@ -1185,11 +1133,19 @@ static rfbSocket dial(Session *s, const char *host, int port, int timeoutMs) {
    replaced, and the client freed on failure as the library frees it, after
    it has been unpublished so that `stop` cannot reach a freed client. A UNIX
    socket path, which the library's connect also accepts as a host, is still
-   dialled by the library: it connects or fails at once, with no wait. */
+   dialled by the library: it connects or fails at once, with no wait. So is
+   everything without a network to dial through (the C probe). A route that
+   is not this end's own TCP (`net.direct`) carries nothing to a local
+   socket, so such a host is refused there rather than dialled. */
 static int initClient(Session *s, rfbClient *cl) {
     struct stat st;
     int ok;
-    if (stat(cl->serverHost, &st) == 0 && S_ISSOCK(st.st_mode)) {
+    const int local = stat(cl->serverHost, &st) == 0 && S_ISSOCK(st.st_mode);
+    if (local && s->net.connect && !s->net.direct) {
+        logErr("Unable to connect to VNC server: %s is a local socket, and a tunnel cannot reach it",
+               cl->serverHost);
+        ok = 0;
+    } else if (!s->net.connect || local) {
         ok = rfbClientConnect(cl);
     } else {
         const int timeoutMs = s->connectTimeoutMs > 0 ? s->connectTimeoutMs : 20000;
@@ -1370,7 +1326,9 @@ static void *protocolThread(void *arg) {
     cl->frameBuffer = NULL;
     rfbClientCleanup(cl);
 
-    fireClosed(s, asked ? "" : "The connection was lost");
+    char lost[320];
+    lostWords(s, lost, sizeof lost);
+    fireClosed(s, asked ? "" : lost);
     return NULL;
 }
 
@@ -1484,6 +1442,9 @@ static void freeSession(Session *s) {
     pthread_mutex_destroy(&s->lock);
     pthread_cond_destroy(&s->cond);
     pthread_rwlock_destroy(&s->fbLock);
+    if (s->net.release) {
+        s->net.release(s->net.user);
+    }
     free(s);
 }
 
@@ -1494,7 +1455,15 @@ const char *vento_libvnc_version(void) {
 vento_session *vento_libvnc_create(const vento_libvnc_config *cfg, const vento_callbacks *cb) {
     Session *s = calloc(1, sizeof(Session));
     if (!s) {
+        if (cfg->net && cfg->net->release) {
+            cfg->net->release(cfg->net->user);
+        }
         return NULL;
+    }
+    /* The session owns the network from here; freeSession releases it on
+       every exit path. */
+    if (cfg->net) {
+        s->net = *cfg->net;
     }
     s->base.ops = &OPS;
     s->cb = *cb;
@@ -1570,9 +1539,9 @@ static void op_answer_trust(vento_session *base, bool accept) {
     wake(s);
 }
 
-/* Both ways a session ends set the flag, write to the wake pipe *and* shut
-   down the socket. The wake pipe ends the dial (see `dial`) and wakes the
-   loop's poll, but nothing else polls it: the protocol thread can be blocked
+/* Both ways a session ends set the flag, cancel the dial (see `dial`), write
+   to the wake pipe *and* shut down the socket. The wake pipe wakes the loop's
+   poll, but nothing else polls it: the protocol thread can be blocked
    in the library's read, which waits for the rest of a message for as long
    as the server takes to send it, during the handshake and after it alike.
    Only shutting down the socket interrupts that. The client is unpublished
@@ -1587,6 +1556,9 @@ static void stop(Session *s) {
     }
     pthread_cond_broadcast(&s->cond);
     pthread_mutex_unlock(&s->lock);
+    if (s->net.cancel) {
+        s->net.cancel(s->net.user);
+    }
     wake(s);
 }
 

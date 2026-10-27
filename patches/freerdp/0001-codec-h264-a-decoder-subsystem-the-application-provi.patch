@@ -1,7 +1,7 @@
 From 060298bd5f8f355a5d977678d879364b9fd6d4f8 Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Fri, 16 Oct 2026 19:51:34 -0400
-Subject: [PATCH 1/1] codec,h264: a decoder subsystem the application provides
+Subject: [PATCH 1/2] codec,h264: a decoder subsystem the application provides
 
 An application that links the library statically and has a video
 decoder of its own (hardware decoding with its own device handling and

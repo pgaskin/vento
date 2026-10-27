@@ -17,7 +17,8 @@
 //! [`Direct`] is the network a session has unless it is given another, and
 //! what the others dial their first hop through. [`Socketpair`] relays every
 //! connection through a socketpair, as a tunnel would, to test what the
-//! backends need of a socket that is not TCP.
+//! backends need of a socket that is not TCP. The C backends get the same
+//! network as the table in `vento/net.h` (`api::c::net`), with the same rules.
 //!
 //! # What a backend must do
 //!
@@ -39,8 +40,8 @@
 //! - **Addresses come from the [`Peer`]**, not from `getpeername` or
 //!   `getsockname`, which on a socketpair name no IP address. Either address
 //!   may be `None` (a tunnel that resolves at its far end has neither), and
-//!   the backend must still work: IronRDP sends `0.0.0.0` as the client
-//!   address, RustDesk logs in with the name as typed.
+//!   the backend must still work: IronRDP and FreeRDP send `0.0.0.0` as the
+//!   client address, RustDesk logs in with the name as typed.
 //! - **Liveness is asked for at the connect** ([`Liveness`]), not only set on
 //!   the socket: on a relayed route the socket the backend holds is not the
 //!   one that reaches the server.
@@ -250,7 +251,8 @@ impl Timeout {
 /// on the socketpair's end the backend holds, these options do not exist.
 ///
 /// [`Direct`] sets it on the socket it hands over, so a backend can leave it
-/// to the connect on any route.
+/// to the connect on any route. FreeRDP is the only backend here that asks
+/// for any (`TcpKeepAlive*`, `TcpAckTimeout`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Liveness {
     /// `SO_KEEPALIVE` with this timing.

@@ -13,6 +13,7 @@
 
 #include <vento/audio.h>
 #include <vento/backend.h>
+#include <vento/net.h>
 #include <vento/video.h>
 
 #ifdef __cplusplus
@@ -60,6 +61,12 @@ typedef struct vento_freerdp_config {
        none, and the session then doesn't ask the server for sound regardless
        of `sound`. */
     const vento_audio *audio;
+    /* What every connection is made through, the first one, each security
+       protocol tried again and a redirection's alike: the session's network
+       (vento/net.h), owned by the session after the call and released when
+       it ends, or immediately if it fails to start. NULL to have the library
+       dial for itself (the probe). */
+    const vento_net *net;
 } vento_freerdp_config;
 
 /* "FreeRDP x.y.z". Also a check that the library loads and links. */

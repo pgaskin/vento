@@ -28,10 +28,12 @@
 //   3. The alpha byte is filled in during that copy. RFB's 32-bit formats leave
 //      the fourth byte undefined and a decoder writes whatever the wire said;
 //      the backend API requires an opaque one.
-//   4. The socket is opened here rather than by network::TcpSocket, whose
-//      connect() is blocking and has no deadline, so a mistyped address would
-//      show a spinner for as long as the kernel keeps retrying. TcpSocket
-//      adopts the descriptor afterwards, so everything above that is theirs.
+//   4. The socket is opened by the session's network (vento/net.h) rather
+//      than by network::TcpSocket, whose connect() is blocking and has no
+//      deadline, so a mistyped address would show a spinner for as long as
+//      the kernel keeps retrying, and a disconnect could not end it.
+//      TcpSocket adopts the descriptor afterwards (UnixSocket, where it is a
+//      socketpair's end), so everything above that is theirs.
 //   5. The certificate check. Their library hands a certificate that did not
 //      verify to the client and stops there (and, patched, one that did, so
 //      that it can be asked about too). Their viewer would then look in its
@@ -67,7 +69,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <netdb.h>
 #include <poll.h>
 #include <stdint.h>
 #include <string.h>
@@ -97,6 +98,7 @@
 #include <gnutls/gnutls.h>
 
 #include <network/TcpSocket.h>
+#include <network/UnixSocket.h>
 
 #include <rdr/FdInStream.h>
 #include <rdr/FdOutStream.h>
@@ -116,6 +118,7 @@
 
 #include <vento/backend.h>
 #include <vento/log.h>
+#include <vento/net.h>
 #include <vento/text.h>
 #include <vento/tigervnc.h>
 
@@ -397,13 +400,14 @@ public:
             std::string password, bool shared, bool anonymousTls,
             int encoding, int compressLevel, int qualityLevel, int colorLevel, bool h264,
             const vento_video_decoders *video, bool audio, const vento_audio *audioOutput,
-            int connectTimeoutMs)
+            int connectTimeoutMs, const vento_net *net)
             : cb_(cb), address_(std::move(address)), userName_(std::move(userName)),
               password_(std::move(password)), shared_(shared),
               anonymousTls_(anonymousTls), encoding_(encoding),
               compressLevel_(compressLevel), qualityLevel_(qualityLevel),
               colorLevel_(colorLevel), h264_(h264), video_(video), audio_(audio),
-              audioOutput_(audioOutput), connectTimeoutMs_(connectTimeoutMs) {
+              audioOutput_(audioOutput), connectTimeoutMs_(connectTimeoutMs),
+              net_(net ? *net : vento_net{}) {
         ops = &OPS;
         if (pipe(wake_) == 0) {
             for (int fd : wake_) {
@@ -427,6 +431,12 @@ public:
         }
         close(wake_[0]);
         close(wake_[1]);
+    }
+
+    ~Session() {
+        if (net_.release) {
+            net_.release(net_.user);
+        }
     }
 
     const vento_callbacks &cb() const { return cb_; }
@@ -475,6 +485,10 @@ public:
             paused_ = false;
         }
         answered_.notify_all();
+        // Ends a connect in progress, and any later one.
+        if (net_.cancel) {
+            net_.cancel(net_.user);
+        }
         wake();
         // The doorbell is only looked at between messages, and a read that has
         // started blocks inside their stream until the rest of the message
@@ -800,8 +814,10 @@ private:
         (void) !write(wake_[1], &one, 1);
     }
 
-    /** Non-blocking connect with a deadline, and the descriptor is the result. */
-    int openSocket(std::string *why);
+    /** The connection, made through the session's network, or nothing, with
+        why in `why`. */
+    std::unique_ptr<network::Socket> openSocket(std::string *why);
+    std::string lostWords() const;
 
     const vento_callbacks cb_;
     const std::string address_;
@@ -829,6 +845,12 @@ private:
     // session that never started.
     vento::Audio audioOutput_;
     const int connectTimeoutMs_;
+    // The session's network, which makes the connection (openSocket);
+    // released when the session is deleted. `connect` is null where the
+    // library dials for itself.
+    const vento_net net_;
+    // The session's connection, for `net_.ended`; 0 before it is made.
+    int connection_ = 0;
 
     std::thread thread_;
     int wake_[2] = {-1, -1};
@@ -1504,129 +1526,88 @@ static bool splitAddress(const std::string &address, std::string *host, int *por
     return true;
 }
 
-int Session::openSocket(std::string *why) {
+std::unique_ptr<network::Socket> Session::openSocket(std::string *why) {
     std::string host;
     int port = 5900;
     if (!splitAddress(address_, &host, &port, why)) {
-        return -1;
+        return nullptr;
+    }
+    serverHost_ = host;
+    serverPort_ = port;
+
+    if (!net_.connect) {
+        try {
+            return std::make_unique<network::TcpSocket>(host.c_str(), port);
+        } catch (const std::exception &e) {
+            *why = std::string("Could not connect: ") + e.what();
+            return nullptr;
+        }
     }
 
-    char service[16];
-    snprintf(service, sizeof(service), "%d", port);
-    struct addrinfo hints = {};
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    struct addrinfo *ai = nullptr;
-    const int gai = getaddrinfo(host.c_str(), service, &hints, &ai);
-    if (gai != 0) {
-        *why = std::string("Cannot find ") + host + ": " + gai_strerror(gai);
-        return -1;
-    }
-
-    int fd = -1;
-    bool cancelled = false;
-    *why = "Could not connect";
-    for (struct addrinfo *a = ai; a != nullptr && fd < 0 && !cancelled; a = a->ai_next) {
-        const int candidate = socket(a->ai_family, SOCK_STREAM | SOCK_NONBLOCK, 0);
-        if (candidate < 0) {
-            continue;
-        }
-        if (connect(candidate, a->ai_addr, a->ai_addrlen) == 0) {
-            fd = candidate;
-            break;
-        }
-        if (errno != EINPROGRESS) {
-            *why = std::string("Could not connect: ") + strerror(errno);
-            close(candidate);
-            continue;
-        }
-        struct pollfd fds[2] = {{candidate, POLLOUT, 0}, {wake_[0], POLLIN, 0}};
-        const auto deadline = std::chrono::steady_clock::now()
-                + std::chrono::milliseconds(connectTimeoutMs_);
-        int err = ETIMEDOUT;
-        // The doorbell is in this poll so that a disconnect while the socket is
-        // still opening does not have to wait out the deadline. But the app
-        // rings it for every command it queues, and one queued during the
-        // connect (a focus change, the options the session screen sets on the
-        // way in) is not a cancellation: it has to be drained and waited past,
-        // or the very first connection of a session reports a server that never
-        // answered while the second one works.
-        for (;;) {
-            int remaining = -1;
-            if (connectTimeoutMs_ > 0) {
-                remaining = (int) std::chrono::duration_cast<std::chrono::milliseconds>(
-                        deadline - std::chrono::steady_clock::now()).count();
-                remaining = remaining < 0 ? 0 : remaining;
-            }
-            fds[0].revents = fds[1].revents = 0;
-            const int r = poll(fds, 2, remaining);
-            if (r < 0) {
-                if (errno == EINTR) {
-                    continue;
-                }
-                err = errno;
-                break;
-            }
-            if (r == 0) {
-                err = ETIMEDOUT;
-                break;
-            }
-            if ((fds[1].revents & POLLIN) != 0) {
-                char buf[64];
-                while (read(wake_[0], buf, sizeof(buf)) > 0) {
-                    // the doorbell, and nothing in it
-                }
-                const std::lock_guard<std::mutex> guard(lock_);
-                if (quit_) {
-                    cancelled = true;
-                    break;
-                }
-            }
-            if ((fds[0].revents & (POLLOUT | POLLERR | POLLHUP)) != 0) {
-                socklen_t len = sizeof(err);
-                if (getsockopt(candidate, SOL_SOCKET, SO_ERROR, &err, &len) != 0) {
-                    err = errno;
-                }
-                break;
-            }
-        }
-        if (!cancelled && err == 0) {
-            fd = candidate;
-            break;
-        }
+    vento_net_peer peer = {};
+    char reason[256] = "";
+    const int fd = net_.connect(net_.user, host.c_str(), port, connectTimeoutMs_, nullptr, &peer, reason,
+                                sizeof(reason));
+    if (fd < 0) {
         // An empty reason is what the caller reads as a requested disconnect.
-        *why = cancelled ? ""
-                : err == ETIMEDOUT ? "The server did not answer"
-                : std::string("Could not connect: ") + strerror(err);
-        close(candidate);
+        *why = fd == VENTO_NET_ECANCELLED ? ""
+                : fd == VENTO_NET_ERESOLVE ? "Cannot find " + host + ": " + reason
+                : fd == VENTO_NET_ETIMEDOUT ? "The server did not answer"
+                : std::string("Could not connect: ") + reason;
+        return nullptr;
     }
-    freeaddrinfo(ai);
+    connection_ = peer.connection;
+    // TcpSocket turns Nagle's algorithm off, which a socketpair's end has no
+    // option for: it would log a warning there and do nothing else.
+    if (peer.route == VENTO_NET_TUNNEL) {
+        return std::make_unique<network::UnixSocket>(fd);
+    }
+    return std::make_unique<network::TcpSocket>(fd);
+}
 
-    if (fd >= 0) {
-        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK);
-        serverHost_ = host;
-        serverPort_ = port;
+// Why the session's connection ended, for the message. A reset reads as the
+// end of the stream on a relayed connection and as a socket error on a direct
+// one, both worded the same here; the route's answer goes to the log. Only a
+// tunnel's own failure is worth more words, which are its own.
+std::string Session::lostWords() const {
+    const std::string lost = "The connection was lost";
+    if (!net_.ended || connection_ <= 0) {
+        return lost;
     }
-    return fd;
+    char why[256] = "";
+    const int end = net_.ended(net_.user, connection_, nullptr, why, sizeof(why));
+    if (end == VENTO_NET_END_TUNNEL) {
+        return lost + ": " + why;
+    }
+    if (why[0]) {
+        LOGI("connection end reason from the session's network: %s", why);
+    }
+    return lost;
 }
 
 void Session::run() {
     std::string why;
-    const int fd = openSocket(&why);
-    if (fd < 0) {
+    std::unique_ptr<network::Socket> sock = openSocket(&why);
+    if (!sock) {
         closed(why);
         return;
     }
 
     {
         const std::lock_guard<std::mutex> guard(fdLock_);
-        fd_ = fd;
+        fd_ = sock->getFd();
     }
-    std::unique_ptr<network::TcpSocket> sock;
+    {
+        // A disconnect between the connect and the line above found no
+        // socket to shut down, so it is shut down here.
+        const std::lock_guard<std::mutex> guard(lock_);
+        if (quit_) {
+            ::shutdown(sock->getFd(), SHUT_RDWR);
+        }
+    }
     std::unique_ptr<Conn> conn;
     std::string detail;
     try {
-        sock.reset(new network::TcpSocket(fd));
         installSecurityTypes();
         conn.reset(new Conn(this));
         conn->setShared(shared_);
@@ -1764,14 +1745,14 @@ void Session::run() {
             }
         }
     } catch (rdr::end_of_stream &e) {
-        detail = "The connection was lost";
+        detail = lostWords();
     } catch (core::socket_error &e) {
         // A reset or a broken pipe on a connection that was up is the same
         // ending as its stream running out, and is said in the same words as
         // libvnc's; the library's own ("read: Connection reset by peer
         // (104)") goes to the log.
         LOGW("the connection ended: %s", e.what());
-        detail = "The connection was lost";
+        detail = lostWords();
     } catch (rfb::auth_cancelled &e) {
         // The user declined, which needs no message, or a certificate was
         // refused without asking, which does.
@@ -2052,7 +2033,7 @@ vento_session *vento_tigervnc_create(const vento_tigervnc_config *cfg,
                              cfg->password ? cfg->password : "", cfg->shared,
                              cfg->anonymous_tls, cfg->encoding, cfg->compress_level,
                              cfg->quality_level, cfg->color_level, cfg->h264, cfg->video,
-                             cfg->audio, cfg->audio_output, cfg->connect_timeout_ms);
+                             cfg->audio, cfg->audio_output, cfg->connect_timeout_ms, cfg->net);
     if (!s->start()) {
         s->destroy();
         delete s;

@@ -118,6 +118,7 @@ fn create(c: &Connect) -> Result<std::sync::Arc<dyn Backend>, String> {
         audio: o.bool("Audio"),
         audio_output: std::ptr::null(),
         connect_timeout_ms: CONNECT_TIMEOUT_MS,
+        net: std::ptr::null(),
     };
     log::info!("connecting to {}", c.address);
     let backend = start(
@@ -139,6 +140,9 @@ fn create(c: &Connect) -> Result<std::sync::Arc<dyn Backend>, String> {
             if let Some(audio) = &audio {
                 config.audio_output = audio;
             }
+            // And the session's network, which makes the connection.
+            let net = api::c::net::table(c.network.clone());
+            config.net = &net;
             unsafe { api::call!(LIBRARY.loaded(), ffi::vento_tigervnc_create(&config, callbacks)) }
         },
         None,

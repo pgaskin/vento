@@ -45,13 +45,17 @@
 //     drawing thread wait for an H.264 frame.
 
 #include <errno.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
@@ -67,6 +71,7 @@
 #include <freerdp/graphics.h>
 #include <freerdp/autodetect.h>
 #include <freerdp/settings.h>
+#include <freerdp/transport_io.h>
 #include <winpr/string.h>
 #include <winpr/synch.h>
 #include <winpr/wlog.h>
@@ -75,6 +80,7 @@
 #include <vento/backend.h>
 #include <vento/freerdp.h>
 #include <vento/log.h>
+#include <vento/net.h>
 #include <vento/text.h>
 
 #include "h264_vento.h"
@@ -263,6 +269,13 @@ struct Session {
     int scale; /* percent; the scale the far end is asked to draw its interface at */
     int compression;
     int connectTimeoutMs;
+    /* The session's network, which every connection is made through
+       (onTcpConnect); its `connect` is NULL where the library dials for
+       itself. */
+    vento_net net;
+    /* The latest connection, for `net.ended`; 0 before one is made. Written
+       on the protocol thread, which is the only one that reads it. */
+    int connection;
 };
 
 static const vento_session_ops OPS;
@@ -354,6 +367,145 @@ static void splitAddress(char *address, int *port, char *why, size_t whyLen) {
     }
     memmove(address, host, hostLen);
     address[hostLen] = 0;
+}
+
+/* ---- the network -------------------------------------------------------- */
+
+/* A setting's unsigned value as an int for vento/net.h, at most INT32_MAX. */
+static int asInt(UINT32 value) {
+    return value > INT32_MAX ? INT32_MAX : (int) value;
+}
+
+/* FreeRDP's `TCPConnect`, which the library calls for every connection it
+   makes: the first, a fresh one for each security protocol negotiation falls
+   back to, and one after a redirection. Each goes through the session's
+   network (vento/net.h), which a disconnect cancels. The library's own
+   connect would resolve and dial here, and set the client address from the
+   socket. A host it would open as something else (`specialHost`) is refused,
+   as in the address the user typed, also where a redirection names one.
+
+   Nothing else in the library reaches the server or a resolver in this
+   build: a redirection's target names are not looked up before this is
+   called (patches/freerdp 0002; the library would look them up with the
+   local resolver to choose one), the gateway is never enabled, Kerberos
+   (WITH_KRB5) and AAD are not built, and a multitransport (UDP) request is
+   declined (the library's default answer, E_ABORT).
+   Any of those turned on would need the same treatment before a session on
+   a route that is not direct could use it. */
+static int onTcpConnect(rdpContext *context, rdpSettings *settings, const char *hostname, int port,
+                        DWORD timeout) {
+    Session *s = ((ShimContext *) context)->session;
+    if (!hostname || specialHost(hostname)) {
+        LOGW("not a host to connect to: %s", hostname ? hostname : "(none)");
+        freerdp_set_last_error_if_not(context, FREERDP_ERROR_CONNECT_FAILED);
+        return -1;
+    }
+    const int timeoutMs = asInt(timeout);
+    /* The keep-alive and the limit on unacknowledged data (TCP_USER_TIMEOUT)
+       that the library sets on the socket when it takes it
+       (`transport_default_attach`, `freerdp_tcp_set_keep_alive_mode`), asked
+       of the network too: on a relayed route the socket here is a
+       socketpair's end, where those options fail with a warning in the log,
+       and the network sets them on its own connection to the server. */
+    const vento_net_liveness liveness = {
+        .keepalive = freerdp_settings_get_bool(settings, FreeRDP_TcpKeepAlive) ? 1 : 0,
+        .keepalive_idle_s = asInt(freerdp_settings_get_uint32(settings, FreeRDP_TcpKeepAliveDelay)),
+        .keepalive_interval_s = asInt(freerdp_settings_get_uint32(settings, FreeRDP_TcpKeepAliveInterval)),
+        .keepalive_count = asInt(freerdp_settings_get_uint32(settings, FreeRDP_TcpKeepAliveRetries)),
+        .user_timeout_ms = asInt(freerdp_settings_get_uint32(settings, FreeRDP_TcpAckTimeout)),
+    };
+    vento_net_peer peer = {0};
+    char why[256] = "";
+    int fd = s->net.connect(s->net.user, hostname, port, timeoutMs, &liveness, &peer, why, sizeof why);
+    if (fd < 0 && fd != VENTO_NET_ECANCELLED) {
+        LOGW("could not connect to %s:%d: %s", hostname, port, why);
+    }
+    /* A redirection can name a machine by a name this end cannot resolve and
+       list its addresses beside it, which the library's connect then dials,
+       all at once (`freerdp_tcp_connect_multi`); here one after another. */
+    if (fd == VENTO_NET_ERESOLVE && !freerdp_settings_get_bool(settings, FreeRDP_GatewayEnabled)) {
+        const UINT32 count = freerdp_settings_get_uint32(settings, FreeRDP_TargetNetAddressCount);
+        for (UINT32 i = 0; i < count && fd < 0 && fd != VENTO_NET_ECANCELLED; i++) {
+            const char *address = freerdp_settings_get_pointer_array(settings, FreeRDP_TargetNetAddresses, i);
+            const UINT32 *ports = freerdp_settings_get_pointer_array(settings, FreeRDP_TargetNetPorts, i);
+            if (!address) {
+                continue;
+            }
+            const int to = ports && *ports > 0 && *ports <= UINT16_MAX ? (int) *ports : port;
+            fd = s->net.connect(s->net.user, address, to, timeoutMs, &liveness, &peer, why, sizeof why);
+            if (fd < 0 && fd != VENTO_NET_ECANCELLED) {
+                LOGW("could not connect to %s:%d: %s", address, to, why);
+            }
+        }
+    }
+    if (fd < 0) {
+        /* The errors the library's own connect sets, and so its messages. */
+        const UINT32 error = fd == VENTO_NET_ERESOLVE ? FREERDP_ERROR_DNS_NAME_NOT_FOUND
+                : fd == VENTO_NET_ECANCELLED ? FREERDP_ERROR_CONNECT_CANCELLED
+                : FREERDP_ERROR_CONNECT_FAILED;
+        freerdp_set_last_error_if_not(context, error);
+        return -1;
+    }
+
+    /* The Client Info PDU's client address, which the library's connect takes
+       from the socket: here the address the server sees the connection come
+       from, as the route reports it (on a relayed route the socketpair's end
+       has none, and the library would say 127.0.0.1). A route that does not
+       know it gives 0.0.0.0, as IronRDP sends, which xrdp and Windows
+       accept. */
+    const char *local = peer.local_address[0] ? peer.local_address : "0.0.0.0";
+    if (!freerdp_settings_set_string(settings, FreeRDP_ClientAddress, local)
+            || !freerdp_settings_set_bool(settings, FreeRDP_IPv6Enabled, strchr(local, ':') != NULL)) {
+        close(fd);
+        freerdp_set_last_error_if_not(context, FREERDP_ERROR_CONNECT_FAILED);
+        return -1;
+    }
+    s->connection = peer.connection;
+    /* As the library's connect: no Nagle delay, on a TCP socket (a
+       socketpair's end has no such option; the relay behind it sets it on its
+       own), and at least 32 KiB of receive buffer. Keep-alive and
+       TCP_USER_TIMEOUT: see `liveness` above. */
+    if (peer.route == VENTO_NET_DIRECT) {
+        const int one = 1;
+        if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one) != 0) {
+            LOGW("could not set TCP_NODELAY: %s", strerror(errno));
+        }
+    }
+    int rcvbuf = 0;
+    socklen_t len = sizeof rcvbuf;
+    if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, &len) == 0 && rcvbuf < 32 * 1024) {
+        rcvbuf = 32 * 1024;
+        if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof rcvbuf) != 0) {
+            LOGW("could not set the receive buffer: %s", strerror(errno));
+        }
+    }
+    if (freerdp_shall_disconnect_context(context)) {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+/* The message for a session that ended without being asked to, from the
+   library's error (`detail`, NULL for none). A reset or a timeout reads as
+   the end of the stream on a relayed connection, and as a socket error on a
+   direct one; the library words both as a transport failure, so its message
+   stands and the route's answer goes to the log. A tunnel's own failure is
+   worded from the tunnel's text. */
+static const char *lostWords(Session *s, const char *detail, char *out, size_t len) {
+    if (!s->net.ended || s->connection <= 0) {
+        return detail;
+    }
+    char why[256] = "";
+    const int end = s->net.ended(s->net.user, s->connection, NULL, why, sizeof why);
+    if (end == VENTO_NET_END_TUNNEL) {
+        snprintf(out, len, "The connection was lost: %s", why);
+        return out;
+    }
+    if (why[0]) {
+        LOGI("connection end reason from the session's network: %s", why);
+    }
+    return detail;
 }
 
 /* ---- the command queue -------------------------------------------------- */
@@ -2253,7 +2405,9 @@ static void *protocolThread(void *arg) {
         pthread_mutex_lock(&s->lock);
         const int asked = s->quit;
         pthread_mutex_unlock(&s->lock);
-        fireClosed(s, asked ? "" : (detail ? detail : "The connection failed"));
+        char lost[320];
+        detail = lostWords(s, detail ? detail : "The connection failed", lost, sizeof lost);
+        fireClosed(s, asked ? "" : detail);
         return NULL;
     }
     LOGI("handshake done: %s", freerdp_settings_get_string(ctx->settings, FreeRDP_ServerHostname));
@@ -2298,7 +2452,9 @@ static void *protocolThread(void *arg) {
     freerdp_disconnect(ctx->instance);
     const UINT32 err = freerdp_get_last_error(ctx);
     const char *detail = err != FREERDP_ERROR_SUCCESS ? freerdp_get_last_error_string(err) : NULL;
-    fireClosed(s, asked ? "" : (detail ? detail : "The connection was lost"));
+    char lost[320];
+    detail = lostWords(s, detail ? detail : "The connection was lost", lost, sizeof lost);
+    fireClosed(s, asked ? "" : detail);
     return NULL;
 }
 
@@ -2340,6 +2496,9 @@ static void freeSession(Session *s) {
     pthread_rwlock_destroy(&s->fbLock);
     vento_h264_release(&s->h264);
     vento_sound_release(&s->audio);
+    if (s->net.release) {
+        s->net.release(s->net.user);
+    }
     free(s);
 }
 
@@ -2395,12 +2554,18 @@ vento_session *vento_freerdp_create(const vento_freerdp_config *cfg, const vento
         if (cfg->audio && cfg->audio->release) {
             cfg->audio->release(cfg->audio->user);
         }
+        if (cfg->net && cfg->net->release) {
+            cfg->net->release(cfg->net->user);
+        }
         return NULL;
     }
-    /* The session owns the decoders and the sound output from here;
-       freeSession releases them on every exit path. */
+    /* The session owns the decoders, the sound output and the network from
+       here; freeSession releases them on every exit path. */
     vento_h264_init(&s->h264, cfg->video);
     vento_sound_init(&s->audio, cfg->audio);
+    if (cfg->net) {
+        s->net = *cfg->net;
+    }
     s->base.ops = &OPS;
     s->cb = *cb;
     pthread_mutex_init(&s->lock, NULL);
@@ -2483,6 +2648,21 @@ vento_session *vento_freerdp_create(const vento_freerdp_config *cfg, const vento
     s->ctx = (ShimContext *) ctx;
     s->ctx->session = s;
     s->instance = ctx->instance;
+    /* Every connection through the session's network. The callbacks are the
+       rdp layer's, which hands them to each transport it makes, so they
+       survive a redirection. */
+    if (s->net.connect) {
+        const rdpTransportIo *library = freerdp_get_io_callbacks(ctx);
+        rdpTransportIo io = *library;
+        io.TCPConnect = onTcpConnect;
+        if (!freerdp_set_io_callbacks(ctx, &io)) {
+            LOGW("could not set the connection callback");
+            freerdp_client_context_free(ctx);
+            s->ctx = NULL;
+            freeSession(s);
+            return NULL;
+        }
+    }
     /* Creating the context restored the library's own addin provider, which
        doesn't know the module's rdpsnd device. */
     if (s->audio.available && !vento_sound_register()) {
@@ -2536,7 +2716,8 @@ static void op_answer_trust(vento_session *base, bool accept) {
 
 /* Both ways a session ends set the flag, wake the wait *and* abort the
    connect: during a handshake the thread is inside the library's socket read,
-   whose wait doesn't include our event. */
+   whose wait doesn't include our event, or inside the network's connect,
+   which the library's abort doesn't reach. */
 static void stop(Session *s) {
     pthread_mutex_lock(&s->lock);
     s->quit = 1;
@@ -2544,6 +2725,9 @@ static void stop(Session *s) {
     pthread_mutex_unlock(&s->lock);
     if (s->ctx) {
         freerdp_abort_connect_context(&s->ctx->client.context);
+    }
+    if (s->net.cancel) {
+        s->net.cancel(s->net.user);
     }
     SetEvent(s->wake);
 }

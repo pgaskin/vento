@@ -2511,10 +2511,12 @@ name = "remotedesktop-api"
 version = "0.0.1"
 dependencies = [
  "bindgen",
+ "libc",
  "libloading 0.8.9",
  "log",
  "remotedesktop-runtime",
  "serde_json",
+ "socket2",
 ]
 
 [[package]]
