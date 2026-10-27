@@ -6,6 +6,8 @@
 #include <dlfcn.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
@@ -39,6 +41,25 @@ long realSyscall(long n, ...) {
     }
     va_end(ap);
     return ::syscall(n, a[0], a[1], a[2], a[3], a[4], a[5]);
+}
+
+/* libc-shim's `ioctl` knows three requests and answers 0 to every other
+   without passing it on, which leaves the answer unwritten. The core's UDP
+   transport asks SIOCGIFMTU of the interface its route to the server goes
+   through, and so took whatever was on its stack as the MTU: the payload
+   estimate came out anywhere from 16 bytes (the transport then failed
+   with "OutStream full" and the session fell back to TCP) to the 1200
+   bytes `SctpMaxMtu` allows, depending on what ran before it. The request
+   goes to the kernel instead: its `ifreq` is the same under bionic and
+   glibc. */
+using IoctlFn = int (*)(int, unsigned long, void *);
+IoctlFn shimIoctl;
+
+int interfaceIoctl(int fd, unsigned long request, void *arg) {
+    if (request == SIOCGIFMTU) {
+        return ::ioctl(fd, request, arg);
+    }
+    return shimIoctl(fd, request, arg);
 }
 
 ssize_t readlinkChk(const char *path, char *buf, size_t len, size_t /*bufLen*/) {
@@ -76,6 +97,8 @@ std::unordered_map<std::string, void *> libcSymbols() {
                           "__cxa_thread_atexit_impl"}) {
         libc[n] = dlsym(RTLD_DEFAULT, n);
     }
+    shimIoctl = (IoctlFn) libc.at("ioctl");
+    libc["ioctl"] = (void *) &interfaceIoctl;
     libc["socketpair"] = (void *) &socketpair;
     libc["wcwidth"] = (void *) &wcwidth;
     libc["setrlimit"] = (void *) &setrlimit;
