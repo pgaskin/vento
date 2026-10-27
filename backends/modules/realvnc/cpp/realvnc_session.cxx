@@ -458,6 +458,31 @@ std::vector<std::shared_ptr<Bridge>> &graveyard() {
     return *the;
 }
 
+/* The connect gate. The core faults when two sessions are in their connect
+   phase at once: it brings each session's modules up against process-wide
+   singletons, and a second `createSession` reaching that code while the
+   first session is still connecting leaves a freed module in the first
+   session's list, so the next walk of that list calls through a dangling
+   pointer and the process dies inside the core. The fault happens against
+   every server tried, over TCP and UDP. The core is closed, so the module
+   keeps the connect phases from overlapping: at most one session runs
+   `createSession` and the connect that follows; the rest wait and begin in
+   turn, oldest first. A reconnect (the core's own, after `connSuccess`) does
+   not go through `createSession`, so it is not gated.
+
+   `connecting` is the session whose connect is in flight, or null;
+   `waiters` holds those whose start reached the core thread while another
+   was connecting. Both are touched only on the core thread (every `start`,
+   `onConnSuccess` and `closed` runs there), so no lock guards them. */
+Session *&connectingSession() {
+    static Session *the = nullptr;
+    return the;
+}
+std::vector<Session *> &connectWaiters() {
+    static auto *the = new std::vector<Session *>;
+    return *the;
+}
+
 extern const vento_session_ops OPS;
 
 /* The Android backend's twenty seconds; `RealVncBackend.CONNECT_TIMEOUT_MS`
@@ -496,42 +521,104 @@ public:
     }
 
     /* `RealVncBackend.connect`, from the thread that created the session: the
-       work, the connect timeout included, is posted to the core thread. */
+       work, the connect timeout included, is posted to the core thread, where
+       it enters the connect gate (`connectingSession`). */
     void start() {
         CoreThread &core = CoreThread::instance();
         core.post([this] {
             if (dead_.load()) {
                 return;
             }
-            // Kept before the core is given it, on the only thread that
-            // touches the graveyard.
-            graveyard().push_back(bridge_);
-            // Armed here rather than by the caller, so that only the core
-            // thread touches the timeout.
-            connectTimeout_ = CoreThread::instance().postDelayed([this] { onConnectTimeout(); },
-                                                                 connectTimeoutMs_);
-            const auto t0 = std::chrono::steady_clock::now();
-            HostedSession *hs = CoreThread::instance().core()->createSession(
-                    bridge_.get(), address_, password_.empty() ? nullptr : password_.c_str(),
-                    options_);
-            const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    std::chrono::steady_clock::now() - t0)
-                                    .count();
-            // It returns in a few ms and the connect proceeds as callbacks on
-            // this same thread, so what follows runs before the connection is
-            // up. Logged rather than assumed, because everything below depends
-            // on it.
-            LOGI("createSession returned after %lld ms -> %p", (long long) ms, (void *) hs);
-            if (!hs) {
-                closed("Could not start the connection");
+            // One session's connect at a time: begin now, or wait for the
+            // one in flight to finish and be started from `finishConnect`.
+            Session *&connecting = connectingSession();
+            if (connecting && connecting != this) {
+                connectWaiters().push_back(this);
+                waitingToConnect_ = true;
+                LOGI("waiting for another RealVNC session to finish connecting");
                 return;
             }
-            hs_.store(hs);
-            {
-                const std::lock_guard<std::mutex> guard(pixels_);
-                resizeBuffer(hs, 256, 256);
+            connecting = this;
+            beginConnect();
+        });
+    }
+
+    /* The connect itself, on the core thread, once this session holds the
+       gate: the timeout armed and `createSession` called. */
+    void beginConnect() {
+        // Kept before the core is given it, on the only thread that
+        // touches the graveyard.
+        graveyard().push_back(bridge_);
+        // Armed here rather than by the caller, so that only the core
+        // thread touches the timeout.
+        connectTimeout_ = CoreThread::instance().postDelayed([this] { onConnectTimeout(); },
+                                                             connectTimeoutMs_);
+        const auto t0 = std::chrono::steady_clock::now();
+        HostedSession *hs = CoreThread::instance().core()->createSession(
+                bridge_.get(), address_, password_.empty() ? nullptr : password_.c_str(),
+                options_);
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now() - t0)
+                                .count();
+        // It returns in a few ms and the connect proceeds as callbacks on
+        // this same thread, so what follows runs before the connection is
+        // up. Logged rather than assumed, because everything below depends
+        // on it.
+        LOGI("createSession returned after %lld ms -> %p", (long long) ms, (void *) hs);
+        if (!hs) {
+            closed("Could not start the connection");
+            return;
+        }
+        hs_.store(hs);
+        {
+            const std::lock_guard<std::mutex> guard(pixels_);
+            resizeBuffer(hs, 256, 256);
+        }
+        hs->focusEvent(true);
+    }
+
+    /* Releases the connect gate once this session's connect has settled
+       (succeeded in `onConnSuccess`, or ended in `closed`), and starts the
+       next waiter. A no-op for a session that was not the one connecting:
+       one already connected and ending later, or one closed before its
+       start reached the core thread. A waiter torn down before it began
+       drops itself from the queue here. Core thread only. */
+    void finishConnect() {
+        auto &waiters = connectWaiters();
+        if (waitingToConnect_) {
+            waiters.erase(std::remove(waiters.begin(), waiters.end(), this), waiters.end());
+            waitingToConnect_ = false;
+            return;
+        }
+        Session *&connecting = connectingSession();
+        if (connecting != this) {
+            return;
+        }
+        connecting = nullptr;
+        // Start the next waiter in a later turn of the core's loop, not here:
+        // begun inline it would run inside this session's `connSuccess` or
+        // `closed` callback chain, while the core is still unwinding the
+        // first session's modules, which is the overlap it faults on. A
+        // waiter closed before this runs has removed itself above. One being
+        // destroyed is skipped: `destroy` marks it dead before its `closed`
+        // reaches this thread, and begun in between it would open a core
+        // session that nothing closes. Its `closed` still drops it from the
+        // queue.
+        CoreThread::instance().post([] {
+            if (connectingSession()) {
+                return; // a session started in the meantime holds the gate
             }
-            hs->focusEvent(true);
+            auto &waiting = connectWaiters();
+            const auto live = std::find_if(waiting.begin(), waiting.end(),
+                                           [](const Session *w) { return !w->dead_.load(); });
+            if (live == waiting.end()) {
+                return;
+            }
+            Session *next = *live;
+            waiting.erase(live);
+            next->waitingToConnect_ = false;
+            connectingSession() = next;
+            next->beginConnect();
         });
     }
 
@@ -858,6 +945,8 @@ public:
 
     void onConnSuccess() {
         LOGI("connSuccess");
+        // The connect is over: let the next waiting session begin.
+        finishConnect();
         CoreThread::instance().cancel(connectTimeout_);
         // An error the core showed before this point (a wrong password,
         // asked again) is not the reason the session ends later.
@@ -1165,6 +1254,9 @@ private:
             closedSent_ = true;
             state_ = State::Closed;
         }
+        // The connect is over (it may never have begun, or ended before
+        // `connSuccess`): release the gate and start the next waiter.
+        finishConnect();
         closedCv_.notify_all();
         cb_.closed(cb_.user, detail.c_str());
     }
@@ -1334,6 +1426,7 @@ private:
 
     // Core thread only.
     uint64_t connectTimeout_ = 0;
+    bool waitingToConnect_ = false; // queued behind another session's connect
     bool coreClosed_ = false;      // the core has called `sessionClosed`
     int outstandingPrompts_ = 0;
     int64_t passwdCookie_ = 0;

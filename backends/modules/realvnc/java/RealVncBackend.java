@@ -93,6 +93,9 @@ public final class RealVncBackend implements Backend,
 
     private volatile boolean dead; // destroy() has run: every native call is a no-op after
 
+    /** {@link #connect} has started the core, so the session thread exists. */
+    private volatile boolean coreStarted;
+
     /**
      * How long to wait for {@code connSuccess} before giving up. Required: a
      * connect that fails reports <em>nothing</em>. A refused port logs
@@ -104,6 +107,25 @@ public final class RealVncBackend implements Backend,
     private static final long CONNECT_TIMEOUT_MS = 20_000;
 
     private final Runnable connectTimeout = this::onConnectTimeout;
+
+    /**
+     * The connect gate. The core faults when two sessions are in their connect
+     * phase at once: it brings each session's modules up against process-wide
+     * singletons, and a second {@code createSession} reaching that code while
+     * the first session is still connecting leaves a freed module in the first
+     * session's list, so the next walk of that list calls through a dangling
+     * pointer and the process dies inside the core. The core is closed, so this
+     * keeps the connect phases from overlapping: at most one session runs
+     * {@code createSession} and the connect that follows; the rest wait and
+     * begin in turn, oldest first. A reconnect (the core's own, after
+     * {@code connSuccess}) does not go through {@code createSession}, so it is
+     * not gated. All three fields are touched only on the session thread (every
+     * connect body, {@code connSuccess} and {@code closed} runs there), so no
+     * lock guards them.
+     */
+    private static RealVncBackend connecting;
+    private static final java.util.ArrayDeque<RealVncBackend> connectWaiters = new java.util.ArrayDeque<>();
+    private boolean waitingToConnect;
 
     /**
      * Prompts on screen. The timeout is for a session that has gone silent, and
@@ -210,40 +232,112 @@ public final class RealVncBackend implements Backend,
         }
         state = State.CONNECTING;
         RealVncCore.start(context);
-        RealVncCore.postDelayed(connectTimeout, CONNECT_TIMEOUT_MS);
+        coreStarted = true;
         onMain(() -> fireState(State.CONNECTING, connectingTo()));
         RealVncCore.post(() -> {
             if (dead) {
                 return;
             }
-            final long t0 = System.nanoTime();
-            RealVncPrompts.connecting(this);
-            SessionBindings.Session s = null;
-            try {
-                s = SessionBindings.createSession(this, this, address, password,
-                        new HashMap<>(options));
-            } catch (Throwable t) {
-                Log.e(TAG, "createSession failed", t);
-            } finally {
-                RealVncPrompts.connected(this);
-            }
-            // It returns in a few ms and the connect proceeds as callbacks on
-            // this same thread, so what follows runs before the connection is
-            // up. Logged rather than assumed, because everything below depends
-            // on it.
-            Log.i(TAG, "createSession returned after "
-                    + (System.nanoTime() - t0) / 1_000_000 + " ms on "
-                    + thread() + " -> " + s);
-            if (s == null) {
-                closed("Could not start the connection");
+            // One session's connect at a time: begin now, or wait for the one
+            // in flight to finish and be started from finishConnect().
+            if (connecting != null && connecting != this) {
+                connectWaiters.add(this);
+                waitingToConnect = true;
+                Log.i(TAG, "waiting for another RealVNC session to finish connecting");
                 return;
             }
-            session = s;
-            RealVncPrompts.attach(s, this);
-            synchronized (pixels) {
-                resizeBuffer(256, 256);
+            connecting = this;
+            beginConnect();
+        });
+    }
+
+    /**
+     * The connect itself, on the session thread, once this session holds the
+     * gate (see {@link #connecting}): the timeout armed and
+     * {@code createSession} called.
+     */
+    private void beginConnect() {
+        RealVncCore.postDelayed(connectTimeout, CONNECT_TIMEOUT_MS);
+        final long t0 = System.nanoTime();
+        RealVncPrompts.connecting(this);
+        SessionBindings.Session s = null;
+        try {
+            s = SessionBindings.createSession(this, this, address, password,
+                    new HashMap<>(options));
+        } catch (Throwable t) {
+            Log.e(TAG, "createSession failed", t);
+        } finally {
+            RealVncPrompts.connected(this);
+        }
+        // It returns in a few ms and the connect proceeds as callbacks on
+        // this same thread, so what follows runs before the connection is
+        // up. Logged rather than assumed, because everything below depends
+        // on it.
+        Log.i(TAG, "createSession returned after "
+                + (System.nanoTime() - t0) / 1_000_000 + " ms on "
+                + thread() + " -> " + s);
+        if (s == null) {
+            closed("Could not start the connection");
+            return;
+        }
+        session = s;
+        RealVncPrompts.attach(s, this);
+        synchronized (pixels) {
+            resizeBuffer(256, 256);
+        }
+        SessionBindings.focusEvent(s, true);
+    }
+
+    /**
+     * Releases the connect gate once this session's connect has settled
+     * (succeeded in {@link #connSuccess}, or ended in {@link #closed}) and
+     * starts the next waiter. A no-op for a session that was not the one
+     * connecting: one already connected and ending later, or one closed
+     * before its connect reached the session thread. A waiter torn down before
+     * it began drops itself from the queue here. Called again for a session
+     * already settled (closed, then destroyed), it does nothing.
+     *
+     * <p>The gate state is touched only on the session thread, so the work is
+     * run there: {@link #connSuccess} and most {@link #closed} callers are
+     * already on it (the body then runs inline), but {@code disconnect} calls
+     * {@code closed} on its own thread. A session that never started the core
+     * never entered the gate, so there is nothing to release.
+     */
+    private void finishConnect() {
+        if (!coreStarted) {
+            return;
+        }
+        RealVncCore.post(() -> {
+            if (waitingToConnect) {
+                connectWaiters.remove(this);
+                waitingToConnect = false;
+                return;
             }
-            SessionBindings.focusEvent(s, true);
+            if (connecting != this) {
+                return;
+            }
+            connecting = null;
+            // Start the next waiter in a later turn of the session thread's
+            // loop, not here: begun inline it would run inside this session's
+            // connSuccess or closed callback chain, while the core is still
+            // unwinding the first session's modules, which is the overlap it
+            // faults on. A waiter closed or destroyed before this runs has
+            // removed itself or is skipped here, so only a live session begins.
+            RealVncCore.postToLoop(() -> {
+                if (connecting != null) {
+                    return; // a session started in the meantime holds the gate
+                }
+                RealVncBackend next;
+                do {
+                    next = connectWaiters.poll();
+                } while (next != null && next.dead);
+                if (next == null) {
+                    return;
+                }
+                next.waitingToConnect = false;
+                connecting = next;
+                next.beginConnect();
+            });
         });
     }
 
@@ -272,6 +366,12 @@ public final class RealVncBackend implements Backend,
     public void destroy() {
         dead = true;
         reap(true);
+        // The app destroys a session without disconnecting it first, and
+        // nothing calls closed() for one waiting to connect (it has no core
+        // session to close), so it leaves the connect gate here, as a timed
+        // out connect does in closed(). Left queued, it would be begun later
+        // with no window, connect, and hold the gate.
+        finishConnect();
     }
 
     /**
@@ -702,6 +802,8 @@ public final class RealVncBackend implements Backend,
     @Override
     public void connSuccess() {
         Log.i(TAG, "connSuccess on " + Thread.currentThread().getName());
+        // The connect is over: let the next waiting session begin.
+        finishConnect();
         RealVncCore.cancel(connectTimeout);
         onMain(() -> {
             state = State.CONNECTED;
@@ -924,6 +1026,9 @@ public final class RealVncBackend implements Backend,
     // ---- plumbing ----------------------------------------------------------
 
     private void closed(String detail) {
+        // The connect is over (it may never have begun, or ended before
+        // connSuccess): release the gate and start the next waiter.
+        finishConnect();
         onMain(() -> {
             if (state == State.CLOSED) {
                 return;

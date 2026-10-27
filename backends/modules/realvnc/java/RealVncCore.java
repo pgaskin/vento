@@ -161,6 +161,16 @@ public final class RealVncCore {
         }
     }
 
+    /**
+     * Queues {@code r} to run in a later turn of the session thread's loop,
+     * never inline, even when the caller is already on that thread (unlike
+     * {@link #post}). For work that must not run inside the callback chain
+     * it is posted from.
+     */
+    static void postToLoop(Runnable r) {
+        handler.post(r);
+    }
+
     static void postDelayed(Runnable r, long delayMs) {
         handler.postDelayed(r, delayMs);
     }
