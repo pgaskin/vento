@@ -389,8 +389,12 @@ pub struct Client {
     traffic: Arc<Traffic>,
     /// Serialized messages queued for the writer thread. Input is encoded on
     /// the thread that produced it and written on a separate thread, so a
-    /// stalled socket never blocks the main one.
-    out: Mutex<Option<Sender<Vec<u8>>>>,
+    /// stalled socket never blocks the main one. The writer thread ends once
+    /// every sender is dropped, so no clone may outlive the session: the
+    /// keep-alive thread's clone ends with that thread, which is joined
+    /// before the session ends, and the sound switch, which is withdrawn
+    /// after the writer is joined, shares the slot instead.
+    out: Arc<Mutex<Option<Sender<Vec<u8>>>>>,
     /// The sockets, for closing them from another thread: shutting a socket
     /// down is the only way to wake a read or dial blocked on it. Each
     /// rendezvous socket is held here while it is being waited on, as well as
@@ -462,7 +466,7 @@ impl Client {
             framebuffer: RwLock::new(Framebuffer::new()),
             decoders,
             traffic: Arc::new(Traffic::default()),
-            out: Mutex::new(None),
+            out: Arc::new(Mutex::new(None)),
             hangup: Hangup::new(),
             info: Mutex::new(Info::default()),
             decoder_status: Mutex::new(None),
@@ -1644,10 +1648,12 @@ impl Client {
     /// state the options request. Toggling it sends the peer an option message
     /// with only `disable_audio` set (the peer leaves unset options
     /// unchanged), and the peer subscribes the session to its sound or
-    /// unsubscribes it. Sent from the switch's thread through the writer.
+    /// unsubscribes it. Sent from the switch's thread through the writer,
+    /// while the session has one: the switch is withdrawn only after the
+    /// writer thread is joined, so it must not hold the sender itself.
     fn offer_sound(&self, audio: &Arc<dyn Outputs>) {
         let sound = Arc::clone(&self.sound);
-        let out = self.out.lock().unwrap().clone();
+        let out = Arc::clone(&self.out);
         audio.controls().offer_enable(
             self.sound.load(Ordering::Relaxed),
             Box::new(move |on| {
@@ -1658,7 +1664,7 @@ impl Client {
                 misc.set_option(option);
                 let mut message = Message::new();
                 message.set_misc(misc);
-                if let (Some(out), Ok(bytes)) = (&out, message.write_to_bytes()) {
+                if let (Some(out), Ok(bytes)) = (out.lock().unwrap().as_ref(), message.write_to_bytes()) {
                     let _ = out.send(bytes);
                 }
             }),
@@ -2788,6 +2794,14 @@ mod tests {
         assert!(controls.set_enabled(true));
         assert_eq!(asked(&sent), BoolOption::No);
         assert!(sent.try_recv().is_err());
+
+        // The session's end drops its sender, which ends the writer thread,
+        // although the switch is still offered: it is withdrawn after the
+        // writer is joined. A toggle in between sends nothing.
+        client.out.lock().unwrap().take();
+        assert_eq!(controls.sound().switch, Some(runtime::media::audio::Switch::Enable));
+        assert_eq!(sent.recv_timeout(Duration::from_secs(1)), Err(RecvTimeoutError::Disconnected));
+        assert!(controls.set_enabled(false));
     }
 
     #[test]
