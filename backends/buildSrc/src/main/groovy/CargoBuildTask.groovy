@@ -66,6 +66,7 @@ abstract class CargoBuildTask extends DefaultTask {
     private static final Pattern TOOLCHAIN_CHANNEL = ~/(?m)^\s*channel\s*=\s*"([^"]+)"/
     private static final Pattern RUSTC_VERSION = ~/^rustc (\S+)/
     private static final Pattern CARGO_NDK_VERSION = ~/^cargo-ndk (\S+)/
+    private static final Pattern RUSTC_COMMIT_HASH = ~/(?m)^commit-hash: ([0-9a-f]{40})$/
 
     /** What {@code cargo ndk} calls each ABI, as the target triple cargo puts it under. */
     private static final Map<String, String> TRIPLES = [
@@ -143,11 +144,23 @@ abstract class CargoBuildTask extends DefaultTask {
         checkVersions(env)
 
         final workspace = workspaceDir.get().asFile
-        env.put('CARGO_ENCODED_RUSTFLAGS', [
+        final sysroot = capture(env, ['rustc', '--print', 'sysroot'])
+        final rustflags = [
                 "--remap-path-prefix=${cargoHome(env)}=/cargo",
-                "--remap-path-prefix=${capture(env, ['rustc', '--print', 'sysroot'])}=/rust",
-                "--remap-path-prefix=${workspace.absolutePath}=/remotedesktop",
-        ].join(RUSTFLAGS_SEPARATOR))
+                "--remap-path-prefix=${sysroot}=/rust",
+        ]
+        // With the rust-src component installed, rustc replaces the standard
+        // library's /rustc/<commit-hash> paths with that component's copy in
+        // the sysroot, and the panic locations of standard library code
+        // compiled into the crate keep them. Mapping the copy back keeps the
+        // library the same with or without rust-src. rustc applies the last
+        // matching prefix, so this follows the sysroot's.
+        final commit = RUSTC_COMMIT_HASH.matcher(capture(env, ['rustc', '-vV']))
+        if (commit.find()) {
+            rustflags << "--remap-path-prefix=${sysroot}/lib/rustlib/src/rust=/rustc/${commit.group(1)}"
+        }
+        rustflags << "--remap-path-prefix=${workspace.absolutePath}=/remotedesktop"
+        env.put('CARGO_ENCODED_RUSTFLAGS', rustflags.join(RUSTFLAGS_SEPARATOR))
 
         final cmd = ['cargo', 'ndk']
         abis.toSorted().each { cmd.addAll(['-t', it]) }
