@@ -845,6 +845,13 @@ impl Client {
         // enters its CredSSP state at that point, so checking any earlier
         // always returns false.
         let credssp = connector.should_perform_credssp();
+        // Auto logon only without NLA, as FreeRDP does. With it, Windows
+        // reconnects a disconnected session by unlocking it in place, and a
+        // session in some states never finishes that unlock, leaving the
+        // client on "Please wait". Without the flag, Windows checks the
+        // CredSSP credentials in a temporary session and then moves the
+        // connection over, which works in those states too.
+        connector.config.autologon = !credssp;
         let public_key = peer.public_key.clone();
         let steps = Steps::new(Counting::new(wire.clone_handle(), &self.shared), handler.status_setter(), credssp);
         let mut framed = Framed::new(steps);
@@ -1723,7 +1730,8 @@ fn connector_config(
         request_data: None,
         // Credentials are always present (they are asked for before
         // connecting), so the server never needs to show its own login screen
-        // in the session it has just opened.
+        // in the session it has just opened. Cleared once NLA is chosen
+        // (`session`).
         autologon: true,
         // Without it the server plays its sound nowhere, which is what the
         // Sound option's "Off" means; leaving it on the remote machine would
