@@ -1249,9 +1249,13 @@ private:
         trafficAgreed_ = true;
         // The first mark is the total rather than a baseline: the position is
         // the stream's, so it already counts everything before this sample.
+        // The mark wraps at 32 bits, so the difference is taken modulo 2^32;
+        // a mark that has gone back instead (a reconnected session's new
+        // stream, counted from zero) is what the new stream has received,
+        // not a difference, which would wrap to about 4 GiB.
+        const uint32_t step = mark - (uint32_t) trafficMark_;
         trafficTotal_ = trafficMark_ < 0 ? (int64_t) mark
-                                         : trafficTotal_ + (int64_t) ((mark - (uint32_t) trafficMark_)
-                                                                      & 0xFFFFFFFFu);
+                                         : trafficTotal_ + (int64_t) (step > 0x80000000u ? mark : step);
         trafficMark_ = mark;
         if (!trafficLogged_) {
             trafficLogged_ = true;

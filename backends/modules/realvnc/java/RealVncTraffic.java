@@ -89,7 +89,12 @@ final class RealVncTraffic {
 
         // The first mark is the total rather than a baseline: the position is
         // the stream's, so it already counts everything before this sample.
-        total = mark < 0 ? position : total + ((position - mark) & 0xFFFFFFFFL);
+        // The mark wraps at 32 bits, so the difference is taken modulo 2^32;
+        // a mark that has gone back instead (a reconnected session's new
+        // stream, counted from zero) is what the new stream has received,
+        // not a difference, which would wrap to about 4 GiB.
+        final long step = (position - mark) & 0xFFFFFFFFL;
+        total = mark < 0 ? position : total + (step > 0x80000000L ? position : step);
         mark = position;
 
         if (!logged) {
