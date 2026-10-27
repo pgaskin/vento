@@ -85,16 +85,23 @@ desktop), and `scripts/testqemu/audio/tone.c` playing into it through
 ALSA's PulseAudio plugin: silence, and half a second of 440 Hz at half
 scale per `t` on `TONE_PORT`, answered with its own share of the delay, so
 that `scripts/testaudio/bursts.py --port 5957` times it as it times the QEMU
-guest. Three things it has to do that a desktop does not, all in
+guest. What it has to do that a desktop does not, in `Dockerfile.audio` and
 `start-audio.sh`:
 
-- **Their connection manager runs from the start, without its window**
-  (`rustdesk --cm-no-ui`, started again whenever it exits, which it does
-  when a session ends). The manager is what records the sound and hands it
-  to the server; on a desktop the server starts it, as a Flutter window,
-  when a client connects, and here that window cannot start (no libEGL) —
-  the server then logs `Error of audio service` once a second and sends
-  nothing.
+- **A `loginctl` of its own** ([`loginctl`](loginctl)), reporting root
+  logged in on seat0 with an X11 session on `:1`, and `sudo`. Their server
+  asks loginctl who is logged in, and with no logind in the container 1.5.0
+  takes the desktop for a login screen: its audio service waits for a login
+  and never records. With an answer, the server starts their connection
+  manager (`rustdesk --cm`) for each session, through `sudo` as that user,
+  as on a desktop. The manager is what records the sound (the default
+  sink's monitor) and hands it to the server; the sound starts about a
+  second into a session, once the manager is up, and the manager exits a
+  few seconds after the session ends.
+- **EGL and GLES** (Mesa's, in software). From 1.5.0 the manager is always a
+  Flutter window (1.4.9's headless `--cm-no-ui`, which this image used to
+  start first, is gone), and it aborts without libEGL. Openbox minimises
+  it as it maps, so the desktop looks the same as without sound.
 - **The silence is a square wave of one LSB, not zeros.** Their server stops
   sending eight seconds into a silence and starts again with the next
   sound, so a client's stream would not exist — and could not be checked to

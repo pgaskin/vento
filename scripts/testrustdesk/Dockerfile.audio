@@ -8,7 +8,9 @@
 # `audio/tone.c` playing into it through ALSA's PulseAudio plugin: silence,
 # and a 440 Hz burst per 't' on a TCP port, answered with its own share of
 # the delay, so that scripts/testaudio/bursts.py times it as it times the
-# QEMU guest. Build with the tone's source as a second context:
+# QEMU guest. Their server records it through their connection manager, which
+# needs a logged-in user (loginctl), sudo and EGL here (usage.md). Build with
+# the tone's source as a second context:
 #
 #   docker build -t protorustdesk-audio -f Dockerfile.audio \
 #       --build-context tonesrc=../testqemu/audio .
@@ -30,10 +32,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libasound2-plugins \
         `# the serial line the QEMU guest has, as a pty on a TCP port` \
         socat \
+        `# their connection manager, which records the sound, is a Flutter` \
+        `# window from 1.5.0 on (1.4.9 had a headless one, --cm-no-ui) and` \
+        `# aborts without EGL and GLES: Mesa's, rendering in software on Xvfb` \
+        libegl1 \
+        libegl-mesa0 \
+        libgles2 \
+        libgl1-mesa-dri \
+        `# how their server, as root, starts that manager as the logged-in user` \
+        sudo \
     && rm -rf /var/lib/apt/lists/*
+# Who is logged in, for their server, which asks loginctl (see the script).
+# With no logind to answer, 1.5.0's server takes the desktop for a login
+# screen: its audio service then waits for a login and never records, and it
+# never starts or talks to the connection manager.
+COPY loginctl /usr/local/bin/loginctl
+# The manager's window, minimised by Openbox as it first maps, so the desktop
+# looks the same as the protorustdesk image's during a session.
+RUN mkdir -p /root/.config/openbox \
+    && sed 's|</applications>|<application class="Rustdesk"><iconic>yes</iconic></application>\n</applications>|' \
+        /etc/xdg/openbox/rc.xml > /root/.config/openbox/rc.xml \
+    && grep -c 'class="Rustdesk"' /root/.config/openbox/rc.xml | grep -qx 1
 COPY --from=tone /tone /usr/local/bin/tone
 COPY start.sh /usr/local/bin/start.sh
 COPY start-audio.sh /usr/local/bin/start-audio.sh
-RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/start-audio.sh
+RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/start-audio.sh /usr/local/bin/loginctl
 EXPOSE 4555
 ENTRYPOINT ["/usr/local/bin/start-audio.sh"]

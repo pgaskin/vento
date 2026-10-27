@@ -36,20 +36,10 @@ echo "pulseaudio: default sink $(pactl get-default-sink)"
     done
 ) &
 
-# Their connection manager, without its window. Their server records the
-# sound through it: the manager is what listens on the `_pa` socket and
-# reads the default sink's monitor, and a server with no manager to ask
-# logs "Error of audio service" once a second and sends nothing. On a
-# desktop the server starts it (`--cm`, a Flutter window) when a client
-# connects; started first, and headless, it is found and used instead.
-(
-    export DISPLAY=:1 XAUTHORITY=/root/.Xauthority
-    sleep 2
-    while :; do
-        rustdesk --cm-no-ui || true
-        sleep 1
-    done
-) &
+# Their connection manager records the sound and hands it to their server
+# over the `_pa` socket. Their server starts it (`--cm`) for each session, as
+# on a desktop, through sudo as the user loginctl reports logged in
+# (Dockerfile.audio), and it exits a few seconds after the session ends.
 
 export AUDIO_ENABLE=Y
 exec /usr/local/bin/start.sh

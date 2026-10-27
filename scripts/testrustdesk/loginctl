@@ -1,0 +1,60 @@
+#!/bin/sh
+# The audio image's stand-in for systemd-logind's loginctl, which their server
+# asks who is logged in on seat0 (Dockerfile.audio). It answers with one
+# active, unlocked X11 session of root's on :1, the desktop start.sh runs, and
+# only the commands and properties their server uses: the session list,
+# `show-session ID` and `show-session -p NAME ID` / `--property=NAME`.
+# Anything else fails, as loginctl does with no logind to ask.
+
+session=1
+props() {
+    printf '%s\n' \
+        "Id=$session" \
+        "User=0" \
+        "Name=root" \
+        "Seat=seat0" \
+        "Display=:1" \
+        "Remote=no" \
+        "Type=x11" \
+        "Class=user" \
+        "Active=yes" \
+        "State=active" \
+        "LockedHint=no"
+}
+
+case "$1" in
+    ""|list-sessions)
+        printf 'SESSION UID USER SEAT  TTY\n'
+        printf '%7s %3s %s %s\n' "$session" 0 root seat0
+        printf '\n1 sessions listed.\n'
+        ;;
+    show-session)
+        shift
+        names=""
+        id=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -p|--property) names="$names $2"; shift ;;
+                --property=*) names="$names ${1#--property=}" ;;
+                -*) ;;
+                *) id="$1" ;;
+            esac
+            shift
+        done
+        if [ -n "$id" ] && [ "$id" != "$session" ]; then
+            echo "Failed to get session path: No session '$id' known" >&2
+            exit 1
+        fi
+        if [ -z "$names" ]; then
+            props
+        else
+            for name in $names; do
+                props | grep "^$name="
+            done
+        fi
+        ;;
+    *)
+        echo "loginctl: $1 is not supported in this container" >&2
+        exit 1
+        ;;
+esac
