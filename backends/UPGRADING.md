@@ -469,7 +469,7 @@ One commit per upstream, after review, by the lead:
 
 ## What each upstream is, as of the September 2026 round
 
-- **libjpeg-turbo** 3.2.0. One patch (add_subdirectory from downstream).
+- **libjpeg-turbo** 3.2.0. No patches.
   `main` is the 3.2 line; `3.1.x` is ESR. arm64 SIMD is Neon intrinsics;
   x86 SIMD is upstream's NASM assembly on Linux where NASM is installed, and
   off on Android, so that an APK does not depend on the build machine.
