@@ -21,7 +21,7 @@
 //! library is a `cdylib` of it. For the three in C the protocol is a C
 //! library behind the vtable in `vento/backend.h`, the adapter is
 //! `api::c` and a small crate beside the C, and that crate is a static
-//! library CMake links into the C's own `.so`, whose one export is the
+//! library Meson links into the C's own `.so`, whose one export is the
 //! `JNI_OnLoad` written here. The questions only the C API asks (a question in
 //! the library's words, a message, RealVNC's security prompt) come through
 //! here like any other event.

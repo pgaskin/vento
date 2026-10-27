@@ -4,7 +4,7 @@
 //! TigerVNC's `vento_tigervnc` as a [`Backend`](api::backend::Backend): its
 //! config from the options, its live options and its rows. The Linux client
 //! uses it directly; on Android the JNI layer wraps it, linked into the
-//! library CMake builds from the C++. The client decides on its certificates:
+//! library Meson builds from the C++. The client decides on its certificates:
 //! the session passes them to `trust_needed`, so they are checked against the
 //! known hosts as every other backend's are, and TigerVNC's own known-hosts
 //! file is never read or written, which is why it is given no state

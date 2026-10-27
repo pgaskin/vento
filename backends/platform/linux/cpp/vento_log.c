@@ -4,7 +4,7 @@
 // `vento_log` for a desktop process: one line on stderr, with the time, the
 // level and the tag in front, where the Android adapter has logcat. This is
 // all a C backend's session file needs from the Linux platform to link
-// (`vento_linux`, in `cmake/vento_linux.cmake`); the rest of `cpp/` is the C
+// (`linux_log_c`, in `meson.build`); the rest of `cpp/` is the C
 // called by the Rust decoders, and the probe's body is in `probe/`.
 //
 // `vento_log_line` (`vento_log.h`) writes the line. The Linux client's Rust

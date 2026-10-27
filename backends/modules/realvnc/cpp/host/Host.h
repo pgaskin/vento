@@ -13,8 +13,8 @@
 // in for the JVM: every Java class the core resolves by name is a C++ struct
 // registered under that name, with the methods the core calls hooked one by
 // one. The set of classes is what the core used on its way to a connected
-// session, found by running it and reading the trace (the CMake option
-// `VENTO_REALVNC_TRACE` turns that trace on); the Android side of the
+// session, found by running it and reading the trace (the Meson option
+// `realvnc_trace` turns that trace on); the Android side of the
 // backend never sees any of this, since the real classes exist there.
 
 #ifndef VENTO_REALVNC_HOST_H

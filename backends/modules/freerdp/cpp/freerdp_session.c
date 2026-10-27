@@ -27,7 +27,7 @@
 //      GDI** when its channel connects. It negotiates correctly either way, so
 //      the result is a black desktop on a working connection.
 //
-// (A fourth is Android-specific and handled in this module's CMakeLists.txt:
+// (A fourth is Android-specific and handled in backends/ports/freerdp:
 // WinPR defines its own `JNI_OnLoad`, so it is compiled under another name and
 // the one the library exports, the Rust crate's, calls it.)
 //
@@ -2352,7 +2352,7 @@ const char *vento_freerdp_version(void) {
 #ifdef VENTO_FREERDP_WLOG
 /* WinPR's log (WLog) through vento_log, under this backend's tag with the
    logger's name and the function in front. Only on a desktop
-   (VENTO_FREERDP_WLOG, CMakeLists.txt), where WLog's console appender writes
+   (VENTO_FREERDP_WLOG, meson.build), where WLog's console appender writes
    to stdout and stderr in a layout of its own; on Android it writes to logcat.
    Not where the environment picks an appender (WLOG_APPENDER) or a prefix
    (WLOG_PREFIX). The level is still WLog's: warnings and errors unless

@@ -23,7 +23,7 @@
 #
 # The rest of the Linux platform is beside the crate: `cpp/`, the C called by
 # the Rust decoders and the stderr `vento_log` linked into each C backend;
-# `cmake/vento_linux.cmake`, a C backend's host half; and `probe/`, the
+# `meson.build`, a C backend's Linux half; and `probe/`, the
 # development tools (the C probes' shared body and the two sound rigs).
 [package]
 name = "remotedesktop-platform-linux"

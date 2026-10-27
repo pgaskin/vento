@@ -4,7 +4,7 @@
 //! The libvncclient shim (`vento_libvnc`) as a
 //! [`Backend`](api::backend::Backend): its config built from the options, its
 //! live options and its info rows. The Linux client uses it directly; on the
-//! phone the shared JNI layer wraps it, linked into the library CMake builds
+//! phone the shared JNI layer wraps it, linked into the library Meson builds
 //! from the C.
 
 use api::c::{Behaviour, CSession, start};

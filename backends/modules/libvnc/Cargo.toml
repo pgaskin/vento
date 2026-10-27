@@ -1,7 +1,7 @@
 # The libvncclient backend's `Kind`, built on the shared adapter for the C
 # backends (`remotedesktop-api`'s `c` feature), with this backend's config,
 # live options and info rows. The C library is the shim in `cpp/` over
-# LibVNCServer's client half, built by CMake. The Linux client opens it at
+# LibVNCServer's client half, built by Meson. The Linux client opens it at
 # run time (`api::c::library`) and the phone's library links it together with
 # this crate. This crate does not link it, so there is no test binary.
 [package]
@@ -28,7 +28,7 @@ libloading = "0.8"
 
 # The phone's half: the shared JNI layer, registered on this module's
 # generated natives class by the `JNI_OnLoad` in `src/lib.rs`. The app loads
-# the library CMake links; this crate goes into it as a static library
+# the library Meson links; this crate goes into it as a static library
 # (`CargoBuildTask` with `crateType = 'staticlib'`).
 [target.'cfg(target_os = "android")'.dependencies]
 remotedesktop-platform-android.workspace = true

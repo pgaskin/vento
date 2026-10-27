@@ -4,8 +4,8 @@
 # The release tarballs of nettle and GnuTLS, which `third_party/nettle` and
 # `third_party/gnutls` are unpacked from (`build.gradle` says why they are
 # not submodules). Gradle's `fetchCryptoSources` reads this file, and so does
-# the host CMake build (`platform/linux/cmake/gnutls.cmake`), which unpacks
-# a missing tree itself; both unpack the same way, so a tree is the same
+# `fetch-crypto-sources.py`, which the Linux Meson build runs to unpack a
+# missing tree itself; both unpack the same way, so a tree is the same
 # whichever did it.
 #
 # One `<name>.<key> = <value>` per line: `version`, `sha256` (of the

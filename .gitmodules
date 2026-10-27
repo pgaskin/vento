@@ -60,8 +60,8 @@
 	ignore = all
 # The four below are used only by the host build, to run RealVNC's bionic
 # viewer core in a glibc process (backends/modules/realvnc/cpp/host). None of
-# them is in an APK or on its licence page; backends/modules/realvnc/cpp/
-# CMakeLists.txt lists each one's licence. mcpelauncher-linker's pin is on its
+# them is in an APK or on its licence page; backends/platform/linux/ports/
+# realvnc-host/meson.build lists each one's licence. mcpelauncher-linker's pin is on its
 # `ng` branch and has two nested submodules (AOSP's bionic and core), so it is
 # initialised with --recursive.
 [submodule "third_party/logger"]

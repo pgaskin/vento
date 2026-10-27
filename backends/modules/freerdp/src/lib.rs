@@ -4,7 +4,7 @@
 //! FreeRDP's `vento_freerdp` as a [`Backend`](api::backend::Backend): its
 //! config from the options, its live options and its info rows. The Linux
 //! client uses it directly; on Android it sits behind the shared JNI layer,
-//! linked into the library CMake builds from the C. The library's config path
+//! linked into the library Meson builds from the C. The library's config path
 //! is a directory of ours, which also becomes the process's HOME where it has
 //! none (Android). The certificate store there is never read or written,
 //! since the trust prompt decides on every certificate. H.264 is decoded by
@@ -39,7 +39,7 @@ pub static KIND: Kind = Kind {
 // sound output, used by the module's rdpsnd device.
 //
 // WinPR has its own `JNI_OnLoad`, which keeps the `JavaVM` it uses to read the
-// time zone, and a library can only have one: the module's CMake compiles
+// time zone, and a library can only have one: the Meson build compiles
 // WinPR's under another name (`winpr_JNI_OnLoad`), and this one calls it before
 // registering anything.
 #[cfg(target_os = "android")]
