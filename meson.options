@@ -12,7 +12,7 @@ option('strict_warnings', type: 'boolean', value: false,
 option('probes', type: 'boolean', value: false,
   description: 'Linux: build a probe in front of each backend, and the tests meson test runs')
 option('ffmpeg_prefix', type: 'string', value: '',
-  description: 'Linux: the static FFmpeg built by backends/platform/linux/build.rs; empty for the system\'s libswscale and libavutil')
+  description: 'Linux: the static FFmpeg built by backends/platform/linux/build.rs, which linux/build.rs passes; empty for the system\'s libswscale and libavutil')
 option('crate_library_dir', type: 'string', value: '',
   description: 'Android: the directory of <abi>/lib<crate>.a files cargo-ndk made, each C backend\'s Rust crate as a static library (Gradle passes it)')
 option('realvnc_trace', type: 'boolean', value: false,

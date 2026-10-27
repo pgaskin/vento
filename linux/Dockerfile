@@ -14,15 +14,15 @@
 # to submodules at their pinned commits and accepts submodules `./patch.sh`
 # has already patched. It writes nothing to the checkout.
 # `linux/Dockerfile.dockerignore` limits the context to the sources the build
-# reads. GnuTLS and nettle are not in it: the CMake build downloads their
+# reads. GnuTLS and nettle are not in it: the Meson build downloads their
 # release tarballs and checks them against the SHA-256 hashes in
 # `backends/crypto-sources.txt`, as on a machine without them, so the result
 # does not depend on whatever is unpacked in the checkout.
 #
 # The binary needs the glibc symbol versions it was linked against, so it runs
 # on the build's glibc and later ones. The build therefore runs on Ubuntu
-# 18.04 (glibc 2.27), with a newer clang, CMake, Meson and NASM fetched at
-# pinned versions and checked. This baseline lives here and not in the build
+# 18.04 (glibc 2.27), with a newer clang, Meson and NASM fetched at pinned
+# versions and checked. This baseline lives here and not in the build
 # scripts, which build against the machine's own libraries. The C++ runtime is
 # GCC 8's libstdc++, the one 18.04 ships.
 #
@@ -53,33 +53,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Newer build tools than 18.04 ships:
 # - clang and LLVM's binutils from apt.llvm.org, the key checked by its
 #   fingerprint;
-# - CMake 3.31 (the tree needs 3.30; 18.04 has 3.10), Kitware's binary,
-#   built for glibc 2.17;
 # - NASM 2.16 (dav1d needs 2.14; 18.04 has 2.13), built from source;
-# - Meson 1.5 (dav1d needs 0.49; 18.04 has 0.45), run from its release
-#   tarball with Python 3.8;
+# - Meson 1.11.2 (18.04 has 0.45), the version `mesonVersion` in
+#   backends/build.gradle pins, run from its release tarball with Python 3.8;
 # - rustup, which installs the channel in rust-toolchain.toml.
 ARG LLVM_VERSION=18
-ARG CMAKE_VERSION=3.31.6
 ARG NASM_VERSION=2.16.03
-ARG MESON_VERSION=1.5.2
+ARG MESON_VERSION=1.11.2
 ARG RUSTUP_VERSION=1.28.2
 
 ARG LLVM_PGP_FINGERPRINT=6084F3CF814B57C1CF12EFD515CF4D18AF4F7421
-ARG CMAKE_CHECKSUM=sha256:5a1133ff103c71eb5120e2cc3de922733e7d8a26a98ae716397e8676adb367bf
 ARG NASM_CHECKSUM=sha256:1412a1c760bbd05db026b6c0d1657affd6631cd0a63cddb6f73cc6d4aa616148
-ARG MESON_CHECKSUM=sha256:f955e09ab0d71ef180ae85df65991d58ed8430323de7d77a37e11c9ea630910b
+ARG MESON_CHECKSUM=sha256:698feae069cef3ecd4d7aaf281d7df359bdfcf555a9a1564383d3b913fa8a736
 ARG RUSTUP_CHECKSUM=sha256:20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c
 
 ARG LLVM_PGP_URL=https://apt.llvm.org/llvm-snapshot.gpg.key
-ARG CMAKE_URL=https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
 ARG NASM_URL=https://www.nasm.us/pub/nasm/releasebuilds/${NASM_VERSION}/nasm-${NASM_VERSION}.tar.xz
 ARG MESON_URL=https://github.com/mesonbuild/meson/releases/download/${MESON_VERSION}/meson-${MESON_VERSION}.tar.gz
 ARG RUSTUP_URL=https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init
-
-FROM base AS cmake
-ADD --checksum=${CMAKE_CHECKSUM} ${CMAKE_URL} ./cmake.tar.gz
-RUN mkdir /opt/cmake && tar -C /opt/cmake --strip-components=1 -xf cmake.tar.gz
 
 FROM base AS nasm
 ADD --checksum=${NASM_CHECKSUM} ${NASM_URL} ./nasm.tar.xz
@@ -110,16 +101,15 @@ RUN gpg --batch --with-colons --with-fingerprint llvm.asc 2> /dev/null | grep -q
  && echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-${LLVM_VERSION} main" > /etc/apt/sources.list.d/llvm.list \
  && apt-get update && apt-get install -y --no-install-recommends clang-${LLVM_VERSION} llvm-${LLVM_VERSION} libclang-${LLVM_VERSION}-dev \
  && rm -rf /var/lib/apt/lists/*
-COPY --link --from=cmake /opt /opt
 COPY --link --from=nasm /opt /opt
 COPY --link --from=meson /opt /opt
 COPY --link --from=rustup /opt /opt
-ENV PATH="/usr/lib/llvm-${LLVM_VERSION}/bin:/opt/cmake/bin:/opt/nasm/bin:/opt/meson/bin:/opt/cargo/bin:$PATH" \
+ENV PATH="/usr/lib/llvm-${LLVM_VERSION}/bin:/opt/nasm/bin:/opt/meson/bin:/opt/cargo/bin:$PATH" \
     RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo \
     CC=clang CXX=clang++ \
     CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang \
     LIBCLANG_PATH=/usr/lib/llvm-${LLVM_VERSION}/lib
-RUN clang --version | head -1 && cmake --version | head -1 && nasm -v && meson --version && rustc --version
+RUN clang --version | head -1 && nasm -v && meson --version && rustc --version
 
 FROM sdk AS build
 WORKDIR /src
@@ -148,8 +138,8 @@ WORKDIR /src/linux
 RUN RUSTUP_TOOLCHAIN=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' /src/rust-toolchain.toml) cargo build --release --locked
 
 # Copy the tree out of target/release/ (linux/build.rs lays it out there) and
-# strip the libraries' debug information (the C backends are built
-# RelWithDebInfo). The tools are LLVM's, since 18.04's binutils cannot read
+# strip the libraries' debug information (the C backends are built with
+# it). The tools are LLVM's, since 18.04's binutils cannot read
 # clang's DWARF 5.
 RUN mkdir -p /out/lib \
  && cp target/release/vento /out/ \

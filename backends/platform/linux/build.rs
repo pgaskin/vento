@@ -8,7 +8,7 @@
 //!
 //! **One FFmpeg for every desktop consumer.** The Rust decoders here (video,
 //! and AAC and Opus sound) are one; FreeRDP's libswscale, built by
-//! `linux/build.rs` through CMake, is the other. That build gets the location
+//! `linux/build.rs` through Meson, is the other. That build gets the location
 //! of these libraries through the `links` metadata (`DEP_VENTO_VIDEO_PREFIX`),
 //! so both link the same configuration of the same source. FFmpeg is
 //! configured with `--disable-everything` and then exactly what those
@@ -254,7 +254,7 @@ fn main() {
     // that, and the system's libm, libdl and threads. Not libatomic: FFmpeg's
     // configure names it wherever it is installed, needed or not, and on
     // the targets built here (native atomics) nothing is taken from it. The
-    // C backends' CMake link of the same libraries does not name it either.
+    // C backends' Meson link of the same libraries does not name it either.
     for lib in static_libs(&prefix, "libavcodec") {
         if lib == "atomic" {
             continue;
@@ -269,7 +269,7 @@ fn main() {
         "cargo:rustc-link-search=native={}",
         prefix.join("lib").display()
     );
-    // For `linux/build.rs`, which hands it to the C backends' CMake build.
+    // For `linux/build.rs`, which hands it to the C backends' Meson build.
     println!("cargo:prefix={}", prefix.display());
 }
 
@@ -320,9 +320,10 @@ fn configure_args(prefix: &Path, cc: &str, asm: bool) -> Vec<String> {
 
 /// Builds dav1d with `cc` (natively, as `CC`, which Meson splits into a
 /// launcher and a compiler) or with the cross file's compiler (`cross`).
+/// Meson is `MESON`, or `meson` on the path, as for the C backends.
 fn build_dav1d(source: &Path, root: &Path, prefix: &Path, cc: &str, asm: bool, cross: Option<&str>) {
     let build = root.join("dav1d-build");
-    let mut setup = Command::new("meson");
+    let mut setup = Command::new(env::var_os("MESON").unwrap_or_else(|| "meson".into()));
     setup
         .arg("setup")
         .arg(&build)

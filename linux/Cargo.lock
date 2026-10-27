@@ -5034,7 +5034,6 @@ version = "0.0.7"
 dependencies = [
  "ash",
  "bytemuck",
- "cmake",
  "egui",
  "egui-wgpu",
  "egui-winit",

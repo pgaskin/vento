@@ -4,7 +4,7 @@
 # Every backend comes in as a crate holding its adapter to the one `Backend`
 # trait of `remotedesktop-api`, which the phone shares: the four Rust
 # protocols' own crates, and the four C libraries' small crates over the
-# vtable in `vento/backend.h`, whose shared libraries `build.rs` has CMake
+# vtable in `vento/backend.h`, whose shared libraries `build.rs` has Meson
 # make out of `backends/`. This crate adds the window (`src/gui/`), the
 # known-hosts file, and a headless probe.
 #
@@ -47,7 +47,7 @@ remotedesktop-api = { path = "../backends/api" }
 # linked.
 remotedesktop-platform-linux = { path = "../backends/platform/linux" }
 # The backends, each with its adapter in its own crate: the four protocols,
-# and the four C libraries' crates, whose libraries `build.rs` has CMake
+# and the four C libraries' crates, whose libraries `build.rs` has Meson
 # make and each crate opens at run time (`api::c::library`), so that one that
 # cannot be loaded, or RealVNC's where no clang made it, is one backend not
 # available.
@@ -97,9 +97,6 @@ xkeysym = "0.2"
 bytemuck = "1"
 
 [build-dependencies]
-# Runs `backends/CMakeLists.txt` with VENTO_SHARED on, which is how the C
-# backends are built; `build.rs` says where the libraries land.
-cmake = "0.1"
 # Decodes the window icon, `metadata/icon.png`, into the raw RGBA the binary
 # embeds (see `build.rs`).
 png = "0.18"

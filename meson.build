@@ -15,8 +15,8 @@
 #
 # On Android, Gradle builds each C module's libremotedesktop_<name>.so in a
 # tree of its own per variant and ABI (MesonBuildTask in backends/buildSrc).
-# On Linux, every backend's libvento_<name>.so is built in one tree. A
-# development build with the probes and tests:
+# On Linux, linux/build.rs builds every backend's libvento_<name>.so in one
+# tree. A development build with the probes and tests:
 #
 #   CC=clang CXX=clang++ meson setup build/host -Dprobes=true
 #   meson compile -C build/host
