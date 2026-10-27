@@ -704,9 +704,7 @@ impl Client {
     fn reach(&self, config: &Config) -> Result<Dialled> {
         let (sock, introduction, connection) = match &config.reach {
             Reach::Direct => {
-                let addr = resolve(&config.address)?;
-                log::info!("connecting to {addr}");
-                let sock = self.hangup.dial(addr, config.connect_timeout)?;
+                let (sock, addr) = dial_direct(&self.hangup, &config.address, config.connect_timeout)?;
                 sock.set_nodelay(true)?;
                 // The login names the resolved address rather than the typed
                 // one, because the peer checks it against three regular
@@ -2200,16 +2198,37 @@ fn login_hash(password: &str, hash: &Hash) -> Vec<u8> {
         .to_vec()
 }
 
-/// `host` or `host:port`, plus the bracketed IPv6 form. Direct mode only; an
-/// id never reaches here.
-fn resolve(address: &str) -> Result<SocketAddr> {
+/// `host` or `host:port`, plus the bracketed IPv6 form, as every address it
+/// resolves to, in the resolver's order. Direct mode only; an id never
+/// reaches here.
+fn resolve(address: &str) -> Result<Vec<SocketAddr>> {
     let (host, port) = runtime::address::split(address, DIRECT_PORT, runtime::address::Ports::Plain)
         .map_err(Error::Address)?;
-    (host.as_str(), port)
-        .to_socket_addrs()
-        .map_err(Error::Io)?
-        .next()
-        .ok_or_else(|| Error::Protocol(format!("{address} resolves to nothing")))
+    let found: Vec<SocketAddr> = (host.as_str(), port).to_socket_addrs().map_err(Error::Io)?.collect();
+    if found.is_empty() {
+        return Err(Error::Protocol(format!("{address} resolves to nothing")));
+    }
+    Ok(found)
+}
+
+/// Dials each of `address`'s addresses in turn, each with the whole timeout,
+/// as rfb and IronRDP do, through `hangup` so that a close also ends the
+/// dial. Returns the socket and the address that answered; otherwise the
+/// last address's error.
+fn dial_direct(hangup: &Hangup, address: &str, timeout: Duration) -> Result<(TcpStream, SocketAddr)> {
+    let mut last = None;
+    for addr in resolve(address)? {
+        log::info!("connecting to {addr}");
+        match hangup.dial(addr, timeout) {
+            Ok(sock) => return Ok((sock, addr)),
+            Err(e) if hangup.is_hung_up() => return Err(Error::Io(e)),
+            Err(e) => {
+                log::info!("{addr}: {e}");
+                last = Some(e);
+            }
+        }
+    }
+    Err(Error::Io(last.expect("resolve returns at least one address")))
 }
 
 fn timed_out(e: &std::io::Error) -> bool {
@@ -2806,12 +2825,12 @@ mod tests {
 
     #[test]
     fn a_port_is_theirs_unless_one_is_given() {
-        assert_eq!(resolve("127.0.0.1").unwrap().port(), DIRECT_PORT);
-        assert_eq!(resolve("127.0.0.1:5900").unwrap().port(), 5900);
+        assert_eq!(resolve("127.0.0.1").unwrap()[0].port(), DIRECT_PORT);
+        assert_eq!(resolve("127.0.0.1:5900").unwrap()[0].port(), 5900);
         // The bracketed form without a port is the case a `contains(':')`
         // check for "has a port" gets wrong, since every IPv6 literal has a
         // colon.
-        assert_eq!(resolve("[::1]").unwrap().port(), DIRECT_PORT);
+        assert_eq!(resolve("[::1]").unwrap()[0].port(), DIRECT_PORT);
         assert!(resolve("::1").is_err());
     }
 
