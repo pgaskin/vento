@@ -70,8 +70,8 @@ fn named(keysym: u32) -> Option<Scancode> {
         0xffe4 => ext(0x1d),          // Control_R
         0xffe9 => plain(0x38),        // Alt_L
         0xffea | 0xfe03 => ext(0x38), // Alt_R, ISO_Level3_Shift: both AltGr
-        0xffeb => ext(0x5b),          // Super_L
-        0xffec => ext(0x5c),          // Super_R
+        0xffeb | 0xffe7 => ext(0x5b), // Super_L, Meta_L: both the left Windows key
+        0xffec | 0xffe8 => ext(0x5c), // Super_R, Meta_R: both the right Windows key
         0xff67 => ext(0x5d),          // Menu
         0xffe5 => plain(0x3a),        // Caps_Lock
         0xff7f => plain(0x45),        // Num_Lock
@@ -264,6 +264,9 @@ mod tests {
         assert_eq!(code_of(0xffe1), (0x2a, false), "Shift_L is not");
         assert_eq!(code_of(0xffe3), (0x1d, false), "Control_L");
         assert_eq!(code_of(0xfe03), (0xe038, false), "AltGr is right Alt");
+        assert_eq!(code_of(0xffeb), (0xe05b, false), "Super_L is the left Windows key");
+        assert_eq!(code_of(0xffe7), (0xe05b, false), "and so is Meta_L");
+        assert_eq!(code_of(0xffe8), (0xe05c, false), "Meta_R the right one");
         assert_eq!(code_of(0xffff), (0xe053, false), "Delete");
         assert_eq!(code_of(0xff08), (0x0e, false), "BackSpace is not Delete");
     }

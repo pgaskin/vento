@@ -186,8 +186,8 @@ fn named(keysym: u32) -> Option<u16> {
         0xffe4 => ext(0x1d),          // Control_R
         0xffe9 => 0x38,               // Alt_L
         0xffea | 0xfe03 => ext(0x38), // Alt_R, ISO_Level3_Shift: both AltGr
-        0xffeb => ext(0x5b),          // Super_L
-        0xffec => ext(0x5c),          // Super_R
+        0xffeb | 0xffe7 => ext(0x5b), // Super_L, Meta_L: both the left Windows key
+        0xffec | 0xffe8 => ext(0x5c), // Super_R, Meta_R: both the right Windows key
         0xff67 => ext(0x5d),          // Menu
         0xffe5 => 0x3a,               // Caps_Lock
         0xff7f => 0x45,               // Num_Lock
@@ -382,6 +382,16 @@ mod tests {
         assert_eq!(keyboard.down(2, key('!' as u32)), [Stroke::Down(0x02)]);
         assert_eq!(keyboard.up(1), [Stroke::Up(0x9e)]);
         assert_eq!(keyboard.up(2), [Stroke::Up(0x82), Stroke::Up(0xaa)]);
+    }
+
+    /// Meta is the Windows key, as Super is: a layout that puts Meta on it
+    /// would otherwise have it send nothing.
+    #[test]
+    fn meta_is_the_windows_key() {
+        let mut keyboard = Keyboard::default();
+        assert_eq!(keyboard.down(1, key(0xffe7)), [Stroke::Down(0x5be0)], "Meta_L");
+        assert_eq!(keyboard.down(2, key(0xffe8)), [Stroke::Down(0x5ce0)], "Meta_R");
+        assert_eq!(keyboard.down(3, key(0xffeb)), [Stroke::Down(0x5be0)], "Super_L");
     }
 
     /// A Shift the user holds is left alone: the guest has it down already, so

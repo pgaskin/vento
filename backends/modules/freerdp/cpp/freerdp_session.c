@@ -1343,8 +1343,8 @@ static UINT16 namedScancode(UINT32 keysym) {
         case 0xffe4: return KEY_EXT | 0x1d;   /* Control_R */
         case 0xffe9: return 0x38;             /* Alt_L */
         case 0xffea: case 0xfe03: return KEY_EXT | 0x38; /* Alt_R, ISO_Level3_Shift: both AltGr */
-        case 0xffeb: return KEY_EXT | 0x5b;   /* Super_L */
-        case 0xffec: return KEY_EXT | 0x5c;   /* Super_R */
+        case 0xffeb: case 0xffe7: return KEY_EXT | 0x5b; /* Super_L, Meta_L: both the left Windows key */
+        case 0xffec: case 0xffe8: return KEY_EXT | 0x5c; /* Super_R, Meta_R: both the right Windows key */
         case 0xff67: return KEY_EXT | 0x5d;   /* Menu */
         case 0xffe5: return 0x3a;             /* Caps_Lock */
         case 0xff7f: return 0x45;             /* Num_Lock */
