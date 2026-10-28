@@ -295,6 +295,21 @@
         grid-template-columns: repeat(2, 1fr);
       }
     }
+    .feature-group>.shots {
+      margin-top: 1.75rem;
+    }
+    /* flex-grow and flex-basis are proportional to the aspect ratio, so shots in the same row have the same height */
+    .shots.desktop {
+      display: flex;
+      flex-wrap: wrap;
+    }
+    .shots.desktop .shot {
+      flex: 1.6 1 25.6rem;
+    }
+    .shots.desktop .shot.tall {
+      flex: .7925 1 12.68rem;
+      max-width: 24rem;
+    }
     .shot {
       margin: 0;
       min-width: 0;
@@ -687,31 +702,51 @@
     <section id="screenshots">
       <div class="wrap">
         <h2>Screenshots</h2>
-        <div class="shots">
-          <figure class="shot">
-            <img src="shot-1.jpg" alt="The connection list, with a card for each saved connection showing a preview of its desktop" loading="lazy" width="540" height="1200">
-            <figcaption>Connection list.</figcaption>
-          </figure>
-          <figure class="shot">
-            <img src="shot-4.jpg" alt="The connection info panel open over a session, showing the backend, desktop size, options, and stats" loading="lazy" width="540" height="1200">
-            <figcaption>Connection info panel.</figcaption>
-          </figure>
-          <figure class="shot">
-            <img src="shot-3.jpg" alt="The protocol picker in the connection editor, listing each backend with its description" loading="lazy" width="540" height="1200">
-            <figcaption>Backend selection.</figcaption>
-          </figure>
-          <figure class="shot">
-            <img src="shot-5.jpg" alt="The settings screen with the session, backend, and app groups" loading="lazy" width="540" height="1200">
-            <figcaption>Settings.</figcaption>
-          </figure>
-          <figure class="shot">
-            <img src="shot-2.jpg" alt="A connected session with the touch keyboard and the extension keyboard row" loading="lazy" width="540" height="1200">
-            <figcaption>Session with the keyboard.</figcaption>
-          </figure>
-          <figure class="shot">
-            <img src="shot-9.jpg" alt="The playground, a fake desktop used for testing the controls" loading="lazy" width="540" height="1200">
-            <figcaption>Input test view.</figcaption>
-          </figure>
+        <div class="feature-group">
+          <h3>Android</h3>
+          <div class="shots">
+            <figure class="shot">
+              <img src="shot-1.jpg" alt="The connection list, with a card for each saved connection showing a preview of its desktop" loading="lazy" width="540" height="1200">
+              <figcaption>Connection list.</figcaption>
+            </figure>
+            <figure class="shot">
+              <img src="shot-4.jpg" alt="The connection info panel open over a session, showing the backend, desktop size, options, and stats" loading="lazy" width="540" height="1200">
+              <figcaption>Connection info panel.</figcaption>
+            </figure>
+            <figure class="shot">
+              <img src="shot-3.jpg" alt="The protocol picker in the connection editor, listing each backend with its description" loading="lazy" width="540" height="1200">
+              <figcaption>Backend selection.</figcaption>
+            </figure>
+            <figure class="shot">
+              <img src="shot-5.jpg" alt="The settings screen with the session, backend, and app groups" loading="lazy" width="540" height="1200">
+              <figcaption>Settings.</figcaption>
+            </figure>
+            <figure class="shot">
+              <img src="shot-2.jpg" alt="A connected session with the touch keyboard and the extension keyboard row" loading="lazy" width="540" height="1200">
+              <figcaption>Session with the keyboard.</figcaption>
+            </figure>
+            <figure class="shot">
+              <img src="shot-9.jpg" alt="The playground, a fake desktop used for testing the controls" loading="lazy" width="540" height="1200">
+              <figcaption>Input test view.</figcaption>
+            </figure>
+          </div>
+        </div>
+        <div class="feature-group">
+          <h3>Linux</h3>
+          <div class="shots desktop">
+            <figure class="shot tall">
+              <img src="linux-shot-1.jpg" alt="The connection dialog with the backend list open, and the RDP options and settings below it" loading="lazy" width="634" height="800">
+              <figcaption>Connection dialog.</figcaption>
+            </figure>
+            <figure class="shot">
+              <img src="linux-shot-2.jpg" alt="A two-monitor session in one window, with the toolbar and the connection info panel showing the options and stats" loading="lazy" width="1280" height="800">
+              <figcaption>Connection info panel.</figcaption>
+            </figure>
+            <figure class="shot">
+              <img src="linux-shot-3.jpg" alt="The same session popped out into a window for each monitor" loading="lazy" width="1280" height="800">
+              <figcaption>Multi-monitor pop-out.</figcaption>
+            </figure>
+          </div>
         </div>
       </div>
     </section>

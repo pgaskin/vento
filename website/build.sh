@@ -102,6 +102,7 @@ font 'Roboto:wght@400..700' build/roboto.woff2
 
 icon=../app/fastlane/metadata/android/en-US/images/icon.png
 shots=../app/fastlane/metadata/android/en-US/images/phoneScreenshots
+linux_shots=../linux/metadata/screenshots
 test -f "$icon" || die "missing $icon"
 
 # imagemagick 7 calls it magick, 6 only has convert
@@ -114,4 +115,10 @@ for n in 1 4 3 5 2 9; do
     test -f "$shots/$n.png" || die "missing $shots/$n.png"
     "$im" "$shots/$n.png" -resize 540x1200 -quality 88 -sampling-factor 1x1 -strip "build/shot-$n.jpg"
     echo "build/shot-$n.jpg"
+done
+
+for n in 1 2 3; do
+    test -f "$linux_shots/$n.png" || die "missing $linux_shots/$n.png"
+    "$im" "$linux_shots/$n.png" -quality 88 -sampling-factor 1x1 -strip "build/linux-shot-$n.jpg"
+    echo "build/linux-shot-$n.jpg"
 done
