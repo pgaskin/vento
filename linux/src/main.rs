@@ -42,6 +42,7 @@ mod host {
     use vento::known_hosts::{self, KnownHosts};
     use vento::options::{self, Options, Type};
     use vento::ppm;
+    use vento::realvnc;
 
     /// What the command line resolved to.
     enum Mode {
@@ -69,6 +70,8 @@ mod host {
         password: Option<String>,
         options: Options,
         dirs: Dirs,
+        /// Where RealVNC's libraries are installed to (`realvnc::install_dir`).
+        realvnc_install: PathBuf,
         /// `--probe`'s spec, run in order once connected.
         steps: Vec<Step>,
         /// The spec's `wait-connect=`, or the default.
@@ -292,7 +295,7 @@ mod host {
             }
         }
 
-        let extlib = extlib_dir.unwrap_or_else(backends::default_extlib_dir);
+        let extlib = extlib_dir.clone().unwrap_or_else(backends::default_extlib_dir);
         if help {
             return Ok(Mode::Help { extlib });
         }
@@ -307,6 +310,7 @@ mod host {
             &state_dir.unwrap_or_else(backends::default_state_dir),
             &extlib,
         );
+        let realvnc_install = realvnc::install_dir(extlib_dir.as_deref());
         if let Some(address) = forget {
             if !positional.is_empty() || headless || connect || !assignments.is_empty() {
                 return Err("--forget only takes an address, and not other options".into());
@@ -321,6 +325,7 @@ mod host {
                 request: None,
                 connect: false,
                 dirs,
+                realvnc_install,
                 settings,
                 display_server,
                 csd,
@@ -359,6 +364,7 @@ mod host {
                 }),
                 connect,
                 dirs,
+                realvnc_install,
                 settings,
                 display_server,
                 csd,
@@ -382,6 +388,7 @@ mod host {
             password,
             options,
             dirs,
+            realvnc_install,
             steps,
             connect_timeout,
             trust: settings.trust,
@@ -433,10 +440,26 @@ mod host {
     }
 
     impl Probe {
-        fn run(self: Box<Self>) -> i32 {
+        fn run(mut self: Box<Self>) -> i32 {
             let start = Instant::now();
             let say = |event: &str| println!("[{:8.3}] {event}", start.elapsed().as_secs_f64());
 
+            // RealVNC's libraries, where they are needed and the option names
+            // where from. The probe asks nothing, so the default (`prompt`)
+            // and `off` leave the session to fail with the reason.
+            if let Some((_, fetch)) = realvnc::needed(self.kind, &self.options, &self.dirs)
+                && let Some(source) = realvnc::source(&fetch)
+            {
+                say("install");
+                match realvnc::install(&source, &self.realvnc_install, &realvnc::Unattended) {
+                    Ok(()) => self.dirs.realvnc_libs = self.realvnc_install.clone(),
+                    Err(realvnc::Error::Failed(why)) => {
+                        say(&format!("install failed: {}", why.replace('\n', "; ")));
+                        return 1;
+                    }
+                    Err(realvnc::Error::Cancelled) => unreachable!("nothing cancels the probe's install"),
+                }
+            }
             println!("{}", backends::version(self.kind, &self.dirs));
             let mailbox = Mailbox::new(None);
             let backend = {

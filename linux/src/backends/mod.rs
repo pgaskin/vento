@@ -32,7 +32,7 @@ pub fn default_state_dir() -> PathBuf {
 /// `~/.local/share/vento`) where RealVNC's are there, and otherwise `lib/`
 /// beside the binary, the directory of the release tree's backend libraries.
 pub fn default_extlib_dir() -> PathBuf {
-    let data = xdg("XDG_DATA_HOME", ".local/share").join("vento");
+    let data = data_dir();
     if data.join(REALVNC_LIBRARY).is_file() {
         return data;
     }
@@ -40,6 +40,11 @@ pub fn default_extlib_dir() -> PathBuf {
         Ok(exe) => exe.parent().map_or(data, |dir| dir.join("lib")),
         Err(_) => data,
     }
+}
+
+/// `$XDG_DATA_HOME/vento`, or `~/.local/share/vento`.
+pub fn data_dir() -> PathBuf {
+    xdg("XDG_DATA_HOME", ".local/share").join("vento")
 }
 
 /// The RealVNC viewer's library, under the extra libraries' directory: the

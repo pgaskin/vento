@@ -76,9 +76,12 @@ pub fn not_built() {
 /// The viewer's build the session's declarations were read from, and the
 /// SHA-256 of each of its two libraries for this machine's ABI, from
 /// `Library.java` (`build.rs`).
-const VERSION: &str = env!("VENTO_REALVNC_VERSION");
-const ABI: &str = env!("VENTO_REALVNC_ABI");
-const PINS: [(&str, &str); 2] = [
+pub const VERSION: &str = env!("VENTO_REALVNC_VERSION");
+/// The directory under `lib/` in the APK, empty for an architecture with no
+/// build.
+pub const ABI: &str = env!("VENTO_REALVNC_ABI");
+/// Each library's name and SHA-256, in the order they are loaded.
+pub const PINS: [(&str, &str); 2] = [
     ("libc++_shared.so", env!("VENTO_REALVNC_SHA256_LIBCXX_SHARED")),
     ("libvncviewer.so", env!("VENTO_REALVNC_SHA256_LIBVNCVIEWER")),
 ];
@@ -93,7 +96,8 @@ pub fn libraries(dir: &std::path::Path) -> Result<(), String> {
     }
     let copy = |into: &str| {
         format!(
-            "Copy libc++_shared.so and libvncviewer.so from lib/{ABI}/ in the RealVNC Viewer {VERSION} APK into {into}"
+            "Copy libc++_shared.so and libvncviewer.so from lib/{ABI}/ in the RealVNC Viewer {VERSION} APK into \
+             {into}, or set AutoFetchLibraries to the APK's path"
         )
     };
     let missing: Vec<&str> = PINS
@@ -420,18 +424,19 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let copy =
             format!("Copy libc++_shared.so and libvncviewer.so from lib/{ABI}/ in the RealVNC Viewer {VERSION} APK");
+        let hint = "or set AutoFetchLibraries to the APK's path";
         assert_eq!(
             libraries(&dir),
-            Err(format!("libc++_shared.so and libvncviewer.so are not in {}. {copy} into it", dir.display()))
+            Err(format!("libc++_shared.so and libvncviewer.so are not in {}. {copy} into it, {hint}", dir.display()))
         );
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("libc++_shared.so"), "not it").unwrap();
-        assert_eq!(libraries(&dir), Err(format!("libvncviewer.so is not in {}. {copy} into it", dir.display())));
+        assert_eq!(libraries(&dir), Err(format!("libvncviewer.so is not in {}. {copy} into it, {hint}", dir.display())));
         std::fs::write(dir.join("libvncviewer.so"), "not it either").unwrap();
         assert_eq!(
             libraries(&dir),
             Err(format!(
-                "{}/libc++_shared.so is not the one from RealVNC Viewer {VERSION}. {copy} into {}",
+                "{}/libc++_shared.so is not the one from RealVNC Viewer {VERSION}. {copy} into {}, {hint}",
                 dir.display(),
                 dir.display()
             ))

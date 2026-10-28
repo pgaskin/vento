@@ -200,6 +200,52 @@ fn window_title(name: &str, ringing: bool, monitor: Option<usize>, captured: boo
     }
 }
 
+/// The connecting screen, before there is a desktop: the address, what is
+/// being waited for (`status`, and the bytes of a download in `progress`,
+/// with the total where it is known), and a Cancel button, which is not
+/// offered while `disconnecting`; whether Cancel was pressed.
+pub(super) fn waiting(
+    ui: &mut egui::Ui,
+    address: &str,
+    status: Option<&str>,
+    progress: Option<(u64, Option<u64>)>,
+    disconnecting: bool,
+) -> bool {
+    let mut cancel = false;
+    ui.centered_and_justified(|ui| {
+        ui.vertical_centered(|ui| {
+            ui.add_space(ui.available_height() / 2.0 - 40.0);
+            if disconnecting {
+                ui.label("Disconnecting…");
+                return;
+            }
+            ui.label(format!("Connecting to {address}…"));
+            // Wrapped at the connection dialog's width, centred line by
+            // line, with a margin in a narrower window.
+            let width = (ui.available_width() - 32.0).min(super::dialog::WIDTH);
+            if let Some(status) = status {
+                ui.scope(|ui| {
+                    ui.set_max_width(width);
+                    ui.add(egui::Label::new(status).wrap().halign(egui::Align::Center));
+                });
+            }
+            if let Some((done, total)) = progress {
+                ui.add_space(4.0);
+                ui.add(super::prompts::progress_bar(done, total).desired_width(width.min(super::prompts::WIDTH)));
+            }
+            ui.add_space(8.0);
+            cancel = ui.button("Cancel").clicked();
+        });
+    });
+    cancel
+}
+
+/// The title of a connecting session's window, before the server has
+/// named its desktop.
+pub(super) fn connecting_title(address: &str) -> String {
+    window_title(&printable(address), false, None, false, true)
+}
+
 /// How long the hint over the desktop that says how to let go of the
 /// pointer stays up after the session's first capture.
 const RELEASE_HINT: Duration = Duration::from_secs(5);
@@ -1523,29 +1569,10 @@ impl Session {
 
     /// Before there is a desktop: what is being waited for, and a way out.
     fn waiting(&mut self, ui: &mut egui::Ui) {
-        ui.centered_and_justified(|ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(ui.available_height() / 2.0 - 40.0);
-                if self.disconnecting.is_some() {
-                    ui.label("Disconnecting…");
-                } else {
-                    ui.label(format!("Connecting to {}…", self.request.address));
-                    if let Some(status) = &self.status {
-                        // Wrapped at the connection dialog's width, centred
-                        // line by line, with a margin in a narrower window.
-                        let width = (ui.available_width() - 32.0).min(super::dialog::WIDTH);
-                        ui.scope(|ui| {
-                            ui.set_max_width(width);
-                            ui.add(egui::Label::new(status).wrap().halign(egui::Align::Center));
-                        });
-                    }
-                    ui.add_space(8.0);
-                    if ui.button("Cancel").clicked() {
-                        self.disconnect();
-                    }
-                }
-            });
-        });
+        let disconnecting = self.disconnecting.is_some();
+        if waiting(ui, &self.request.address, self.status.as_deref(), None, disconnecting) {
+            self.disconnect();
+        }
     }
 
     /// One pointer event, unless it is the one already sent; whether it

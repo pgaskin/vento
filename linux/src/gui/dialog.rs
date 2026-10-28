@@ -50,8 +50,8 @@ const TOP: f32 = 40.0;
 
 /// The window's buttons in the dialog's corner, with its own decorations:
 /// their side, and how far they are from the window's edges, in points.
-const BUTTON: f32 = 24.0;
-const BUTTON_INSET: f32 = 6.0;
+pub(super) const BUTTON: f32 = 24.0;
+pub(super) const BUTTON_INSET: f32 = 6.0;
 
 /// Makes a window drawn with its own decorations the panel's size: the
 /// dialog's width, and `height`, the panel's, up to the height of the

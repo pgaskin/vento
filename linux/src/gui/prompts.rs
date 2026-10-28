@@ -150,6 +150,20 @@ impl Form {
 /// The width of a prompt's content, in points.
 pub const WIDTH: f32 = 380.0;
 
+/// A download's progress: the share of `total` with both in megabytes where
+/// the server gave a total, and otherwise the bytes so far on a bar that
+/// does not fill.
+pub fn progress_bar(done: u64, total: Option<u64>) -> egui::ProgressBar {
+    let mb = |bytes: u64| bytes as f64 / 1e6;
+    match total.filter(|&t| t > 0) {
+        Some(total) => egui::ProgressBar::new((done as f64 / total as f64).min(1.0) as f32)
+            .text(format!("{:.1} of {:.1} MB", mb(done), mb(total))),
+        None => egui::ProgressBar::new(0.0)
+            .animate(true)
+            .text(format!("{:.1} MB", mb(done))),
+    }
+}
+
 /// Draws `prompt` as a modal and returns its answer on the frame it is
 /// given. `address` titles the dialogs that are about the far end, with the
 /// connecting screen's `status` under it, since the modal covers the screen;

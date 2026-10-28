@@ -95,6 +95,11 @@ libc = "0.2"
 # as the keysym every protocol here takes.
 xkeysym = "0.2"
 bytemuck = "1"
+# Installing RealVNC's libraries from its APK (`src/realvnc/`): the deflated
+# entries of the zip, and each library's hash against its pin as it is
+# written. Both already in the graph through the backends.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+sha2 = "0.11"
 
 [build-dependencies]
 # Decodes the window icon, `metadata/icon.png`, into the raw RGBA the binary

@@ -50,6 +50,7 @@ mod display_server;
 mod follow;
 mod hud;
 mod icons;
+mod install;
 mod keys;
 mod panel;
 mod prompts;
@@ -62,9 +63,11 @@ mod x11;
 mod zerocopy;
 
 use crate::backends::{Dirs, Kind};
+use crate::realvnc;
 use crate::options::Options;
 use clipboard::{Clipboard, Why};
 use dialog::Dialog;
+use install::Installing;
 pub use display_server::DisplayServer;
 use egui::ViewportId;
 use session::{Session, Teardown, WindowOp};
@@ -98,6 +101,9 @@ pub struct Launch {
     pub request: Option<Request>,
     pub connect: bool,
     pub dirs: Dirs,
+    /// Where RealVNC's libraries are installed to when a session needs them
+    /// (`realvnc::install_dir`).
+    pub realvnc_install: std::path::PathBuf,
     /// The client's own settings, from their flags.
     pub settings: Settings,
     /// The display server to open the window on, where the command line
@@ -178,10 +184,12 @@ pub fn run(launch: Launch) -> i32 {
     let proxy = event_loop.create_proxy();
     let mut app = App {
         dirs: launch.dirs.clone(),
+        realvnc_install: launch.realvnc_install.clone(),
         settings: launch.settings,
         csd: launch.csd,
         dialog_type: false,
         compact: false,
+        grown: false,
         fullscreened: None,
         fullscreen_after_frame: false,
         launch: Some(launch),
@@ -511,6 +519,9 @@ fn window_icon() -> Icon {
 enum Screen {
     Dialog(Box<Dialog>),
     Session(Box<Session>),
+    /// RealVNC's libraries being installed for a connection, on the
+    /// connecting screen.
+    Installing(Box<Installing>),
 }
 
 /// What the window does once a session has ended.
@@ -582,6 +593,8 @@ fn resolve_focus<W: Copy + Eq>(focused: Option<W>, events: &[(W, bool)]) -> (Opt
 struct App {
     launch: Option<Launch>,
     dirs: Dirs,
+    /// Where RealVNC's libraries are installed to ([`Launch::realvnc_install`]).
+    realvnc_install: std::path::PathBuf,
     /// The settings a session starts with, and what the dialog edits; a
     /// session that changed them hands them back when it ends.
     settings: Settings,
@@ -619,6 +632,9 @@ struct App {
     /// The main window, drawn with its own decorations, is the dialog's
     /// size, to be grown to a session's when one starts (see `grow`).
     compact: bool,
+    /// The main window was grown from the dialog's size for the connection
+    /// being made, and is shrunk back if it does not start.
+    grown: bool,
     /// The main window is still X11's dialog type it opened as, to be
     /// floated by a tiling window manager (see `open`).
     dialog_type: bool,
@@ -764,7 +780,7 @@ impl App {
             if let Some(request) = launch.request {
                 if launch.connect {
                     self.connect(request);
-                    self.launched = matches!(self.screen, Screen::Session(_));
+                    self.launched = matches!(self.screen, Screen::Session(_) | Screen::Installing(_));
                 } else {
                     self.screen = Screen::Dialog(Box::new(Dialog::from_request(&request)));
                 }
@@ -952,6 +968,19 @@ impl App {
         let wake: Box<dyn Fn() + Send + Sync> = Box::new(move || {
             let _ = proxy.send_event(Wake::Now(None));
         });
+        // RealVNC's libraries first, where they are needed and the option
+        // names where from: on the connecting screen, as the session's would
+        // be, which then starts with them in place.
+        if let Some((why, fetch)) = realvnc::needed(request.kind, &request.options, &self.dirs)
+            && let Some(source) = realvnc::source(&fetch)
+        {
+            self.make_session_window(&window, dialog_at);
+            window.set_title(&session::connecting_title(&request.address));
+            let dir = self.realvnc_install.clone();
+            self.screen = Screen::Installing(Box::new(Installing::start(request, dir, source, why, wake)));
+            window.request_redraw();
+            return;
+        }
         let zerocopy = match self.gpu.as_ref().map(|g| &g.zerocopy) {
             Some(Ok(_)) => Ok(()),
             Some(Err(why)) => Err(why.clone()),
@@ -976,7 +1005,7 @@ impl App {
             Err(e) => {
                 let mut dialog = Dialog::from_request(&request);
                 dialog.notice = Some(format!("Could not connect: {e}"));
-                self.screen = Screen::Dialog(Box::new(dialog));
+                self.back_to_dialog(&window, dialog);
             }
         }
         window.request_redraw();
@@ -985,7 +1014,8 @@ impl App {
     /// The main window made a session's, from the connecting screen on: a
     /// normal window rather than a dialog's, a session's size, and
     /// fullscreen with `--fullscreen`. `dialog_at` is where the dialog was,
-    /// for the window to go back to.
+    /// for the window to go back to. Called again for the same connection
+    /// (after RealVNC's libraries were installed), it changes nothing.
     fn make_session_window(&mut self, window: &Window, dialog_at: Option<PhysicalPosition<i32>>) {
         if self.dialog_type {
             self.dialog_type = false;
@@ -997,11 +1027,12 @@ impl App {
         // (`--connect`) has a session's already.
         if std::mem::take(&mut self.compact) {
             Self::grow(window);
+            self.grown = true;
         }
         // After the growing to a session's size, which is the size the
         // window has when it leaves fullscreen.
         if self.settings.fullscreen {
-            if window.fullscreen().is_none() {
+            if window.fullscreen().is_none() && !self.fullscreen_after_frame {
                 log::info!("--fullscreen: making the window fullscreen for the session");
                 // A Wayland compositor gives a window back the size of its
                 // last frame before fullscreen, so there it waits for a
@@ -1013,15 +1044,31 @@ impl App {
                     window.set_fullscreen(Some(Fullscreen::Borderless(None)));
                 }
             }
-            self.fullscreened = Some(dialog_at);
+            if self.fullscreened.is_none() {
+                self.fullscreened = Some(dialog_at);
+            }
         }
+    }
+
+    /// Back to `dialog` in the main window from a connection that did not
+    /// start, made the dialog's again where it was made a session's for it
+    /// ([`make_dialog_window`](Self::make_dialog_window)).
+    fn back_to_dialog(&mut self, window: &Window, mut dialog: Dialog) {
+        self.make_dialog_window(window, &mut dialog, false);
+        self.launched = false;
+        window.set_title("Vento");
+        self.screen = Screen::Dialog(Box::new(dialog));
     }
 
     /// The main window made the dialog's again where
     /// [`make_session_window`](Self::make_session_window) made it a session's:
     /// out of fullscreen and back where the dialog was, or the dialog's size.
-    fn make_dialog_window(&mut self, window: &Window, dialog: &mut Dialog) {
+    /// After a session (`ended`), a window with its own decorations is always
+    /// given the dialog's size, a window opened for a session (`--connect`)
+    /// too; after a connection that did not start, only one it grew.
+    fn make_dialog_window(&mut self, window: &Window, dialog: &mut Dialog, ended: bool) {
         self.fullscreen_after_frame = false;
+        let grown = std::mem::take(&mut self.grown);
         if let Some(dialog_at) = self.fullscreened.take()
             && window.fullscreen().is_some()
         {
@@ -1036,17 +1083,42 @@ impl App {
                 window.set_outer_position(at);
             }
             dialog.fit = self.csd;
-        } else if self.csd {
+            self.compact = self.csd;
+        } else if self.csd && (ended || grown) {
             Self::shrink(window);
             dialog.fit = true;
+            self.compact = true;
         }
-        self.compact = self.csd;
+    }
+
+    /// After RealVNC's libraries were installed for a connection, or not.
+    fn installed(&mut self, outcome: install::Outcome) {
+        let Some(window) = self.main_surface().map(|s| Arc::clone(&s.window)) else {
+            return;
+        };
+        let screen = std::mem::replace(&mut self.screen, Screen::Dialog(Box::new(Dialog::new())));
+        let Screen::Installing(installing) = screen else {
+            self.screen = screen;
+            return;
+        };
+        match outcome {
+            install::Outcome::Installed => {
+                self.dirs.realvnc_libs = installing.dir.clone();
+                self.connect(installing.request.clone());
+            }
+            install::Outcome::Back(notice) => {
+                let mut dialog = Dialog::from_request(&installing.request);
+                dialog.notice = Some(notice);
+                self.back_to_dialog(&window, dialog);
+            }
+        }
+        window.request_redraw();
     }
 
     fn session(&mut self) -> Option<&mut Session> {
         match &mut self.screen {
             Screen::Session(session) => Some(session),
-            Screen::Dialog(_) => None,
+            Screen::Dialog(_) | Screen::Installing(_) => None,
         }
     }
 
@@ -1301,6 +1373,7 @@ impl App {
         }
         let mut next: Option<Request> = None;
         let mut ended: Option<(String, bool)> = None;
+        let mut installed: Option<install::Outcome> = None;
         let mut host = Host {
             window: &window,
             viewport,
@@ -1342,6 +1415,10 @@ impl App {
                     if let Some(detail) = &session.closed {
                         ended = Some((detail.clone(), session.disconnect_asked()));
                     }
+                }
+                Screen::Installing(_) if viewport != ViewportId::ROOT => {}
+                Screen::Installing(installing) => {
+                    installed = installing.ui(ui, &mut host);
                 }
             }
         });
@@ -1401,7 +1478,7 @@ impl App {
         // be the one in front.
         let (redraw_others, attention) = match &mut self.screen {
             Screen::Session(session) => (session.take_redraw_others(), session.take_attention()),
-            Screen::Dialog(_) => (false, false),
+            Screen::Dialog(_) | Screen::Installing(_) => (false, false),
         };
         if redraw_others {
             for (other, surface) in &self.windows {
@@ -1435,6 +1512,9 @@ impl App {
         if let Some(request) = next {
             self.connect(request);
         }
+        if let Some(outcome) = installed {
+            self.installed(outcome);
+        }
         // The title bar's close, as the window manager's (see
         // `window_event`).
         if close {
@@ -1452,7 +1532,7 @@ impl App {
     fn window_ops(&mut self, event_loop: &ActiveEventLoop) {
         let ops = match &mut self.screen {
             Screen::Session(session) => session.take_window_ops(),
-            Screen::Dialog(_) => return,
+            Screen::Dialog(_) | Screen::Installing(_) => return,
         };
         if ops.is_empty() {
             return;
@@ -1585,7 +1665,7 @@ impl App {
             if !detail.is_empty() {
                 dialog.notice = Some(format!("Disconnected: {detail}"));
             }
-            self.make_dialog_window(&window, &mut dialog);
+            self.make_dialog_window(&window, &mut dialog, true);
             let Some(surface) = self.windows.get_mut(&main) else {
                 return;
             };

@@ -1813,6 +1813,14 @@ so, naming the file or the directory and what to copy there, rather than
 same pins (`remotedesktop-realvnc` reads `Library.java` in its `build.rs`)
 before a session starts, and the session again before it loads them.
 
+`-o AutoFetchLibraries=/path/to/the.apk` (a command line option only, not a
+row in the dialog) installs them from that APK when they are needed, on Connect
+(the connecting screen shows the add-on's steps, with Cancel) and in the
+probe: each is extracted under a temporary name, hashed as it is written and
+renamed into place once both match their pins. They go to `realvnc/` under
+`--extlib-dir` where it was given, and otherwise under `$XDG_DATA_HOME/vento`,
+which the default `--extlib-dir` resolves to from then on.
+
 `--extlib-dir` defaults to `$XDG_DATA_HOME/vento` where
 `realvnc/libvncviewer.so` is under it, and otherwise to `lib/` beside the
 binary, so a release tree with `lib/realvnc/` works wherever it is unpacked;
