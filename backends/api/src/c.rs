@@ -657,7 +657,8 @@ pub struct Behaviour {
     /// live call.
     pub set_option: fn(&CSession, &Options, key: &str),
     /// Whether the credentials carry a domain, which only the RDP backend's
-    /// do; the others send an empty one.
+    /// do; the others send an empty one, and keep the user name whole rather
+    /// than splitting `DOMAIN\user` or `user@domain`.
     pub rdp_domain: bool,
 }
 
@@ -868,7 +869,14 @@ pub fn start(
     security: Option<&'static Security>,
 ) -> Result<Arc<dyn Backend>, String> {
     let mailbox = Arc::clone(&c.mailbox);
-    let (domain, user_name) = c.domain_and_user();
+    // Only RDP splits a domain out of the user name. A VNC user name such as
+    // `CORP\alice` is the whole name, and an empty prompt answer falls back to
+    // it unchanged.
+    let (domain, user_name) = if behaviour.rdp_domain {
+        c.domain_and_user()
+    } else {
+        (String::new(), c.user.to_string())
+    };
     let target = Arc::new(Target {
         mailbox: Arc::clone(&mailbox),
         domain: behaviour.rdp_domain.then(|| Mutex::new(domain.clone())),
@@ -1124,6 +1132,94 @@ mod tests {
     #[test]
     fn the_header_has_the_same_logon_failure_text() {
         assert_eq!(&ffi::VENTO_LOGON_FAILED[..], format!("{}\0", crate::credentials::LOGON_FAILED).as_bytes());
+    }
+
+    /// A session whose table records the user name and domain of each
+    /// credentials answer.
+    #[repr(C)]
+    struct Answers {
+        raw: ffi::vento_session,
+        got: Mutex<Vec<(String, String)>>,
+    }
+
+    unsafe extern "C" fn ans_answer(
+        s: *mut ffi::vento_session,
+        user: *const c_char,
+        domain: *const c_char,
+        _: *const c_char,
+    ) {
+        let text = |p: *const c_char| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned();
+        let answers = unsafe { &*(s as *const Answers) };
+        answers.got.lock().unwrap().push((text(user), text(domain)));
+    }
+
+    unsafe extern "C" fn ans_destroy(_: *mut ffi::vento_session) {}
+
+    static ANSWER_TABLE: ffi::vento_session_ops = ffi::vento_session_ops {
+        size: std::mem::size_of::<ffi::vento_session_ops>(),
+        answer_credentials: Some(ans_answer),
+        destroy: Some(ans_destroy),
+        ..unsafe { std::mem::zeroed() }
+    };
+
+    /// An empty answer is the session's user name: split into a domain and
+    /// a user for RDP, and whole for the others, where `CORP\alice` can be a
+    /// user name of its own (RealVNC's system authentication).
+    #[test]
+    fn an_empty_answer_keeps_the_whole_user_name_except_for_rdp() {
+        static VNC: Behaviour = Behaviour {
+            info: |_, _| Vec::new(),
+            sent_counted: false,
+            set_option: |_, _, _| {},
+            rdp_domain: false,
+        };
+        static RDP: Behaviour = Behaviour {
+            rdp_domain: true,
+            ..VNC
+        };
+        let answered = |behaviour: &'static Behaviour, user: &str, typed: &str| {
+            let answers: &'static Answers = Box::leak(Box::new(Answers {
+                raw: ffi::vento_session { ops: &ANSWER_TABLE },
+                got: Mutex::new(Vec::new()),
+            }));
+            let options = Options::default();
+            let dirs = crate::kind::Dirs {
+                config: Default::default(),
+                state: Default::default(),
+                realvnc_libs: Default::default(),
+            };
+            let connect = Connect {
+                address: "",
+                user,
+                domain: "",
+                password: None,
+                options: &options,
+                mailbox: Mailbox::new(None),
+                dirs: &dirs,
+                screen: None,
+                last_size: None,
+                identity: None,
+                client_name: "",
+                platform: crate::kind::Platform::Linux,
+                decoders: None,
+                audio: None,
+            };
+            let backend = start(&connect, behaviour, |_| &answers.raw as *const _ as *mut _, None).unwrap();
+            backend.answer_credentials(Some(Credentials {
+                user: typed.into(),
+                domain: String::new(),
+                password: "pw".into(),
+            }));
+            backend.destroy();
+            answers.got.lock().unwrap().pop().unwrap()
+        };
+        let pair = |user: &str, domain: &str| (user.to_string(), domain.to_string());
+        assert_eq!(answered(&VNC, "CORP\\alice", ""), pair("CORP\\alice", ""));
+        assert_eq!(answered(&VNC, "alice@corp.example", " "), pair("alice@corp.example", ""));
+        assert_eq!(answered(&VNC, "CORP\\alice", "bob"), pair("bob", ""));
+        assert_eq!(answered(&RDP, "CORP\\alice", ""), pair("alice", "CORP"));
+        assert_eq!(answered(&RDP, "CORP\\alice", "bob"), pair("bob", "CORP"));
+        assert_eq!(answered(&RDP, "alice@corp.example", ""), pair("alice", "corp.example"));
     }
 
     /// A logon failure from an RDP backend gets the advice for the domain
