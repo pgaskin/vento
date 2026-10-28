@@ -681,17 +681,17 @@ impl Pane {
     fn toolbar_items(&mut self, s: &mut Session, ui: &mut egui::Ui, host: &mut Host, layout: Option<&Layout>) {
         let connected = s.connected();
         let mode = self.view.mode;
-        let scale = ui.add_enabled(connected, icon_only(scale_icon(mode)));
-        if scale
-            .on_hover_text(format!(
-                "Scale: {} (next: {}).\nIf the desktop is larger than the window, it will pan \
-                 when the cursor is near the edges.",
-                mode.label().to_lowercase(),
-                mode.next().label().to_lowercase(),
-            ))
-            .clicked()
-        {
+        // A right click goes back through the same list.
+        let scale = ui.add_enabled(connected, icon_only(scale_icon(mode))).on_hover_text(format!(
+            "Scale: {} (next: {}).\nIf the desktop is larger than the window, it will pan \
+             when the cursor is near the edges.",
+            mode.label().to_lowercase(),
+            mode.next().label().to_lowercase(),
+        ));
+        if scale.clicked() {
             self.view.cycle();
+        } else if scale.secondary_clicked() {
+            self.view.cycle_back();
         }
         // At 1:1 in a window, the window can be made the size of what it
         // shows, which at that scale is its size in device pixels. Hidden
@@ -741,16 +741,20 @@ impl Pane {
             let count = facts.monitors.len();
             let current = self.monitor.map(|k| k.index);
             let symbol = if current.is_some() { icons::MONITOR } else { icons::TV_DISPLAYS };
-            if ui
-                .add_enabled(connected, icon_only(symbol))
-                .on_hover_text(format!(
-                    "Monitor: {} (next: {}).\nThe whole desktop, or one of its monitors.",
-                    monitor_name(current, count),
-                    monitor_name(next_monitor(current, count), count),
-                ))
-                .clicked()
-            {
-                self.monitor = next_monitor(current, count).map(|i| MonitorKey::of(i, &facts.monitors[i]));
+            let button = ui.add_enabled(connected, icon_only(symbol)).on_hover_text(format!(
+                "Monitor: {} (next: {}).\nThe whole desktop, or one of its monitors.",
+                monitor_name(current, count),
+                monitor_name(next_monitor(current, count), count),
+            ));
+            let choice = if button.clicked() {
+                Some(next_monitor(current, count))
+            } else if button.secondary_clicked() {
+                Some(previous_monitor(current, count))
+            } else {
+                None
+            };
+            if let Some(choice) = choice {
+                self.monitor = choice.map(|i| MonitorKey::of(i, &facts.monitors[i]));
                 self.view.pan = Vec2::ZERO;
             }
             if self.main() {
@@ -759,16 +763,15 @@ impl Pane {
         } else if facts.displays.len() > 1 {
             let count = facts.displays.len();
             let next = (facts.display + 1).rem_euclid(count as i32);
-            if ui
-                .add_enabled(connected, icon_only(icons::MONITOR))
-                .on_hover_text(format!(
-                    "Display: {} of {count} (next: {}).",
-                    facts.display + 1,
-                    next + 1,
-                ))
-                .clicked()
-            {
+            let button = ui.add_enabled(connected, icon_only(icons::MONITOR)).on_hover_text(format!(
+                "Display: {} of {count} (next: {}).",
+                facts.display + 1,
+                next + 1,
+            ));
+            if button.clicked() {
                 s.backend.request_display(next);
+            } else if button.secondary_clicked() {
+                s.backend.request_display((facts.display - 1).rem_euclid(count as i32));
             }
         }
 
@@ -1268,6 +1271,16 @@ fn request_size(host: &Host, size: PhysicalSize<u32>) {
     let _ = host.window.request_inner_size(size);
 }
 
+/// The Monitor button's choice before `current`, going back through
+/// [`next_monitor`]'s order: the last monitor before the whole desktop.
+fn previous_monitor(current: Option<usize>, count: usize) -> Option<usize> {
+    match current {
+        None => count.checked_sub(1),
+        Some(i) if i > 0 && i < count => Some(i - 1),
+        _ => None,
+    }
+}
+
 /// A Monitor choice in words, for the tooltip.
 fn monitor_name(monitor: Option<usize>, count: usize) -> String {
     match monitor {
@@ -1339,6 +1352,14 @@ mod tests {
         assert_eq!(monitor, None);
         // A monitor gone from under the choice goes back to all of them.
         assert_eq!(next_monitor(Some(5), 2), None);
+        // Back the other way round.
+        let mut back = Vec::new();
+        for _ in 0..4 {
+            monitor = previous_monitor(monitor, 3);
+            back.push(monitor_name(monitor, 3));
+        }
+        assert_eq!(back, ["3 of 3", "2 of 3", "1 of 3", "all 3"]);
+        assert_eq!(previous_monitor(Some(5), 2), None);
     }
 
     fn numbered(id: u32, m: Monitor) -> Monitor {

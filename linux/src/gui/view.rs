@@ -57,6 +57,20 @@ impl ScaleMode {
         }
     }
 
+    /// The mode before this one in [`next`](Self::next)'s order.
+    pub fn previous(self) -> ScaleMode {
+        match self {
+            ScaleMode::Auto => ScaleMode::Original,
+            ScaleMode::Fit => ScaleMode::Auto,
+            ScaleMode::Fill => ScaleMode::Fit,
+            ScaleMode::FitWidth => ScaleMode::Fill,
+            ScaleMode::FitHeight => ScaleMode::FitWidth,
+            ScaleMode::FillWidth => ScaleMode::FitHeight,
+            ScaleMode::FillHeight => ScaleMode::FillWidth,
+            ScaleMode::Original => ScaleMode::FillHeight,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             ScaleMode::Auto => "Auto",
@@ -176,6 +190,12 @@ impl View {
         self.mode = self.mode.next();
         self.pan = Vec2::ZERO;
     }
+
+    /// Switch back to the previous mode.
+    pub fn cycle_back(&mut self) {
+        self.mode = self.mode.previous();
+        self.pan = Vec2::ZERO;
+    }
 }
 
 impl Layout {
@@ -281,6 +301,16 @@ mod tests {
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
         Rect::from_min_size(pos2(x, y), vec2(w, h))
+    }
+
+    #[test]
+    fn previous_goes_back_through_the_modes_next_goes_through() {
+        let mut mode = ScaleMode::Auto;
+        for _ in 0..8 {
+            assert_eq!(mode.next().previous(), mode);
+            mode = mode.next();
+        }
+        assert_eq!(mode, ScaleMode::Auto);
     }
 
     #[test]
