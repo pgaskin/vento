@@ -1,0 +1,4 @@
+* Detect plugins installed or updated while the app is running.
+* Minor UI improvements.
+* IronRDP: Fix reconnecting to a disconnected Windows session with NLA getting stuck on "Please wait".
+* FreeRDP: Show the audio toggle when the sound channel is connected instead of at playback.

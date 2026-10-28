@@ -1,0 +1,2 @@
+* Fix regression causing sessions with audio enabled to freeze the app on disconnect.
+* Try all resolved addresses for direct connections to hostnames.

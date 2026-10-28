@@ -20,7 +20,7 @@
 
 [package]
 name = "vento"
-version = "0.0.7"
+version = "0.0.8"
 edition = "2024"
 license = "GPL-3.0-or-later"
 publish = false

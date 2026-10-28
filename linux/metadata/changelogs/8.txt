@@ -1,0 +1,11 @@
+* Support client-side decoration with minimal overlay title bar.
+* Make connection dialog window more compact when using client-side decoration.
+* Add a toolbar button to resize the window to remove black bars in scaled modes.
+* Add --fullscreen to start sessions in fullscreen.
+* Add app ID for window matching rules.
+* Make keyboard capture work with mouse button bindings (X11).
+* Minor toolbar usability improvements.
+* Improve internal event handling.
+* Add workaround for windows key on RDP/SPICE when keyboard layout maps super to meta.
+* RealVNC: Automatic APK download.
+* LibVNC/TigerVNC/RealVNC: Improve handling of Windows domains in usernames.

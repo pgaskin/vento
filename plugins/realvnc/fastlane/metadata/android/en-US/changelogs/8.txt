@@ -1,0 +1,2 @@
+* Fix a crash when two sessions connect at the exact same time.
+* Fix the transferred data count jumping after an automatic reconnect.
