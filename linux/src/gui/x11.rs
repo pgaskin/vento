@@ -660,6 +660,42 @@ impl WindowManager {
 }
 
 impl WindowManager {
+    /// Makes `window` (this one's) an ordinary window from the dialog it
+    /// opened as: its `_NET_WM_WINDOW_TYPE` normal, and the window unmapped
+    /// and mapped again, as window managers decide whether to float a
+    /// window when they map it (i3 keeps a dialog floating whatever its
+    /// type becomes).
+    pub fn make_normal(&self, window: &Window) {
+        let normal = self
+            .conn
+            .intern_atom(false, b"_NET_WM_WINDOW_TYPE_NORMAL")
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .map(|r| r.atom);
+        let property = self
+            .conn
+            .intern_atom(false, b"_NET_WM_WINDOW_TYPE")
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .map(|r| r.atom);
+        let (Some(normal), Some(property)) = (normal, property) else {
+            return;
+        };
+        use x11rb::wrapper::ConnectionExt as _;
+        let changed = self
+            .conn
+            .change_property32(x11rb::protocol::xproto::PropMode::REPLACE, self.window, property, AtomEnum::ATOM, &[normal])
+            .is_ok()
+            && self.conn.flush().is_ok();
+        if !changed {
+            log::debug!("X11: cannot make the window an ordinary one");
+            return;
+        }
+        log::debug!("X11: the window is an ordinary one now, mapped again");
+        window.set_visible(false);
+        window.set_visible(true);
+    }
+
     /// Where the pointer is on the screen, in device pixels.
     pub fn pointer(&self) -> Option<(i32, i32)> {
         let reply = self.conn.query_pointer(self.window).ok()?.reply().ok()?;

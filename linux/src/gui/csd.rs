@@ -24,6 +24,10 @@
 //! takes `_NET_WM_MOVERESIZE` for a side as one for the corner nearest the
 //! pointer.
 //!
+//! The connection dialog has no title bar: its panel fills the window, with
+//! close and minimise buttons in its top right corner and [`DIALOG_EDGE`]
+//! of resize edges all round (see `dialog.rs`).
+//!
 //! A move, a resize and a window menu are the window manager's or the
 //! compositor's once asked for: it takes the pointer, and the release that
 //! ends them goes to it rather than to the window. egui is given that
@@ -50,6 +54,9 @@ pub const CORNER: f32 = 4.0;
 /// How far in from each edge of a window, between the corners, the pointer
 /// resizes it from that edge, in points.
 pub const EDGE: f32 = 2.0;
+
+/// The connection dialog's corners and edges, in points.
+pub const DIALOG_EDGE: f32 = 4.0;
 
 /// The title text's size, in points.
 const TITLE_TEXT: f32 = 11.0;
@@ -372,6 +379,25 @@ fn draw_title(ui: &Ui, rect: Rect, title: &str) {
     ui.painter().with_clip_rect(rect).galley(at, galley, TITLE_COLOR);
 }
 
+/// The window's buttons at the top right of the connection dialog, which
+/// fills the window: minimise where offered, and close, `side` points
+/// square and `inset` from the window's corner.
+pub fn dialog_buttons(ui: &mut Ui, host: &mut Host, side: f32, inset: f32) {
+    let screen = ui.ctx().content_rect();
+    let mut x = screen.max.x - inset;
+    let mut shown = vec![Button::Close];
+    if host.buttons.contains(WindowButtons::MINIMIZE) {
+        shown.push(Button::Minimize);
+    }
+    for button in shown {
+        x -= side;
+        let at = Rect::from_min_size(pos2(x, screen.min.y + inset), vec2(side, side));
+        if window_button(ui, at, button, 0.3).clicked() {
+            press(host, button);
+        }
+    }
+}
+
 /// A window button at `rect`: its symbol drawn in lines, `size` of the
 /// button's side, framed under the pointer (in red for close).
 fn window_button(ui: &mut Ui, rect: Rect, button: Button, size: f32) -> Response {
@@ -439,6 +465,15 @@ fn press(host: &mut Host, button: Button) {
         // As the window manager's close: the window's own event handler
         // decides what closing it means (see `App::draw`).
         Button::Close => host.close = true,
+    }
+}
+
+/// Moves the window while the primary button is held, as the title bar
+/// does, for a drag on the connection dialog's background.
+pub fn drag_window(ctx: &egui::Context, host: &mut Host) {
+    match host.window.drag_window() {
+        Ok(()) => let_go(ctx, host, PointerButton::Primary),
+        Err(e) => log::debug!("cannot move the window: {e}"),
     }
 }
 
@@ -531,15 +566,19 @@ mod tests {
     }
 
     #[test]
-    fn the_zones_do_not_overlap() {
+    fn the_zones_do_not_overlap_and_the_dialog_s_are_four_all_round() {
         let w = window(400.0, 300.0);
-        let zones = zones(w, CORNER, EDGE);
+        let zones = zones(w, DIALOG_EDGE, DIALOG_EDGE);
         for (i, (a, _)) in zones.iter().enumerate() {
             assert!(w.contains_rect(*a));
             for (b, _) in &zones[i + 1..] {
                 assert!(a.intersect(*b).area() <= 0.0, "{a:?} {b:?}");
             }
         }
+        let at = |x, y| resize_at(w, DIALOG_EDGE, DIALOG_EDGE, pos2(x, y));
+        assert_eq!(at(200.0, 3.5), Some(ResizeDirection::North));
+        assert_eq!(at(396.0, 150.0), Some(ResizeDirection::East));
+        assert_eq!(at(200.0, 4.0), None);
     }
 
     #[test]

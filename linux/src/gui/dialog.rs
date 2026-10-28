@@ -15,14 +15,24 @@
 //!
 //! It is drawn as a panel in the connection panel's frame, centred across
 //! the window over the [`BACKDROP`], and scrolls where the window is too
-//! short for it.
+//! short for it. A window drawing its own decorations (see `csd.rs`) is
+//! the panel instead: its frame fills the window, with the window's close
+//! and minimise buttons in the top right corner and resize edges all
+//! round, and a drag on it anywhere but a control moves the window. Such a
+//! window is made the panel's size when the dialog comes up ([`Dialog::fit`])
+//! and the size it has without its own decorations when a session starts
+//! (see `App::connect`).
 
+use super::csd;
 use super::panel::{self, MARGIN};
 use super::settings::Settings;
-use super::{BACKDROP, Request};
+use super::{BACKDROP, Host, Request};
 use crate::backends::{self, Kind, Platform};
 use crate::options::{self, Options, Spec, Type};
-use egui::{Align, ComboBox, Frame, Grid, Id, Layout, Pos2, RichText, ScrollArea, TextEdit, Ui, Vec2, pos2, vec2};
+use egui::{
+    Align, ComboBox, Frame, Grid, Id, Layout, Order, PointerButton, Pos2, RichText, ScrollArea, Sense, TextEdit, Ui,
+    Vec2, pos2, vec2,
+};
 use std::collections::BTreeMap;
 
 /// The dialog's width, its frame included, in points, where the window has
@@ -37,9 +47,32 @@ const MIN_WIDTH: f32 = panel::WIDTH;
 /// short for it, where the dialog is centred in what room there is.
 const TOP: f32 = 40.0;
 
+/// The window's buttons in the dialog's corner, with its own decorations:
+/// their side, and how far they are from the window's edges, in points.
+const BUTTON: f32 = 24.0;
+const BUTTON_INSET: f32 = 6.0;
+
+/// Makes a window drawn with its own decorations the panel's size: the
+/// dialog's width, and `height`, the panel's, up to the height of the
+/// monitor it is on. Not while maximised or fullscreen, which keep their
+/// size.
+fn fit_window(host: &Host, height: f32) {
+    let window = host.window;
+    if window.is_maximized() || window.fullscreen().is_some() {
+        return;
+    }
+    let mut size = winit::dpi::LogicalSize::new(WIDTH, height.ceil());
+    if let Some(monitor) = window.current_monitor() {
+        let room = monitor.size().to_logical::<f32>(window.scale_factor());
+        size.height = size.height.min(room.height);
+    }
+    log::debug!("fitting the window to the connection dialog: {}×{}", size.width, size.height);
+    let _ = window.request_inner_size(size);
+}
+
 /// Where a dialog of `size` goes in `window`: its top left corner, centred
 /// across, and [`TOP`] down or centred, at least [`MARGIN`] from the edges.
-fn left_top(size: Vec2, window: egui::Rect) -> Pos2 {
+pub fn left_top(size: Vec2, window: egui::Rect) -> Pos2 {
     let free = window.shrink(MARGIN).size() - size;
     pos2(
         window.min.x + MARGIN + (free.x / 2.0).max(0.0),
@@ -61,6 +94,12 @@ pub struct Dialog {
     pub notice: Option<String>,
     /// What was wrong with the last attempt to connect from here.
     error: Option<String>,
+    /// The window, drawn with its own decorations, is to be made the
+    /// panel's size once the panel has been measured.
+    pub fit: bool,
+    /// The dialog has been drawn at least once, and so measured: until
+    /// then egui's size for it is an earlier dialog's.
+    drawn: bool,
 }
 
 impl Dialog {
@@ -77,6 +116,8 @@ impl Dialog {
             values,
             notice: None,
             error: None,
+            fit: false,
+            drawn: false,
         }
     }
 
@@ -102,33 +143,77 @@ impl Dialog {
     /// Draws the dialog, with the client's `settings` as its own section;
     /// a request on the frame "Connect" is pressed with something that
     /// passes the checks.
-    pub fn ui(&mut self, root: &mut Ui, settings: &mut Settings) -> Option<Request> {
+    pub fn ui(&mut self, root: &mut Ui, settings: &mut Settings, host: &mut Host) -> Option<Request> {
         let ctx = root.ctx().clone();
-        egui::CentralPanel::default()
-            .frame(Frame::NONE.fill(BACKDROP))
-            .show(root, |_| {});
+        let panel = panel::frame(&ctx.global_style());
+        let frame = if host.csd {
+            // The window is the panel: square, as the window is, and with
+            // the panel's edge at the window's.
+            egui::CentralPanel::default()
+                .frame(panel.corner_radius(0).inner_margin(0))
+                .show(root, |ui| {
+                    let background = ui.interact(ui.max_rect(), Id::new("dialog-background"), Sense::click_and_drag());
+                    if background.drag_started_by(PointerButton::Primary) {
+                        csd::drag_window(&ctx, host);
+                    }
+                });
+            egui::Area::new(Id::new("window-buttons"))
+                .order(Order::Foreground)
+                .fixed_pos(ctx.content_rect().min)
+                .constrain(false)
+                .show(&ctx, |ui| csd::dialog_buttons(ui, host, BUTTON, BUTTON_INSET));
+            let _ = csd::resize_edges(&ctx, host, csd::DIALOG_EDGE, csd::DIALOG_EDGE);
+            Frame::NONE.inner_margin(panel.inner_margin + panel.stroke.width as i8)
+        } else {
+            egui::CentralPanel::default()
+                .frame(Frame::NONE.fill(BACKDROP))
+                .show(root, |_| {});
+            panel
+        };
         let screen = ctx.content_rect();
-        let frame = panel::frame(&ctx.global_style());
         let margin = frame.total_margin().sum();
-        let bounds = screen.shrink(MARGIN);
+        // The window's own panel reaches its edges; one over the backdrop
+        // is kept off them.
+        let bounds = if host.csd { screen } else { screen.shrink(MARGIN) };
         let width = bounds.width().clamp(MIN_WIDTH, WIDTH);
         let id = Id::new("connection-dialog");
         // Placed by last frame's size; the first frame is egui's sizing
         // pass, which is not drawn.
-        let size = ctx.memory(|m| m.area_rect(id)).map_or(vec2(width, 0.0), |r| r.size());
+        let measured = ctx.memory(|m| m.area_rect(id));
+        let size = measured.map_or(vec2(width, 0.0), |r| r.size());
+        if self.fit && self.drawn && host.csd && let Some(measured) = measured {
+            self.fit = false;
+            fit_window(host, measured.height());
+        }
+        let at = if host.csd {
+            pos2(screen.center().x - size.x / 2.0, screen.min.y).max(screen.min)
+        } else {
+            left_top(size, screen)
+        };
         let mut connect = false;
-        egui::Area::new(id)
-            .fixed_pos(left_top(size, screen))
+        let shown = egui::Area::new(id)
+            .fixed_pos(at)
+            // With the window's own decorations, a drag on it that is not
+            // a control's moves the window, as one beside it does, once the
+            // pointer has moved far enough to be dragging rather than
+            // clicking.
+            .sense(if host.csd { Sense::click_and_drag() } else { Sense::click() })
             .show(&ctx, |ui| {
                 frame.show(ui, |ui| {
                     ui.set_width(width - margin.x);
                     ui.set_max_height(bounds.height() - margin.y);
+                    // Its heading and labels are not text to copy, and with
+                    // the window's own decorations a drag on them moves the
+                    // window; why the last session ended can still be
+                    // selected.
+                    ui.style_mut().interaction.selectable_labels = false;
                     ui.vertical_centered(|ui| {
                         ui.add_space(4.0);
                         ui.heading("Connect to a desktop");
                         ui.add_space(8.0);
                         if let Some(notice) = &self.notice {
-                            ui.label(RichText::new(notice).color(ui.visuals().warn_fg_color));
+                            let text = RichText::new(notice).color(ui.visuals().warn_fg_color);
+                            ui.add(egui::Label::new(text).selectable(true));
                             ui.add_space(8.0);
                         }
                     });
@@ -137,6 +222,10 @@ impl Dialog {
                     });
                 });
             });
+        if host.csd && shown.response.drag_started_by(PointerButton::Primary) {
+            csd::drag_window(&ctx, host);
+        }
+        self.drawn = true;
         if !connect {
             return None;
         }

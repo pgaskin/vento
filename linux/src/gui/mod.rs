@@ -180,6 +180,7 @@ pub fn run(launch: Launch) -> i32 {
         dirs: launch.dirs.clone(),
         settings: launch.settings,
         csd: launch.csd,
+        dialog_type: false,
         launch: Some(launch),
         placement: Placement::default(),
         proxy,
@@ -433,6 +434,10 @@ impl Surface {
 /// dialog, and a session's around and before its desktop.
 const BACKDROP: egui::Color32 = egui::Color32::from_gray(0x11);
 
+/// The main window's size, in points, when it opens, and with its own
+/// decorations when a session starts (see `App::grow`).
+const WINDOW_SIZE: winit::dpi::LogicalSize<f64> = winit::dpi::LogicalSize::new(1280.0, 800.0);
+
 /// The least height of a window, in points. The dialog and the panel
 /// scroll, so this is what is kept in view rather than what their content
 /// needs: the dialog's heading, a notice, and its connection fields.
@@ -572,6 +577,9 @@ struct App {
     modifiers: winit::keyboard::ModifiersState,
     /// The windows draw their own decorations (`Launch::csd`).
     csd: bool,
+    /// The main window is still X11's dialog type it opened as, to be
+    /// floated by a tiling window manager (see `open`).
+    dialog_type: bool,
     /// Whether any window could be seen when last looked, which is what the
     /// session is told (see `sync_shown`).
     shown: bool,
@@ -591,11 +599,27 @@ struct App {
 
 impl App {
     fn open(&mut self, event_loop: &ActiveEventLoop) {
+        // With its own decorations the dialog is the window, which opens
+        // the dialog's width and is fitted to it once drawn; one opened for
+        // a session is a session's size.
+        let session = self.launch.as_ref().is_some_and(|l| l.connect && l.request.is_some());
+        let compact = self.csd && !session;
+        let size = if compact { winit::dpi::LogicalSize::new(dialog::WIDTH as f64, WINDOW_SIZE.height) } else { WINDOW_SIZE };
         let attributes = Window::default_attributes()
             .with_title("Vento")
-            .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 800.0))
+            .with_inner_size(size)
             .with_min_inner_size(min_size(&self.egui.global_style()))
             .with_decorations(!self.csd);
+        // A dialog as far as X11 window managers go, which tiling ones float
+        // (i3); made an ordinary window when a session starts (see `grow`).
+        let attributes = if compact {
+            winit::platform::x11::WindowAttributesExtX11::with_x11_window_type(
+                attributes,
+                vec![winit::platform::x11::WindowType::Dialog],
+            )
+        } else {
+            attributes
+        };
         let id = match self.add_window(event_loop, attributes, ViewportId::ROOT) {
             Ok(id) => id,
             Err(e) => {
@@ -694,9 +718,72 @@ impl App {
                 }
             }
         }
+        if let Screen::Dialog(dialog) = &mut self.screen {
+            dialog.fit = compact;
+        }
+        self.dialog_type = compact && self.windows[&id].wm.is_some();
         window.request_redraw();
     }
 
+    /// A window drawn with its own decorations, the dialog's size, made the
+    /// size it opens at without them ([`WINDOW_SIZE`]) as its session
+    /// starts, as large as the monitor it is on at most. It grows around
+    /// the dialog, which ends up where it is drawn in a window of that size
+    /// without the window's own decorations, though with its top edge on the
+    /// monitor. Where the window can be placed (X11); on Wayland the
+    /// compositor decides where a window's size changes from. Not while
+    /// maximised or fullscreen.
+    fn grow(window: &Window) {
+        if window.is_maximized() || window.fullscreen().is_some() {
+            return;
+        }
+        let scale = window.scale_factor();
+        let monitor = window.current_monitor();
+        let mut size = WINDOW_SIZE;
+        if let Some(monitor) = &monitor {
+            let room = monitor.size().to_logical::<f64>(scale);
+            size.width = size.width.min(room.width);
+            size.height = size.height.min(room.height);
+        }
+        let dialog = window.inner_size().to_logical::<f32>(scale);
+        let within = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(size.width as f32, size.height as f32));
+        let offset = dialog::left_top(egui::vec2(dialog.width, dialog.height), within);
+        log::info!("resizing the window to {}×{} for the session", size.width, size.height);
+        Self::place(window, &monitor, -(offset.x as f64 * scale), -(offset.y as f64 * scale));
+        let _ = window.request_inner_size(size);
+    }
+
+    /// A window drawn with its own decorations back from a session to the
+    /// dialog: the dialog's width, placed where the dialog is drawn in the
+    /// window as it is without its own decorations, and fitted to the
+    /// dialog's height once that is measured (`Dialog::fit`). Not while
+    /// maximised or fullscreen.
+    fn shrink(window: &Window) {
+        if window.is_maximized() || window.fullscreen().is_some() {
+            return;
+        }
+        let scale = window.scale_factor();
+        let inner = window.inner_size().to_logical::<f32>(scale);
+        let within = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(inner.width, inner.height));
+        let offset = dialog::left_top(egui::vec2(dialog::WIDTH, 0.0), within);
+        Self::place(window, &window.current_monitor(), offset.x as f64 * scale, offset.y as f64 * scale);
+        let _ = window.request_inner_size(winit::dpi::LogicalSize::new(dialog::WIDTH, inner.height));
+    }
+
+    /// Moves `window` by `dx`, `dy` device pixels where the display server
+    /// lets it be placed, keeping its top edge no higher than the top of
+    /// `monitor`.
+    fn place(window: &Window, monitor: &Option<winit::monitor::MonitorHandle>, dx: f64, dy: f64) {
+        let Ok(at) = window.outer_position() else {
+            return;
+        };
+        let x = at.x + dx.round() as i32;
+        let mut y = at.y + dy.round() as i32;
+        if let Some(monitor) = monitor {
+            y = y.max(monitor.position().y);
+        }
+        window.set_outer_position(PhysicalPosition::new(x, y));
+    }
 
     /// Opens a window as `viewport`, with the window icon, the app ID and a
     /// surface on the shared device (made now, for the first window, with
@@ -797,6 +884,15 @@ impl App {
             Ok(mut session) => {
                 if !self.shown {
                     session.shown(false);
+                }
+                if self.dialog_type {
+                    self.dialog_type = false;
+                    if let Some(wm) = self.main.and_then(|id| self.windows.get(&id)).and_then(|s| s.wm.as_ref()) {
+                        wm.make_normal(&window);
+                    }
+                }
+                if self.csd {
+                    Self::grow(&window);
                 }
                 self.screen = Screen::Session(Box::new(session));
             }
@@ -1065,7 +1161,7 @@ impl App {
                 // The dialog is the main window's alone.
                 Screen::Dialog(_) if viewport != ViewportId::ROOT => {}
                 Screen::Dialog(dialog) => {
-                    next = dialog.ui(ui, settings);
+                    next = dialog.ui(ui, settings, &mut host);
                 }
                 Screen::Session(session) => {
                     session.frame(ui, &mut host);
@@ -1306,6 +1402,10 @@ impl App {
             let mut dialog = Dialog::from_request(&session.request);
             if !detail.is_empty() {
                 dialog.notice = Some(format!("Disconnected: {detail}"));
+            }
+            if self.csd {
+                Self::shrink(&window);
+                dialog.fit = true;
             }
             let mut host = Host {
                 window: &window,
