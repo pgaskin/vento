@@ -1526,13 +1526,13 @@ whichever of its windows has the focus), the pointer capture, and the native
 cursor's alpha.
 
 Every window (the dialog's, a session's, a pop-out) is opened with the window
-icon. On X11 winit sets it as `_NET_WM_ICON`, one 128×128 image (64 KiB of
+icon and the app ID `vento`, which is the Wayland app ID and both parts of
+X11's `WM_CLASS`, for window manager rules to match on. On X11 winit sets it as `_NET_WM_ICON`, one 128×128 image (64 KiB of
 property data a window; the 512×512 original would be 1 MiB), which the
 window manager and task switchers scale. On Wayland winit 0.30 sets no
 icon (it does not speak the staging `xdg_toplevel_icon_v1`), and the
-compositor looks one up by the window's app ID in a desktop file. The client sets no app ID (winit sets one only from
-`with_name`) and installs no desktop file, so a Wayland compositor shows its
-generic icon.
+compositor looks one up by the window's app ID in a desktop file. The client
+installs no desktop file, so a Wayland compositor shows its generic icon.
 
 The dependency choice: winit, egui-winit and egui-wgpu are driven directly
 rather than through eframe, because eframe wraps away the things this window

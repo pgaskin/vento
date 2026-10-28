@@ -432,6 +432,10 @@ fn min_size(style: &egui::Style) -> winit::dpi::LogicalSize<f32> {
 /// square, 8-bit RGBA rows.
 const ICON: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon.rgba"));
 
+/// The name window managers and compositors know the windows by: the
+/// Wayland app ID, and both parts of X11's `WM_CLASS`.
+const APP_ID: &str = "vento";
+
 /// [`ICON`] as winit takes it. X11 shows it (`_NET_WM_ICON`); winit sets
 /// nothing on Wayland, where the compositor looks the icon up by app ID.
 fn window_icon() -> Icon {
@@ -669,15 +673,17 @@ impl App {
         window.request_redraw();
     }
 
-    /// Opens a window as `viewport`, with the window icon and a surface on
-    /// the shared device (made now, for the first window, with the adapter
-    /// chosen to suit its surface).
+    /// Opens a window as `viewport`, with the window icon, the app ID and a
+    /// surface on the shared device (made now, for the first window, with
+    /// the adapter chosen to suit its surface).
     fn add_window(
         &mut self,
         event_loop: &ActiveEventLoop,
         attributes: WindowAttributes,
         viewport: ViewportId,
     ) -> Result<WindowId, String> {
+        // One name for both: winit keeps a single one for Wayland and X11.
+        let attributes = winit::platform::wayland::WindowAttributesExtWayland::with_name(attributes, APP_ID, APP_ID);
         let window = event_loop
             .create_window(attributes.with_window_icon(Some(window_icon())))
             .map_err(|e| format!("cannot create the window: {e}"))?;
