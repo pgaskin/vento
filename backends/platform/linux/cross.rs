@@ -47,6 +47,9 @@ pub struct Tools {
     /// `CC`'s own arguments after it (see [`compiler_command`]), or the
     /// compiler alone.
     pub command: Vec<String>,
+    /// The C++ compiler as `CXX` runs it, the same way, for the cross file
+    /// the C backends' Meson build is given as well (dav1d has no C++).
+    pub cxx_command: Vec<String>,
     /// The compiler's arguments that choose what it compiles for; not the
     /// optimisation and debug flags cc-rs adds, which FFmpeg chooses itself.
     pub target_flags: Vec<String>,
@@ -157,24 +160,28 @@ fn cpu_family(arch: &str) -> &str {
     }
 }
 
-/// dav1d's Meson cross file for the target, or `None` for a native build.
+/// The Meson cross file for the target, dav1d's and the C backends' (see
+/// `linux/build.rs`), or `None` for a native build.
 pub fn meson_cross_file(target: &Target, tools: &Tools) -> Option<String> {
     if !target.is_cross() {
         return None;
     }
     let quote = |s: &str| format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"));
-    let c: Vec<String> = tools
-        .command
-        .iter()
-        .chain(tools.target_flags.iter())
-        .map(|s| quote(s))
-        .collect();
+    let compiler = |command: &[String]| -> String {
+        command
+            .iter()
+            .chain(tools.target_flags.iter())
+            .map(|s| quote(s))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     // The CPU is the triple's first part, which can be more specific than
     // the family (`armv7`, `i686`).
     let cpu = target.target.split('-').next().unwrap_or(target.arch);
     Some(format!(
-        "[binaries]\nc = [{}]\nar = {}\n\n[host_machine]\nsystem = {}\ncpu_family = {}\ncpu = {}\nendian = {}\n",
-        c.join(", "),
+        "[binaries]\nc = [{}]\ncpp = [{}]\nar = {}\n\n[host_machine]\nsystem = {}\ncpu_family = {}\ncpu = {}\nendian = {}\n",
+        compiler(&tools.command),
+        compiler(&tools.cxx_command),
         quote(&tools.ar.display().to_string()),
         quote(target.os),
         quote(cpu_family(target.arch)),
@@ -211,6 +218,7 @@ mod tests {
         let tools = Tools {
             cc: "cc".into(),
             command: strings(&["cc"]),
+            cxx_command: strings(&["c++"]),
             target_flags: strings(&["-m64"]),
             ar: "ar".into(),
             host_cc: "cc".into(),
@@ -224,6 +232,7 @@ mod tests {
         let tools = Tools {
             cc: "aarch64-linux-gnu-gcc".into(),
             command: strings(&["aarch64-linux-gnu-gcc"]),
+            cxx_command: strings(&["aarch64-linux-gnu-g++"]),
             target_flags: Vec::new(),
             ar: "aarch64-linux-gnu-ar".into(),
             host_cc: "cc".into(),
@@ -242,7 +251,7 @@ mod tests {
         );
         assert_eq!(
             meson_cross_file(&ARM64, &tools).unwrap(),
-            "[binaries]\nc = ['aarch64-linux-gnu-gcc']\nar = 'aarch64-linux-gnu-ar'\n\n\
+            "[binaries]\nc = ['aarch64-linux-gnu-gcc']\ncpp = ['aarch64-linux-gnu-g++']\nar = 'aarch64-linux-gnu-ar'\n\n\
              [host_machine]\nsystem = 'linux'\ncpu_family = 'aarch64'\ncpu = 'aarch64'\nendian = 'little'\n"
         );
     }
@@ -259,6 +268,7 @@ mod tests {
         let tools = Tools {
             cc: "/usr/bin/clang".into(),
             command: strings(&["/usr/bin/clang"]),
+            cxx_command: strings(&["/usr/bin/clang++"]),
             target_flags: target_flags(&args),
             ar: "llvm-ar".into(),
             host_cc: "/usr/bin/clang".into(),
@@ -273,7 +283,8 @@ mod tests {
         let armv7 = strings(&["-O3", "-march=armv7-a", "-mfloat-abi=hard", "-mfpu=vfpv3-d16", "-mthumb", "-Wall"]);
         assert_eq!(target_flags(&armv7), armv7[1..5]);
         assert!(meson_cross_file(&ARM64, &tools).unwrap().starts_with(
-            "[binaries]\nc = ['/usr/bin/clang', '--target=aarch64-unknown-linux-gnu', '--sysroot', '/sysroots/arm64']\n"
+            "[binaries]\nc = ['/usr/bin/clang', '--target=aarch64-unknown-linux-gnu', '--sysroot', '/sysroots/arm64']\n\
+             cpp = ['/usr/bin/clang++', '--target=aarch64-unknown-linux-gnu', '--sysroot', '/sysroots/arm64']\n"
         ));
     }
 
@@ -295,6 +306,7 @@ mod tests {
         let tools = Tools {
             cc: "aarch64-linux-gnu-gcc".into(),
             command: strings(&["ccache", "aarch64-linux-gnu-gcc"]),
+            cxx_command: strings(&["ccache", "aarch64-linux-gnu-g++"]),
             target_flags: Vec::new(),
             ar: "aarch64-linux-gnu-ar".into(),
             host_cc: "cc".into(),
@@ -325,6 +337,7 @@ mod tests {
         let tools = Tools {
             cc: "arm-linux-gnueabihf-gcc".into(),
             command: strings(&["arm-linux-gnueabihf-gcc"]),
+            cxx_command: strings(&["arm-linux-gnueabihf-g++"]),
             target_flags: Vec::new(),
             ar: "arm-linux-gnueabihf-ar".into(),
             host_cc: "cc".into(),

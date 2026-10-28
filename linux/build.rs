@@ -44,6 +44,12 @@
 //! Meson keeps the compilers it was first configured with, so installing clang
 //! after a gcc build would otherwise never bring RealVNC in.
 //!
+//! **Cross builds** (`cargo build --target`) give Meson the cross file the
+//! platform crate wrote for its dav1d (`DEP_VENTO_VIDEO_CROSS_FILE`), which
+//! names the target's C and C++ compilers as cc-rs found them (`CC_<target>`,
+//! `CXX_<target>`, or `CC` and `CXX`). RealVNC's library is then built where
+//! those are clang, and the compilers chosen here are the build machine's.
+//!
 //! Meson is `MESON`, or `meson` on the path; `meson.build` sets the oldest
 //! version it accepts. It runs ninja, which has to be on the path too.
 //!
@@ -110,8 +116,12 @@ fn main() {
         env::var("DEP_VENTO_VIDEO_PREFIX")
             .expect("remotedesktop-platform-linux says where its FFmpeg is"),
     );
+    // The cross file of a cross build (see the module's comment), so that
+    // the backends are built with the compilers FFmpeg was built with.
+    println!("cargo:rerun-if-env-changed=DEP_VENTO_VIDEO_CROSS_FILE");
+    let cross_file = env::var_os("DEP_VENTO_VIDEO_CROSS_FILE").map(PathBuf::from);
 
-    let tree = build_c_backends(&root, &out, &ffmpeg);
+    let tree = build_c_backends(&root, &out, &ffmpeg, cross_file.as_deref());
     // The rpath (see the module's comment). Passed to the linker as written,
     // with no shell between, so `$ORIGIN` reaches the binary as the loader
     // wants it.
@@ -326,18 +336,21 @@ fn blur(mask: &[f64], side: usize) -> Vec<f64> {
 }
 
 /// Configures the Meson build under `out` where it is not configured yet, or
-/// was configured for other compilers or another FFmpeg, then builds it, and
-/// returns the build tree.
-fn build_c_backends(root: &Path, out: &Path, ffmpeg: &Path) -> PathBuf {
+/// was configured for other compilers, another FFmpeg or another cross file,
+/// then builds it, and returns the build tree.
+fn build_c_backends(root: &Path, out: &Path, ffmpeg: &Path, cross_file: Option<&Path>) -> PathBuf {
     let clang = compilers();
     let tree = out.join("meson");
     let configured = tree.join("build.ninja").is_file();
-    let changed = configuration_changed(out, &clang, ffmpeg);
+    let changed = configuration_changed(out, &clang, ffmpeg, cross_file);
     if !configured || changed {
         let mut setup = meson(&clang);
         setup.arg("setup");
         if configured {
             setup.arg("--wipe");
+        }
+        if let Some(file) = cross_file {
+            setup.arg("--cross-file").arg(file);
         }
         setup
             .arg(format!("-Dffmpeg_prefix={}", ffmpeg.display()))
@@ -414,12 +427,18 @@ fn compilers() -> Option<(PathBuf, PathBuf)> {
 }
 
 /// Whether the tree under `out` was configured for other compilers than
-/// these or another FFmpeg, as recorded in a file written beside it, which is
-/// rewritten either way. Every object in the tree would be rebuilt anyway, and
+/// these, another FFmpeg or another cross file (its contents), as recorded in
+/// a file written beside it, which is rewritten either way. Every object in
+/// the tree would be rebuilt anyway, and
 /// a stale `libvento_realvnc.so` from a clang tree must not outlive a switch
 /// away from clang. (The FFmpeg's prefix is the platform crate's `OUT_DIR`,
 /// which moves only when that crate's build does.)
-fn configuration_changed(out: &Path, clang: &Option<(PathBuf, PathBuf)>, ffmpeg: &Path) -> bool {
+fn configuration_changed(
+    out: &Path,
+    clang: &Option<(PathBuf, PathBuf)>,
+    ffmpeg: &Path,
+    cross_file: Option<&Path>,
+) -> bool {
     let var = |name: &str| env::var(name).unwrap_or_default();
     let compilers = match clang {
         Some((cc, cxx)) => format!("clang {} {}", cc.display(), cxx.display()),
@@ -431,7 +450,11 @@ fn configuration_changed(out: &Path, clang: &Option<(PathBuf, PathBuf)>, ffmpeg:
             which("c++").unwrap_or_default().display()
         ),
     };
-    let want = format!("{compilers}\nffmpeg {}", ffmpeg.display());
+    let mut want = format!("{compilers}\nffmpeg {}", ffmpeg.display());
+    if let Some(file) = cross_file {
+        let text = fs::read_to_string(file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+        want.push_str(&format!("\ncross file:\n{text}"));
+    }
     let stamp = out.join("vento-configuration");
     let changed = fs::read_to_string(&stamp).is_ok_and(|had| had.trim() != want.trim());
     if changed {

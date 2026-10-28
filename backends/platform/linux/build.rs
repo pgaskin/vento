@@ -37,10 +37,12 @@
 //!
 //! **Cross-compiling.** Where the target is not the build machine, FFmpeg's
 //! configure is told so and dav1d gets a Meson cross file in `OUT_DIR`,
-//! both from the compiler and archiver cc-rs chose for the target
-//! (`CC_<target>`, `AR_<target>`, ...): see `cross.rs`, whose functions the
-//! crate's tests run. Both are part of the stamp. A native build's configure
-//! line has no cross arguments.
+//! both from the compilers and archiver cc-rs chose for the target
+//! (`CC_<target>`, `CXX_<target>`, `AR_<target>`, ...): see `cross.rs`, whose
+//! functions the crate's tests run. Both are part of the stamp. The cross
+//! file is also `linux/build.rs`'s, for the C backends (`links` metadata
+//! again, `DEP_VENTO_VIDEO_CROSS_FILE`). A native build's configure line has
+//! no cross arguments.
 //!
 //! **Assembly** is NASM's on x86: without it dav1d and libavcodec fall back to
 //! their C code, which works at a fraction of the speed, so its absence is a
@@ -134,17 +136,7 @@ fn main() {
     let build = cc::Build::new();
     let compiler = build.get_compiler();
     let cc = compiler.path().to_path_buf();
-    // The compiler command for FFmpeg's configure and Meson: the path alone
-    // would drop a launcher (`CC="ccache gcc"`) and `CC`'s own arguments
-    // (`CC="gcc -m32"`).
-    let made = compiler.to_command();
-    let command = cross::compiler_command(
-        &std::iter::once(made.get_program())
-            .chain(made.get_args())
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect::<Vec<_>>(),
-        compiler.args().len(),
-    );
+    let command = command_of(&compiler);
     // The stamp holds the compiler's version, so that an upgrade rebuilds
     // FFmpeg; but a compiler changed under the same name does not rerun this
     // script, so its file is watched as well.
@@ -168,6 +160,7 @@ fn main() {
     let tools = cross::Tools {
         cc: cc.clone(),
         command: command.clone(),
+        cxx_command: command_of(&cc::Build::new().cpp(true).get_compiler()),
         target_flags: cross::target_flags(
             &compiler
                 .args()
@@ -274,8 +267,31 @@ fn main() {
         "cargo:rustc-link-search=native={}",
         prefix.join("lib").display()
     );
-    // For `linux/build.rs`, which hands it to the C backends' Meson build.
+    // For `linux/build.rs`, which hands it to the C backends' Meson build,
+    // with the cross file in a cross build, so that they are built with the
+    // same compilers.
     println!("cargo:prefix={}", prefix.display());
+    if let Some(file) = &cross_file {
+        let path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("meson-cross.ini");
+        if fs::read_to_string(&path).ok().as_deref() != Some(file.as_str()) {
+            fs::write(&path, file).unwrap();
+        }
+        println!("cargo:cross_file={}", path.display());
+    }
+}
+
+/// The compiler command for FFmpeg's configure and Meson: the path alone
+/// would drop a launcher (`CC="ccache gcc"`) and `CC`'s own arguments
+/// (`CC="gcc -m32"`).
+fn command_of(compiler: &cc::Tool) -> Vec<String> {
+    let made = compiler.to_command();
+    cross::compiler_command(
+        &std::iter::once(made.get_program())
+            .chain(made.get_args())
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect::<Vec<_>>(),
+        compiler.args().len(),
+    )
 }
 
 /// FFmpeg's configure line, which is also part of the stamp. `cc` is the
