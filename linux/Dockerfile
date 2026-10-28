@@ -150,7 +150,8 @@ RUN mkdir -p /out/lib \
 # find their dependencies on the system), no library missing with
 # LD_LIBRARY_PATH unset, and `vento --list`, which opens each backend's
 # library (the binary does not link them), naming the tree's own lib/ for
-# all four C backends and no error. Print the newest glibc and libstdc++
+# all four C backends and no error but RealVNC's for its viewer libraries,
+# which the tree does not carry. Print the newest glibc and libstdc++
 # symbol versions each file needs.
 RUN llvm-readelf -d /out/vento | grep -q 'RUNPATH.*\[\$ORIGIN/lib' \
  && ! llvm-readelf -d /out/lib/libvento_*.so | grep -E '\((RPATH|RUNPATH)\)' \
@@ -158,8 +159,8 @@ RUN llvm-readelf -d /out/vento | grep -q 'RUNPATH.*\[\$ORIGIN/lib' \
      ! ldd "$file" | grep 'not found' || { echo "error: $file" >&2; exit 1; }; \
  done \
  && /out/vento --list | tee /tmp/backends \
- && test "$(grep -c '^[a-z]* /out/lib/libvento_[a-z]*\.so$' /tmp/backends)" = 4 \
- && ! grep -F '(error:' /tmp/backends \
+ && test "$(grep -c '^[a-z]* /out/lib/libvento_[a-z]*\.so\( (error: .*)\)\?$' /tmp/backends)" = 4 \
+ && ! grep -F '(error:' /tmp/backends | grep -vF 'are not in /out/lib/realvnc.' \
  && for file in /out/vento /out/lib/*.so; do \
      echo "$file: $(llvm-objdump -T "$file" | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -1)" \
       "$(llvm-objdump -T "$file" | grep -oE 'GLIBCXX_[0-9.]+' | sort -uV | tail -1)"; \
