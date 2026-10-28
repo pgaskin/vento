@@ -590,7 +590,13 @@ impl Pane {
             let name = self.title_set(ctx);
             // The toolbar shows nothing below the title bar.
             let hidden = y + self.toolbar_size.y <= out + 0.5;
-            csd::title_bar(ctx, host, rect, &name, hidden).contains_pointer()
+            // The shape of what the window shows, which a resize keeping
+            // the aspect ratio keeps, so that it has no black bars.
+            let aspect = s.desktop.as_ref().map(Desktop::size).map(|(width, height)| {
+                let source = self.source_rect(width, height);
+                source.width() / source.height()
+            });
+            csd::title_bar(ctx, host, rect, &name, hidden, aspect).contains_pointer()
         });
 
         let area = egui::Area::new(Id::new("toolbar"))

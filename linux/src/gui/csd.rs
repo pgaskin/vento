@@ -10,7 +10,8 @@
 //! both out of the way of what is under them; it is drawn in a window and
 //! while maximised, and not in fullscreen. A drag on it moves the window, a
 //! double click maximises or restores it, a drag with the right button
-//! resizes it from the top corner on that side of the bar's middle, and a
+//! resizes it from the top corner on that side of the bar's middle (with
+//! Shift held, on X11, keeping the shape of what the window shows), and a
 //! right click opens the window manager's or the compositor's window menu
 //! where there is one. Its
 //! buttons are close, and minimise and maximise where the window manager
@@ -138,13 +139,18 @@ pub fn title_buttons(buttons: WindowButtons, maximized: bool) -> Vec<Button> {
     shown
 }
 
-/// A resize from one side of the window done here, on X11: the pointer is
-/// the window's while the button pressed on the side is held (the server's
-/// implicit grab), and the window is made the size and the place it asks
-/// for, frame by frame. All in device pixels, on the screen.
+/// A resize done here, on X11, from one side of the window, or from a top
+/// corner keeping an aspect ratio: the pointer is the window's while the
+/// button pressed for it is held (the server's implicit grab), and the
+/// window is made the size and the place it asks for, frame by frame. All in
+/// device pixels, on the screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct EdgeResize {
     direction: ResizeDirection,
+    /// The button held for it.
+    button: PointerButton,
+    /// The width over the height the window keeps, for a corner.
+    aspect: Option<f32>,
     /// Where the pointer was pressed.
     from: (i32, i32),
     /// The window's position and inner size then.
@@ -154,8 +160,9 @@ struct EdgeResize {
 
 impl EdgeResize {
     /// The window's position and size with the pointer at `pointer`: the
-    /// side moved with it, the opposite side where it was, and the size no
-    /// smaller than `min`.
+    /// side or the corner moved with it, the opposite side or corner where it
+    /// was, and the size no smaller than `min`. A corner keeps the aspect
+    /// ratio, by whichever of the pointer's two moves asks for more.
     fn geometry(&self, pointer: (i32, i32), min: PhysicalSize<u32>) -> ((i32, i32), PhysicalSize<u32>) {
         let (dx, dy) = (pointer.0 - self.from.0, pointer.1 - self.from.1);
         let (mut x, mut y) = self.at;
@@ -173,6 +180,18 @@ impl EdgeResize {
                 let bottom = y + h;
                 h = (h - dy).max(min_h);
                 y = bottom - h;
+            }
+            ResizeDirection::NorthWest | ResizeDirection::NorthEast => {
+                let aspect = self.aspect.unwrap_or(w as f32 / h as f32);
+                let (right, bottom) = (x + w, y + h);
+                let wide = if self.direction == ResizeDirection::NorthWest { w - dx } else { w + dx };
+                let width = (wide as f32).max((h - dy) as f32 * aspect).max(min_w as f32).max(min_h as f32 * aspect);
+                w = width.round() as i32;
+                h = (width / aspect).round() as i32;
+                y = bottom - h;
+                if self.direction == ResizeDirection::NorthWest {
+                    x = right - w;
+                }
             }
             _ => {}
         }
@@ -209,7 +228,7 @@ pub fn resize_edges(ctx: &egui::Context, host: &mut Host, corner: f32, edge: f32
     }
     let screen = ctx.content_rect();
     if let Some(resize) = ctx.data(|d| d.get_temp::<EdgeResize>(edge_resize_id())) {
-        if ctx.input(|i| i.pointer.primary_down()) {
+        if ctx.input(|i| i.pointer.button_down(resize.button)) {
             // The whole window is the resize's while it lasts.
             egui::Area::new(Id::new("resize-edges"))
                 .order(Order::Tooltip)
@@ -262,7 +281,14 @@ pub fn resize_edges(ctx: &egui::Context, host: &mut Host, corner: f32, edge: f32
                     && let Some(from) = host.wm.and_then(|wm| wm.pointer())
                     && let Ok(at) = host.window.outer_position()
                 {
-                    let resize = EdgeResize { direction, from, at: (at.x, at.y), size: host.window.inner_size() };
+                    let resize = EdgeResize {
+                        direction,
+                        button: PointerButton::Primary,
+                        aspect: None,
+                        from,
+                        at: (at.x, at.y),
+                        size: host.window.inner_size(),
+                    };
                     ctx.data_mut(|d| d.insert_temp(edge_resize_id(), resize));
                     return;
                 }
@@ -277,9 +303,17 @@ pub fn resize_edges(ctx: &egui::Context, host: &mut Host, corner: f32, edge: f32
 
 /// The title bar at `rect`, with `title` and the buttons the window manager
 /// offers, edged along its foot where `foot` (the toolbar wholly hidden
-/// behind it). Its response, which is hovered on the bar and on its buttons
-/// alike.
-pub fn title_bar(ctx: &egui::Context, host: &mut Host, rect: Rect, title: &str, foot: bool) -> Response {
+/// behind it). `aspect` is the width over the height of what the window
+/// shows, which a Shift and right button drag keeps. Its response, which is
+/// hovered on the bar and on its buttons alike.
+pub fn title_bar(
+    ctx: &egui::Context,
+    host: &mut Host,
+    rect: Rect,
+    title: &str,
+    foot: bool,
+    aspect: Option<f32>,
+) -> Response {
     let style = ctx.global_style();
     let edge = style.visuals.window_stroke();
     let fill = darker(style.visuals.window_fill);
@@ -336,12 +370,36 @@ pub fn title_bar(ctx: &egui::Context, host: &mut Host, rect: Rect, title: &str, 
     // a drag, so the menu waits for the release.
     if response.drag_started_by(PointerButton::Secondary) && resizable(host) {
         let left = response.interact_pointer_pos().is_some_and(|p| p.x < response.rect.center().x);
-        resize_from_top(ctx, host, left);
+        if !(ctx.input(|i| i.modifiers.shift) && keep_aspect(ctx, host, left, aspect)) {
+            resize_from_top(ctx, host, left);
+        }
     }
     if response.secondary_clicked() {
         window_menu(ctx, host);
     }
     response
+}
+
+/// Resizes the window from its top left (`left`) or top right corner while
+/// the right button is held, keeping its width over its height at `aspect`
+/// (the window's own where `None`), done here: X11 only, as window managers
+/// differ on aspect hints (i3 takes none) and Wayland's configures say the
+/// size to use. Whether it was started.
+fn keep_aspect(ctx: &egui::Context, host: &Host, left: bool, aspect: Option<f32>) -> bool {
+    let (Some(from), Ok(at)) = (host.wm.and_then(|wm| wm.pointer()), host.window.outer_position()) else {
+        return false;
+    };
+    let resize = EdgeResize {
+        direction: if left { ResizeDirection::NorthWest } else { ResizeDirection::NorthEast },
+        button: PointerButton::Secondary,
+        aspect: aspect.filter(|a| a.is_finite() && *a > 0.0),
+        from,
+        at: (at.x, at.y),
+        size: host.window.inner_size(),
+    };
+    log::debug!("resizing the window from its {:?} corner, keeping its aspect ratio", resize.direction);
+    ctx.data_mut(|d| d.insert_temp(edge_resize_id(), resize));
+    true
 }
 
 /// Resizes the window from its top left (`left`) or top right corner while
@@ -585,6 +643,8 @@ mod tests {
     fn a_side_resized_here_moves_that_side_alone_down_to_the_minimum() {
         let resize = |direction| EdgeResize {
             direction,
+            button: PointerButton::Primary,
+            aspect: None,
             from: (500, 300),
             at: (100, 50),
             size: PhysicalSize::new(800, 600),
@@ -600,6 +660,29 @@ mod tests {
         // Past the minimum, the minimum, with the opposite side still where it was.
         assert_eq!(resize(ResizeDirection::West).geometry((1000, 300), min), ((500, 50), size(400, 600)));
         assert_eq!(resize(ResizeDirection::South).geometry((500, -100), min), ((100, 50), size(800, 360)));
+    }
+
+    #[test]
+    fn a_top_corner_resized_here_keeps_the_aspect_and_the_opposite_corner() {
+        let resize = |direction| EdgeResize {
+            direction,
+            button: PointerButton::Secondary,
+            aspect: Some(1.6),
+            from: (500, 300),
+            at: (100, 50),
+            size: PhysicalSize::new(800, 500),
+        };
+        let min = PhysicalSize::new(400, 360);
+        let size = PhysicalSize::new;
+        // Up and out: the larger of the two asks wins, the bottom right
+        // corner stays (top left) or the bottom left (top right).
+        assert_eq!(resize(ResizeDirection::NorthWest).geometry((420, 290), min), ((20, 0), size(880, 550)));
+        assert_eq!(resize(ResizeDirection::NorthEast).geometry((520, 200), min), ((100, -50), size(960, 600)));
+        // Down to the minimum height, which at 1.6 is the wider limit.
+        assert_eq!(resize(ResizeDirection::NorthEast).geometry((0, 900), min), ((100, 190), size(576, 360)));
+        // Without a ratio, the window's own.
+        let own = EdgeResize { aspect: None, ..resize(ResizeDirection::NorthEast) };
+        assert_eq!(own.geometry((580, 300), min), ((100, 0), size(880, 550)));
     }
 
     #[test]
