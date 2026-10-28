@@ -1276,6 +1276,13 @@ is on the toolbar: the toolbar is this end's, so while it is under the pointer
 the keyboard is too, the grab or the inhibitor is let go (Alt+Tab is the window
 manager's again), the keys the far end has down are released there, and what
 is typed goes nowhere. Moving off the toolbar takes the keyboard back.
+The pointer is sent from egui's frame and keys as winit delivers them, so a
+key typed after a pointer event that no frame has read yet waits in that
+window's queue and is sent once that frame has sent the pointer's: the
+server gets clicks, moves and keys in the order they were made (`xdotool
+keydown super mousedown 3 mousemove … mouseup 3 keyup super` in one burst
+arrives in that order; before, Super's press and release both came ahead of
+the button).
 
 **The mouse** sends absolute desktop coordinates, mapped through the view and
 clamped to it — the desktop pixel drawn under the pointer, by the centre of

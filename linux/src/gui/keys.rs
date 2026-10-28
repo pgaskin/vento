@@ -360,23 +360,9 @@ impl Keyboard {
     }
 
     /// Whether the server has a modifier down that a window manager's mouse
-    /// bindings could use: Control, Alt, Meta, Super, Hyper or AltGr, but
-    /// not Shift (see `Session::holds_pointer`).
+    /// bindings could use (see `is_modifier` and `Session::holds_pointer`).
     pub fn modifier_held(&self) -> bool {
-        const MODIFIERS: [Keysym; 11] = [
-            Keysym::Control_L,
-            Keysym::Control_R,
-            Keysym::Alt_L,
-            Keysym::Alt_R,
-            Keysym::Meta_L,
-            Keysym::Meta_R,
-            Keysym::Super_L,
-            Keysym::Super_R,
-            Keysym::Hyper_L,
-            Keysym::Hyper_R,
-            Keysym::ISO_Level3_Shift,
-        ];
-        self.held.values().any(|&k| MODIFIERS.iter().any(|m| m.raw() == k))
+        self.held.values().any(|&k| is_modifier(k))
     }
 
     /// How many keys the far end has down: the overlay's count.
@@ -415,6 +401,25 @@ impl Keyboard {
             backend.key_up(id);
         }
     }
+}
+
+/// Whether `keysym` is a modifier that a window manager's mouse bindings
+/// could use: Control, Alt, Meta, Super, Hyper or AltGr, but not Shift.
+pub fn is_modifier(keysym: u32) -> bool {
+    const MODIFIERS: [Keysym; 11] = [
+        Keysym::Control_L,
+        Keysym::Control_R,
+        Keysym::Alt_L,
+        Keysym::Alt_R,
+        Keysym::Meta_L,
+        Keysym::Meta_R,
+        Keysym::Super_L,
+        Keysym::Super_R,
+        Keysym::Hyper_L,
+        Keysym::Hyper_R,
+        Keysym::ISO_Level3_Shift,
+    ];
+    MODIFIERS.iter().any(|m| m.raw() == keysym)
 }
 
 /// Ctrl and Alt, either side, among `keys` together. By keysym rather than

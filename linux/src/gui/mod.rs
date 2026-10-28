@@ -76,7 +76,7 @@ use std::time::{Duration, Instant};
 use toolbar::Placement;
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event::{DeviceEvent, DeviceId, ElementState, StartCause, WindowEvent};
+use winit::event::{DeviceEvent, DeviceId, ElementState, KeyEvent, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, EventLoopProxy};
 use winit::window::{Icon, UserAttentionType, Window, WindowAttributes, WindowButtons, WindowId};
 
@@ -318,9 +318,22 @@ struct Surface {
     /// output that went away has had its windows moved elsewhere.
     output: Option<String>,
     /// Pointer events kept from egui until its next frame (see
-    /// [`PointerSplit`]).
-    held: VecDeque<WindowEvent>,
+    /// [`PointerSplit`]), and the session's keys behind them (see
+    /// [`Held`]).
+    held: VecDeque<Held>,
     split: PointerSplit,
+}
+
+/// What waits in a window's queue for its next frame: a pointer event for
+/// egui, or a key for the session typed after a pointer event that a frame
+/// has not read yet. The pointer is sent to the server from egui's frame
+/// and the keys as winit delivers them, so a key sent at once would reach
+/// the server ahead of the clicks and moves made before it (Super let go of
+/// just after a button went up arrived before the button's release).
+enum Held {
+    Event(WindowEvent),
+    /// The key, when winit delivered it, and the window it came to.
+    Key(KeyEvent, Instant, WindowId),
 }
 
 /// Where egui's frames are split in a burst of pointer events. egui finds
@@ -371,22 +384,45 @@ impl Surface {
             _ => return self.winit.on_window_event(&self.window, &event).repaint,
         };
         if !self.split.admit(button, !self.held.is_empty()) {
-            self.held.push_back(event);
+            self.held.push_back(Held::Event(event));
             return true;
         }
         self.winit.on_window_event(&self.window, &event).repaint
     }
 
+    /// Whether a key for the session waits behind this window's pointer
+    /// events: some were given to egui since its last frame, or are held.
+    fn orders_keys(&self) -> bool {
+        self.split.fed || !self.held.is_empty()
+    }
+
     /// Once a frame has taken egui's input, the events held from it given
-    /// for the next. Whether there were any, and so a next frame is wanted.
-    fn release_held(&mut self) -> bool {
+    /// for the next, and the keys behind no other event than the ones this
+    /// frame reads handed back, to be sent once it has run. Whether
+    /// anything was held, and so a next frame is wanted.
+    fn release_held(&mut self, keys: &mut Vec<(KeyEvent, Instant, WindowId)>) -> bool {
         self.split = PointerSplit::default();
         let held = std::mem::take(&mut self.held);
         let any = !held.is_empty();
-        for event in held {
-            self.give_egui(event);
+        for item in held {
+            match item {
+                Held::Event(event) => {
+                    self.give_egui(event);
+                }
+                Held::Key(key, since, to) if self.orders_keys() => self.held.push_back(Held::Key(key, since, to)),
+                Held::Key(key, since, to) => keys.push((key, since, to)),
+            }
         }
         any
+    }
+
+    /// Whether a modifier press waits here, which wants the pointer grabbed
+    /// already (see `App::sync_pointer`).
+    fn holds_modifier_press(&self) -> bool {
+        self.held.iter().any(|h| {
+            matches!(h, Held::Key(key, _, _) if key.state == ElementState::Pressed
+                && keys::keysym(key).is_some_and(keys::is_modifier))
+        })
     }
 
     /// Whether the window can be seen (see `App::sync_shown`).
@@ -990,14 +1026,34 @@ impl App {
         self.sync_pointer();
     }
 
+    /// A key held behind pointer events (see `Held`), sent as it would have
+    /// been when it came: to the session if it still takes keys and the
+    /// window it came to still has the focus, and otherwise only let go of
+    /// at the server, as a key typed elsewhere is.
+    fn send_key(&mut self, to: WindowId, key: &KeyEvent, since: Instant) {
+        let focused = self.focused == Some(to);
+        let Some(viewport) = self.windows.get(&to).map(|s| s.viewport) else {
+            return;
+        };
+        if let Screen::Session(session) = &mut self.screen {
+            if focused && session.takes_keys(viewport) {
+                session.key(key, since);
+            } else {
+                session.key_elsewhere(key);
+            }
+        }
+        self.sync_pointer();
+    }
+
     /// X11: the pointer grabbed beside the keyboard while the session wants
     /// it (`Session::holds_pointer`). After every frame, with the keyboard
     /// grab, and after every key, so that a modifier pressed has the
     /// pointer grabbed before the click that follows it.
     fn sync_pointer(&mut self) {
+        let waiting = self.windows.values().any(Surface::holds_modifier_press);
         let wanted = self.focused.is_some_and(|id| {
             let pane = self.windows.get(&id).map(|s| s.viewport);
-            matches!((&self.screen, pane), (Screen::Session(s), Some(pane)) if s.holds_pointer(pane))
+            matches!((&self.screen, pane), (Screen::Session(s), Some(pane)) if s.holds_pointer(pane, waiting))
         });
         if let Some(keyboard) = &mut self.keyboard {
             keyboard.hold_pointer(wanted);
@@ -1156,7 +1212,8 @@ impl App {
             }
         }
         let raw_input = surface.winit.take_egui_input(&window);
-        if surface.release_held() {
+        let mut ready = Vec::new();
+        if surface.release_held(&mut ready) {
             window.request_redraw();
         }
         let buttons = match &mut surface.wm {
@@ -1253,6 +1310,11 @@ impl App {
         }
         // Applied above; epaint asserts that none is dropped unapplied.
         output.textures_delta.clear();
+        // The keys typed after this frame's pointer events, now that those
+        // have been sent.
+        for (key, since, to) in ready {
+            self.send_key(to, &key, since);
+        }
 
         // What the frame asked of the other windows: to draw what it took
         // off the mailbox, which they have not drawn yet; and the main
@@ -1753,8 +1815,18 @@ impl ApplicationHandler<Wake> for App {
                 let since = Instant::now();
                 if let Screen::Session(session) = &mut self.screen {
                     if session.takes_keys(viewport) {
-                        session.key(key, since);
-                        window.request_redraw();
+                        // Behind any pointer event not sent yet, in the
+                        // window it went to (see `Held`).
+                        match self.windows.values_mut().find(|s| s.orders_keys()) {
+                            Some(surface) => {
+                                surface.held.push_back(Held::Key(key.clone(), since, id));
+                                surface.window.request_redraw();
+                            }
+                            None => {
+                                session.key(key, since);
+                                window.request_redraw();
+                            }
+                        }
                         self.sync_pointer();
                         return;
                     }

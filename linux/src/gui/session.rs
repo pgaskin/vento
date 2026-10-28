@@ -494,10 +494,11 @@ impl Session {
     /// (X11, see `x11.rs`, which keeps it until the last button is let go
     /// of): while it holds the shortcuts and the server has a modifier
     /// down, so that the window manager's mouse bindings on that modifier
-    /// go to the server too. Not while the pointer is captured, where a
-    /// pointer grab doubles the raw motion.
-    pub fn holds_pointer(&self, pane: PaneId) -> bool {
-        self.holds_shortcuts(pane) && !self.captured() && self.keyboard.modifier_held()
+    /// go to the server too, or one is about to be (`waiting`: a modifier
+    /// press held behind pointer events). Not while the pointer is
+    /// captured, where a pointer grab doubles the raw motion.
+    pub fn holds_pointer(&self, pane: PaneId, waiting: bool) -> bool {
+        self.holds_shortcuts(pane) && !self.captured() && (waiting || self.keyboard.modifier_held())
     }
 
     /// Whether a key event from winit, to `pane`'s window, is the far end's
