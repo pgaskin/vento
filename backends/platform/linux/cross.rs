@@ -13,10 +13,10 @@
 //! the build machine, whose sanity check runs a program it compiled. So for
 //! a cross build FFmpeg is given `--enable-cross-compile`, the target's
 //! arch and OS, the compiler cc-rs chose for the target (with the flags
-//! that make it the target's, such as clang's `--target=`), its archiver and
-//! the prefix of its tools; and dav1d is given a cross file. A native build
-//! is given none of this, so its configure line and the stamp made of it have
-//! no cross arguments.
+//! that make it the target's, such as clang's `--target=`), its archiver,
+//! the prefix of its tools and the build machine's compiler; and dav1d is
+//! given a cross file. A native build is given none of this, so its
+//! configure line and the stamp made of it have no cross arguments.
 
 use std::path::{Path, PathBuf};
 
@@ -51,6 +51,10 @@ pub struct Tools {
     /// optimisation and debug flags cc-rs adds, which FFmpeg chooses itself.
     pub target_flags: Vec<String>,
     pub ar: PathBuf,
+    /// The build machine's C compiler, as cc-rs found it for `HOST`, for
+    /// what FFmpeg's configure compiles for the build machine (`--host-cc`),
+    /// whose default is `gcc` whether or not there is one.
+    pub host_cc: PathBuf,
 }
 
 /// The compiler as `CC` runs it, out of the command cc-rs makes for it
@@ -130,6 +134,7 @@ pub fn ffmpeg_args(target: &Target, tools: &Tools) -> Vec<String> {
         // prefix: it reads only the prefix's own pkg-config files, which
         // belong to no particular machine.
         "--pkg-config=pkg-config".to_string(),
+        format!("--host-cc={}", tools.host_cc.display()),
     ];
     if let Some(prefix) = cross_prefix(&tools.cc) {
         args.push(format!("--cross-prefix={prefix}"));
@@ -208,6 +213,7 @@ mod tests {
             command: strings(&["cc"]),
             target_flags: strings(&["-m64"]),
             ar: "ar".into(),
+            host_cc: "cc".into(),
         };
         assert!(ffmpeg_args(&NATIVE, &tools).is_empty());
         assert_eq!(meson_cross_file(&NATIVE, &tools), None);
@@ -220,6 +226,7 @@ mod tests {
             command: strings(&["aarch64-linux-gnu-gcc"]),
             target_flags: Vec::new(),
             ar: "aarch64-linux-gnu-ar".into(),
+            host_cc: "cc".into(),
         };
         assert_eq!(
             ffmpeg_args(&ARM64, &tools),
@@ -229,6 +236,7 @@ mod tests {
                 "--target-os=linux",
                 "--ar=aarch64-linux-gnu-ar",
                 "--pkg-config=pkg-config",
+                "--host-cc=cc",
                 "--cross-prefix=aarch64-linux-gnu-",
             ])
         );
@@ -253,6 +261,7 @@ mod tests {
             command: strings(&["/usr/bin/clang"]),
             target_flags: target_flags(&args),
             ar: "llvm-ar".into(),
+            host_cc: "/usr/bin/clang".into(),
         };
         assert_eq!(tools.target_flags, strings(&["--target=aarch64-unknown-linux-gnu", "--sysroot", "/sysroots/arm64"]));
         let ffmpeg = ffmpeg_args(&ARM64, &tools);
@@ -288,6 +297,7 @@ mod tests {
             command: strings(&["ccache", "aarch64-linux-gnu-gcc"]),
             target_flags: Vec::new(),
             ar: "aarch64-linux-gnu-ar".into(),
+            host_cc: "cc".into(),
         };
         assert!(meson_cross_file(&ARM64, &tools).unwrap().starts_with("[binaries]\nc = ['ccache', 'aarch64-linux-gnu-gcc']\n"));
         assert!(ffmpeg_args(&ARM64, &tools).contains(&"--cross-prefix=aarch64-linux-gnu-".to_string()));
@@ -317,6 +327,7 @@ mod tests {
             command: strings(&["arm-linux-gnueabihf-gcc"]),
             target_flags: Vec::new(),
             ar: "arm-linux-gnueabihf-ar".into(),
+            host_cc: "cc".into(),
         };
         let file = meson_cross_file(&armv7, &tools).unwrap();
         assert!(file.contains("cpu_family = 'arm'\ncpu = 'armv7'\n"), "{file}");

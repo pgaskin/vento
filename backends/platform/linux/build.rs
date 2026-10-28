@@ -176,6 +176,11 @@ fn main() {
                 .collect::<Vec<_>>(),
         ),
         ar: build.get_archiver().get_program().into(),
+        host_cc: cc::Build::new()
+            .target(&host)
+            .get_compiler()
+            .path()
+            .to_path_buf(),
     };
     let cross_file = cross::meson_cross_file(&target, &tools);
     let x86 = matches!(
