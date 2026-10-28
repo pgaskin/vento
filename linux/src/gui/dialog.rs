@@ -350,7 +350,8 @@ impl Dialog {
             .num_columns(2)
             .spacing([12.0, 8.0])
             .show(ui, |ui| {
-                for spec in kind.options {
+                // Not those set on the command line alone.
+                for spec in kind.options.iter().filter(|s| !s.command_line_only) {
                     if let Some(gate) = spec.gate
                         && !gate.open(values.get(gate.key).map(String::as_str).unwrap_or(""))
                     {

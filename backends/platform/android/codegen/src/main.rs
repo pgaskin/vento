@@ -221,7 +221,7 @@ fn java_catalog(about: &About, package: &str, class: &str) -> String {
     let _ = writeln!(out, "    public static final String SHORT_NAME = {};", java_string(about.short_name));
     let _ = writeln!(out, "    public static final String DESCRIPTION = {};", java_string(about.description));
     let _ = writeln!(out, "    public static final int ORDER = {};\n", about.order);
-    for spec in about.options {
+    for spec in phone_options(about) {
         let _ = writeln!(
             out,
             "    public static final String {} = {};",
@@ -229,7 +229,7 @@ fn java_catalog(about: &About, package: &str, class: &str) -> String {
             java_string(spec.key)
         );
     }
-    let options: Vec<String> = about.options.iter().map(java_option).collect();
+    let options: Vec<String> = phone_options(about).map(java_option).collect();
     let _ = writeln!(
         out,
         "\n    public static final List<BackendOption> OPTIONS = List.of(\n{});\n}}",
@@ -297,6 +297,12 @@ fn json_string(text: &str) -> String {
     out
 }
 
+/// The options the phone offers: every one of the backend's but those for
+/// the command line alone ([`Spec::command_line_only`]).
+fn phone_options(about: &About) -> impl Iterator<Item = &'static Spec> {
+    about.options.iter().filter(|s| !s.command_line_only)
+}
+
 fn json_nullable(text: Option<&str>) -> String {
     text.map_or_else(|| "null".to_string(), json_string)
 }
@@ -305,9 +311,7 @@ fn json_nullable(text: Option<&str>) -> String {
 fn json() -> String {
     let mut out = String::from("[\n");
     for (i, about) in catalog::ALL.iter().enumerate() {
-        let options: Vec<String> = about
-            .options
-            .iter()
+        let options: Vec<String> = phone_options(about)
             .map(|s| {
                 let choices: Vec<String> = s
                     .choices
@@ -383,6 +387,18 @@ mod tests {
         assert_eq!(java_string("1920 × 1200"), "\"1920 \\u00d7 1200\"");
         assert_eq!(java_string("a \"b\" \\ c"), "\"a \\\"b\\\" \\\\ c\"");
         assert_eq!(java_string("😀"), "\"\\ud83d\\ude00\"");
+    }
+
+    /// An option for the desktop alone is not in the phone's class or in
+    /// the catalog's JSON.
+    #[test]
+    fn the_desktops_options_are_left_out() {
+        let realvnc = about("realvnc").unwrap();
+        assert!(realvnc.options.iter().any(|s| s.key == "AutoFetchLibraries"));
+        let java = java_catalog(realvnc, "p", "C");
+        assert!(!java.contains("AutoFetchLibraries") && !java.contains("AUTO_FETCH_LIBRARIES"), "{java}");
+        assert!(java.contains("KEEP_ALIVE_RESPONSE_TIMEOUT"));
+        assert!(!json().contains("AutoFetchLibraries"));
     }
 
     /// Every option of every backend has a constant of its own, or the

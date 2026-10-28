@@ -13,5 +13,6 @@ pub mod backends;
 pub mod gui;
 pub mod known_hosts;
 pub mod ppm;
+pub mod realvnc;
 
 pub mod log;

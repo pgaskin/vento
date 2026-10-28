@@ -266,6 +266,7 @@ fn spec(value: &Value) -> Spec {
         scope: Scope::Connection,
         live: false,
         gate: None,
+        command_line_only: false,
     }
 }
 

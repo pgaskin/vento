@@ -345,6 +345,7 @@ mod host {
             options.set("ViewOnly", "true");
         }
         options.check_requirements(kind.options)?;
+        backends::check(kind, &options)?;
 
         let Some(mut steps) = steps else {
             return Ok(Mode::Gui(Box::new(gui::Launch {

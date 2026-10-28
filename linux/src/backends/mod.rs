@@ -87,6 +87,15 @@ pub fn version(kind: &Kind, dirs: &Dirs) -> String {
     }
 }
 
+/// The checks a backend's options need beyond each value's type: RealVNC's
+/// `AutoFetchLibraries`, which the client reads.
+pub fn check(kind: &Kind, options: &api::options::Options) -> Result<(), String> {
+    if std::ptr::eq(kind, &remotedesktop_realvnc::KIND) {
+        crate::realvnc::Fetch::of(options)?;
+    }
+    Ok(())
+}
+
 /// The file a backend's code is in: for the C backends the library they
 /// open, where it was found, opening it first; for the Rust ones this
 /// binary. Where a library cannot be opened, the path it was looked for at

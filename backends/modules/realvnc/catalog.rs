@@ -9,7 +9,7 @@
 //! read it without building the backend.
 
 use crate::catalog::About;
-use crate::options::{Scope, Spec, VIEW_ONLY, BELL, SHARED, choice, choices, bool, integer, when};
+use crate::options::{Scope, Spec, VIEW_ONLY, BELL, SHARED, choice, choices, bool, command_line_only, integer, text, when};
 use crate::trust::Pinning;
 
 pub static REALVNC: About = About {
@@ -201,6 +201,19 @@ pub static OPTIONS: &[Spec] = &[
         Scope::Global,
         false,
     ),
+    // The Linux client's, on its command line: on the phone the add-on gets
+    // the library, on a screen of its own. The values are checked and acted
+    // on by the client before a session starts (`linux/src/realvnc/`); the
+    // backend ignores the key.
+    command_line_only(text(
+        "AutoFetchLibraries",
+        "Fetch RealVNC's library",
+        "Where the proprietary library from the RealVNC Viewer APK comes from when it is missing: off, prompt \
+         (ask, then download it), auto (download it), the path of a local APK, or an http(s) URL of an APK.",
+        "prompt",
+        Scope::Global,
+        false,
+    )),
 ];
 
 #[cfg(test)]
@@ -213,7 +226,11 @@ mod tests {
     /// renaming one loses the setting.
     #[test]
     fn the_keys_are_the_ones_records_hold() {
-        let keys: Vec<&str> = OPTIONS.iter().map(|s| s.key).collect();
+        let keys: Vec<&str> = OPTIONS
+            .iter()
+            .filter(|s| !s.command_line_only)
+            .map(|s| s.key)
+            .collect();
         assert_eq!(
             keys,
             [
@@ -232,6 +249,15 @@ mod tests {
                 "KeepAliveResponseTimeout"
             ]
         );
+    }
+
+    /// Where the library comes from is set on the desktop's command line
+    /// alone.
+    #[test]
+    fn fetching_the_library_is_a_command_line_option() {
+        let fetch = find(OPTIONS, "AutoFetchLibraries").unwrap();
+        assert!(fetch.command_line_only);
+        assert_eq!(fetch.default, "prompt");
     }
 
     #[test]

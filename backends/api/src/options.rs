@@ -110,6 +110,9 @@ pub struct Spec {
     /// Whether `set_option` does anything mid-session.
     pub live: bool,
     pub gate: Option<Gate>,
+    /// Set only on a client's command line (`-o`): not a row in a form, so
+    /// the phone, which has no command line, leaves it out altogether.
+    pub command_line_only: bool,
 }
 
 impl Spec {
@@ -243,6 +246,7 @@ pub(crate) const fn spec(
         scope,
         live,
         gate: None,
+        command_line_only: false,
     }
 }
 
@@ -298,6 +302,14 @@ pub(crate) const fn choices(
     choices: &'static [Choice],
 ) -> Spec {
     spec(key, label, summary, Type::Choice, choices, default, scope, live)
+}
+
+/// The same option, set only on a command line ([`Spec::command_line_only`]).
+pub(crate) const fn command_line_only(spec: Spec) -> Spec {
+    Spec {
+        command_line_only: true,
+        ..spec
+    }
 }
 
 /// The same option, offered only when `key` has one of `values`.
