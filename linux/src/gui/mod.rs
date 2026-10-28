@@ -802,10 +802,13 @@ impl App {
     /// starts, as large as the monitor it is on at most. It grows around
     /// the dialog, which ends up where it is drawn in a window of that size
     /// without the window's own decorations, though with its top edge on the
-    /// monitor. Where the window can be placed (X11); on Wayland the
-    /// compositor decides where a window's size changes from. Not while
-    /// maximised or fullscreen.
-    fn grow(window: &Window) {
+    /// monitor. Where the window can be placed (X11), from `dialog_at`,
+    /// where the dialog was before the window was made a session's: the
+    /// window's position read after `x11::WindowManager::make_normal` mapped
+    /// it again can be the window manager's (0, 0) for it while it is still
+    /// taking it on. On Wayland the compositor decides where a window's
+    /// size changes from. Not while maximised or fullscreen.
+    fn grow(window: &Window, dialog_at: Option<PhysicalPosition<i32>>) {
         if window.is_maximized() || window.fullscreen().is_some() {
             return;
         }
@@ -821,7 +824,9 @@ impl App {
         let within = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(size.width as f32, size.height as f32));
         let offset = dialog::left_top(egui::vec2(dialog.width, dialog.height), within);
         log::info!("resizing the window to {}×{} for the session", size.width, size.height);
-        Self::place(window, &monitor, -(offset.x as f64 * scale), -(offset.y as f64 * scale));
+        if let Some(at) = dialog_at {
+            Self::place(window, &monitor, at, -(offset.x as f64 * scale), -(offset.y as f64 * scale));
+        }
         let _ = window.request_inner_size(size);
     }
 
@@ -838,7 +843,9 @@ impl App {
         let inner = window.inner_size().to_logical::<f32>(scale);
         let within = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(inner.width, inner.height));
         let offset = dialog::left_top(egui::vec2(dialog::WIDTH, 0.0), within);
-        Self::place(window, &window.current_monitor(), offset.x as f64 * scale, offset.y as f64 * scale);
+        if let Ok(at) = window.outer_position() {
+            Self::place(window, &window.current_monitor(), at, offset.x as f64 * scale, offset.y as f64 * scale);
+        }
         let _ = window.request_inner_size(winit::dpi::LogicalSize::new(dialog::WIDTH, inner.height));
     }
 
@@ -865,17 +872,19 @@ impl App {
         let top = monitor.position().y;
         if at.y < top {
             log::info!("the window's top edge is {} pixels above its monitor's; moving it down", top - at.y);
-            Self::place(window, &Some(monitor), 0.0, 0.0);
+            Self::place(window, &Some(monitor), at, 0.0, 0.0);
         }
     }
 
-    /// Moves `window` by `dx`, `dy` device pixels where the display server
-    /// lets it be placed, keeping its top edge no higher than the top of
-    /// `monitor`.
-    fn place(window: &Window, monitor: &Option<winit::monitor::MonitorHandle>, dx: f64, dy: f64) {
-        let Ok(at) = window.outer_position() else {
-            return;
-        };
+    /// Moves `window` from `at` by `dx`, `dy` device pixels, keeping its top
+    /// edge no higher than the top of `monitor`.
+    fn place(
+        window: &Window,
+        monitor: &Option<winit::monitor::MonitorHandle>,
+        at: PhysicalPosition<i32>,
+        dx: f64,
+        dy: f64,
+    ) {
         let x = at.x + dx.round() as i32;
         let mut y = at.y + dy.round() as i32;
         if let Some(monitor) = monitor {
@@ -1040,7 +1049,7 @@ impl App {
         // Only from the dialog's size: a window opened for a session
         // (`--connect`) has a session's already.
         if std::mem::take(&mut self.compact) {
-            Self::grow(window);
+            Self::grow(window, dialog_at);
             self.grown = true;
         }
         // After the growing to a session's size, which is the size the
