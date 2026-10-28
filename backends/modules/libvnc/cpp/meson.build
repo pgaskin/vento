@@ -21,6 +21,7 @@ else
     include_directories: libvnc_inc,
     c_args: warning_args,
     link_args: backend_link_args,
+    link_depends: backend_link_depends,
     dependencies: vncclient_dep)
   if get_option('probes')
     executable('vento_libvnc_probe', 'libvnc_probe.c', probe_c,

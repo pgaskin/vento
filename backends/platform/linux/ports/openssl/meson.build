@@ -59,7 +59,9 @@ openssl_build = custom_target('openssl',
     'no-quic', 'no-srp', 'no-psk', 'no-ssl3', 'no-weak-ssl-ciphers', 'no-autoload-config', '-fPIC'],
   console: true)
 
-openssl_dep = declare_dependency(link_with: [openssl_build[0], openssl_build[1]],
+# By path, not link_with: see backend_link_depends in platform/linux/meson.build.
+openssl_dep = declare_dependency(link_args: [openssl_build[0].full_path(), openssl_build[1].full_path()],
   sources: openssl_build[2],
   compile_args: ['-isystem', openssl_prefix / 'include'],
   dependencies: [threads_dep, dl_dep])
+backend_link_depends += [openssl_build[0], openssl_build[1]]

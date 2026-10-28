@@ -26,6 +26,7 @@ else
     # WLog's lines through vento_log, rather than its console appender.
     c_args: warning_args + ['-DVENTO_FREERDP_WLOG'],
     link_args: backend_link_args,
+    link_depends: backend_link_depends,
     dependencies: freerdp_dep)
   if get_option('probes')
     executable('vento_freerdp_probe', 'freerdp_probe.c', probe_c,
@@ -39,6 +40,7 @@ else
       c_args: warning_args,
       link_args: ['-Wl,--wrap=freerdp_input_send_keyboard_event',
                   '-Wl,--wrap=freerdp_input_send_unicode_keyboard_event'],
+      link_depends: backend_link_depends,
       dependencies: freerdp_dep))
   endif
 endif

@@ -37,6 +37,7 @@ else
     c_args: warning_args,
     cpp_args: warning_args,
     link_args: backend_link_args,
+    link_depends: backend_link_depends,
     link_whole: tigervnc_h264_lib,
     dependencies: tigervnc_module_deps)
   if get_option('probes')

@@ -146,12 +146,14 @@ RUN mkdir -p /out/lib \
  && cp target/release/lib/libvento_*.so /out/lib/ \
  && llvm-strip --strip-debug /out/lib/libvento_*.so
 
-# Check the copy: the relative rpath, no library missing with
+# Check the copy: the relative rpath, none in the backends' libraries (which
+# find their dependencies on the system), no library missing with
 # LD_LIBRARY_PATH unset, and `vento --list`, which opens each backend's
 # library (the binary does not link them), naming the tree's own lib/ for
 # all four C backends and no error. Print the newest glibc and libstdc++
 # symbol versions each file needs.
 RUN llvm-readelf -d /out/vento | grep -q 'RUNPATH.*\[\$ORIGIN/lib' \
+ && ! llvm-readelf -d /out/lib/libvento_*.so | grep -E '\((RPATH|RUNPATH)\)' \
  && for file in /out/vento /out/lib/*.so; do \
      ! ldd "$file" | grep 'not found' || { echo "error: $file" >&2; exit 1; }; \
  done \

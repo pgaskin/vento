@@ -43,7 +43,10 @@ nettle_build = custom_target('nettle',
 
 # The stamp is a header so that Meson compiles a consumer after the install.
 nettle_inc_args = ['-isystem', nettle_prefix / 'include']
-nettle_dep = declare_dependency(link_with: nettle_build[0], sources: nettle_build[2],
+# The archives by path, not link_with: see backend_link_depends in
+# platform/linux/meson.build.
+nettle_dep = declare_dependency(link_args: nettle_build[0].full_path(), sources: nettle_build[2],
   compile_args: nettle_inc_args)
-hogweed_dep = declare_dependency(link_with: nettle_build[1], sources: nettle_build[2],
+hogweed_dep = declare_dependency(link_args: nettle_build[1].full_path(), sources: nettle_build[2],
   compile_args: nettle_inc_args, dependencies: nettle_dep)
+backend_link_depends += [nettle_build[0], nettle_build[1]]

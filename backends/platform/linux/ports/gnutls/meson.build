@@ -48,6 +48,8 @@ gnutls_build = custom_target('gnutls',
     '--disable-libdane', '--disable-full-test-suite'],
   console: true)
 
-gnutls_dep = declare_dependency(link_with: gnutls_build[0], sources: gnutls_build[1],
+# By path, not link_with: see backend_link_depends in platform/linux/meson.build.
+gnutls_dep = declare_dependency(link_args: gnutls_build[0].full_path(), sources: gnutls_build[1],
   compile_args: ['-isystem', gnutls_prefix / 'include'],
   dependencies: [hogweed_dep, nettle_dep, threads_dep])
+backend_link_depends += gnutls_build[0]

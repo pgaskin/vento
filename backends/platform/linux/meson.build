@@ -34,6 +34,14 @@ upstream_cc = ' '.join(cc.cmd_array())
 # global scope and that one exports some of the same names; RealVNC's module
 # leaves -Bsymbolic out.
 backend_link_args = ['-Wl,--exclude-libs,ALL', '-Wl,-Bsymbolic']
+# The archives of OpenSSL, nettle and GnuTLS (ports/<name>/meson.build), which
+# their dependencies link by path, so that ninja relinks a library after one
+# is rebuilt. Through link_with, a custom target's archive also puts its
+# directory into the RUNPATH of every library linking it (Meson's build rpath,
+# which only `meson install` removes), and the client ships the libraries out
+# of the build tree: a tree unpacked in /tmp/a/vento would search
+# /tmp/platform/linux/ports/... for libz.so.1 and the rest first.
+backend_link_depends = []
 
 # A probe connects, prints every callback and writes the framebuffer out:
 # probe/probe.c with a module's own main in front of it.
