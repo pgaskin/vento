@@ -275,11 +275,22 @@ static UINT serverFormatAnnounce(rdpsndDevicePlugin *device, const AUDIO_FORMAT 
         }
         used += (size_t) n < sizeof(line) - used ? (size_t) n : sizeof(line) - used - 1;
     }
-    LOGI("sound: the server offers %zu formats: %s", count, line);
+    /* FNV-1a over the line: the whole list the first time, a short line
+       when it is the same as the last one logged. */
+    uint64_t hash = 1469598103934665603ull;
+    for (const char *c = line; *c != '\0'; c++) {
+        hash = (hash ^ (uint8_t) *c) * 1099511628211ull;
+    }
+    if (atomic_exchange(&d->sound->formats, hash) == hash) {
+        LOGI("sound: the server offers the same %zu formats again", count);
+    } else {
+        LOGI("sound: the server offers %zu formats: %s", count, line);
+    }
     /* A server that lists a format this end plays may send sound from now on,
        and nothing in rdpsnd asks it to stop during a session (the client's
        formats are a single reply to this list), so the session's switch is a
-       mute, offered from this list rather than from the first wave. */
+       mute, offered already when the channel connected (`entry`) and kept
+       here; a list with nothing this end plays takes it away. */
     if (playable && d->sound->table.offer != NULL) {
         if (!d->offering) {
             d->offering = true;
@@ -534,6 +545,19 @@ static UINT VCAPITYPE entry(PFREERDP_RDPSND_DEVICE_ENTRY_POINTS points) {
     d->device.Close = close_;
     d->device.Free = free_;
     points->pRegisterRdpsndDevice(points->rdpsnd, &d->device);
+    /* The channel is connected: the static one once the server has joined
+       it, which is during the connection, and a dynamic one once the server
+       has opened it. Either is the server saying it may send sound, so the
+       session's switch is offered from here. Windows lists its formats only
+       when it starts a sound, on a dynamic channel it opens for it, and the
+       switch came with the first sound when it waited for that list. A list
+       with nothing this end plays takes it away again
+       (`serverFormatAnnounce`). */
+    if (sound->table.offer != NULL) {
+        d->offering = true;
+        atomic_fetch_add(&sound->offering, 1);
+        sound->table.offer(sound->table.user, VENTO_AUDIO_SWITCH_MUTE, true, NULL, NULL);
+    }
     return CHANNEL_RC_OK;
 }
 
@@ -576,6 +600,7 @@ bool vento_sound_init(VentoSound *v, const vento_audio *table) {
     v->table = *table;
     v->available = true;
     atomic_init(&v->offering, 0);
+    atomic_init(&v->formats, 0);
     /* Queried once: this decides what the server is offered for the whole
        session. */
     if (table->decodable != NULL && table->decoder_open != NULL && table->decode != NULL

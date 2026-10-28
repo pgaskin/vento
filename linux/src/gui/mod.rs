@@ -181,6 +181,7 @@ pub fn run(launch: Launch) -> i32 {
         settings: launch.settings,
         csd: launch.csd,
         dialog_type: false,
+        compact: false,
         fullscreened: None,
         fullscreen_after_frame: false,
         launch: Some(launch),
@@ -190,7 +191,7 @@ pub fn run(launch: Launch) -> i32 {
         egui: egui::Context::default(),
         windows: HashMap::new(),
         main: None,
-        screen: Screen::Dialog(Dialog::new()),
+        screen: Screen::Dialog(Box::new(Dialog::new())),
         keyboard: None,
         clipboard: None,
         display_server: DisplayServer::Other,
@@ -508,7 +509,7 @@ fn window_icon() -> Icon {
 }
 
 enum Screen {
-    Dialog(Dialog),
+    Dialog(Box<Dialog>),
     Session(Box<Session>),
 }
 
@@ -615,6 +616,9 @@ struct App {
     modifiers: winit::keyboard::ModifiersState,
     /// The windows draw their own decorations (`Launch::csd`).
     csd: bool,
+    /// The main window, drawn with its own decorations, is the dialog's
+    /// size, to be grown to a session's when one starts (see `grow`).
+    compact: bool,
     /// The main window is still X11's dialog type it opened as, to be
     /// floated by a tiling window manager (see `open`).
     dialog_type: bool,
@@ -762,13 +766,17 @@ impl App {
                     self.connect(request);
                     self.launched = matches!(self.screen, Screen::Session(_));
                 } else {
-                    self.screen = Screen::Dialog(Dialog::from_request(&request));
+                    self.screen = Screen::Dialog(Box::new(Dialog::from_request(&request)));
                 }
             }
         }
         if let Screen::Dialog(dialog) = &mut self.screen {
             dialog.fit = compact;
+            // Opened taller than it will be: the window manager's place for
+            // it is kept by its centre (see `Dialog::centre`).
+            dialog.centre = compact;
         }
+        self.compact = compact;
         self.dialog_type = compact && self.windows[&id].wm.is_some();
         window.request_redraw();
     }
@@ -968,7 +976,9 @@ impl App {
                         wm.make_normal(&window);
                     }
                 }
-                if self.csd {
+                // Only from the dialog's size: a window opened for a session
+                // (`--connect`) has a session's already.
+                if std::mem::take(&mut self.compact) {
                     Self::grow(&window);
                 }
                 // From the connecting screen on. After the growing to a
@@ -994,7 +1004,7 @@ impl App {
             Err(e) => {
                 let mut dialog = Dialog::from_request(&request);
                 dialog.notice = Some(format!("Could not connect: {e}"));
-                self.screen = Screen::Dialog(dialog);
+                self.screen = Screen::Dialog(Box::new(dialog));
             }
         }
         window.request_redraw();
@@ -1537,7 +1547,7 @@ impl App {
             return;
         };
         let window = Arc::clone(&surface.window);
-        let screen = std::mem::replace(&mut self.screen, Screen::Dialog(Dialog::new()));
+        let screen = std::mem::replace(&mut self.screen, Screen::Dialog(Box::new(Dialog::new())));
         if let Screen::Session(session) = screen {
             let mut dialog = Dialog::from_request(&session.request);
             if !detail.is_empty() {
@@ -1562,6 +1572,7 @@ impl App {
                 Self::shrink(&window);
                 dialog.fit = true;
             }
+            self.compact = self.csd;
             let mut host = Host {
                 window: &window,
                 viewport: surface.viewport,
@@ -1584,7 +1595,7 @@ impl App {
             let teardown = session.shutdown(&self.egui, &mut host);
             self.reap(teardown);
             self.forget_video();
-            self.screen = Screen::Dialog(dialog);
+            self.screen = Screen::Dialog(Box::new(dialog));
         }
         self.launched = false;
         window.set_title("Vento");
@@ -1598,7 +1609,7 @@ impl App {
             let focused = self.focused == Some(main);
             if let Some(surface) = self.windows.get_mut(&main) {
                 let window = Arc::clone(&surface.window);
-                let screen = std::mem::replace(&mut self.screen, Screen::Dialog(Dialog::new()));
+                let screen = std::mem::replace(&mut self.screen, Screen::Dialog(Box::new(Dialog::new())));
                 if let Screen::Session(session) = screen {
                     let mut host = Host {
                         window: &window,

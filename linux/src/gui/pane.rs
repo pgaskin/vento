@@ -143,6 +143,9 @@ pub struct Pane {
     /// The toolbar's size as last drawn, which is where it would be when
     /// out, and so the span of the edge that brings it out.
     toolbar_size: Vec2,
+    /// The width of the toolbar's row of buttons as last drawn, which is
+    /// centred in a toolbar made wider for its title bar's title.
+    buttons_width: f32,
     /// The pointer is on the toolbar or the title bar above it: the toolbar
     /// stays out, and the keyboard is this end's meanwhile.
     pub toolbar_hovered: bool,
@@ -197,6 +200,7 @@ impl Pane {
             placement,
             drag_from: None,
             toolbar_size: vec2(0.0, 40.0),
+            buttons_width: 0.0,
             toolbar_hovered: false,
             on_edge: false,
             opened: Instant::now(),
@@ -546,6 +550,13 @@ impl Pane {
         let width = self.toolbar_size.x;
         let left = self.placement.left(screen, width);
         let title = titled(host).then(|| csd::title_rect(screen, left, width));
+        // The title bar's title, without the app's name, which a pop-out's
+        // monitor makes long: the toolbar, and so the title bar, is made
+        // wide enough for it, up to the window's width, rather than cut it
+        // short beside a few buttons.
+        let count = s.snapshot.facts.monitors.len();
+        let name = s.bar_title_of(self.monitor.map(|k| k.index).filter(|_| count > 1), s.captured_in(self.id));
+        let wide = if title.is_some() { csd::title_width(ctx, host, &name).min(screen.width()) } else { 0.0 };
         let at_edge = pointer.is_some_and(|p| match title {
             Some(title) => title.contains(p),
             None => toolbar::reveals(screen, left, width, fullscreen, ctx.pixels_per_point(), p),
@@ -587,7 +598,6 @@ impl Pane {
             ctx.request_repaint_after(TOOLBAR_REVEAL.saturating_sub(self.opened.elapsed()));
         }
         let title_hovered = title.is_some_and(|rect| {
-            let name = self.title_set(ctx);
             // The toolbar shows nothing below the title bar.
             let hidden = y + self.toolbar_size.y <= out + 0.5;
             // The shape of what the window shows, which a resize keeping
@@ -617,7 +627,16 @@ impl Pane {
                         // made for a menu rather than for a bar at a
                         // screen's edge.
                         ui.spacing_mut().interact_size.y = TOOLBAR_BUTTON;
-                        ui.horizontal(|ui| self.toolbar_items(s, ui, host, layout));
+                        // The row of buttons after the first space is spaced
+                        // from it as any item is.
+                        let spacing = ui.spacing().item_spacing.x;
+                        let pad = ((wide - frame.total_margin().sum().x - self.buttons_width - spacing) / 2.0).max(0.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space(pad);
+                            let row = ui.horizontal(|ui| self.toolbar_items(s, ui, host, layout)).response;
+                            self.buttons_width = row.rect.width();
+                            ui.add_space(pad);
+                        });
                     })
                     .response
                     .rect;

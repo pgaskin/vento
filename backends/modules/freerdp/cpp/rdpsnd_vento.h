@@ -23,6 +23,7 @@
 
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #include <freerdp/freerdp.h>
 
@@ -49,9 +50,14 @@ typedef struct VentoSound {
     /* The codecs the platform's decoders handle, which the server is
        offered. */
     bool aac, opus;
-    /* The number of devices whose server lists a format this end plays;
-       the session's sound switch is offered while there is one. */
+    /* The number of devices whose channel is connected and whose server
+       has not listed only formats this end can't play; the session's sound
+       switch is offered while there is one. */
     atomic_int offering;
+    /* A hash of the last list of formats logged in full: a server that
+       lists the same ones again (Windows, at every sound it starts) gets a
+       short line. */
+    _Atomic uint64_t formats;
 } VentoSound;
 
 /* Internal to the library, not part of the backend's interface: only

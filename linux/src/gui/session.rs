@@ -187,14 +187,16 @@ fn popout_size(w: i32, h: i32) -> (u32, u32) {
 
 /// A window's title from the session's `name` (already [`printable`]): the
 /// bell on it while it rings, the far end's `monitor` the window shows,
-/// where it shows one of several, and how to let go of the pointer while
-/// the window has it `captured`.
-fn window_title(name: &str, ringing: bool, monitor: Option<usize>, captured: bool) -> String {
+/// where it shows one of several, the app's name where `app` (not in the
+/// window's own title bar, which is the app's already), and how to let go
+/// of the pointer while the window has it `captured`.
+fn window_title(name: &str, ringing: bool, monitor: Option<usize>, captured: bool, app: bool) -> String {
     let bell = if ringing { "🔔 " } else { "" };
+    let app = if app { " - Vento" } else { "" };
     let hint = if captured { " (Press Ctrl+Alt to release pointer)" } else { "" };
     match monitor {
-        Some(i) => format!("{bell}{name} - monitor {} - Vento{hint}", i + 1),
-        None => format!("{bell}{name} - Vento{hint}"),
+        Some(i) => format!("{bell}{name} - monitor {}{app}{hint}", i + 1),
+        None => format!("{bell}{name}{app}{hint}"),
     }
 }
 
@@ -545,9 +547,19 @@ impl Session {
     /// the pointer where the window has it `captured`. The name in it is
     /// [`printable`], as the snapshot and the session keep it.
     pub fn title_of(&self, monitor: Option<usize>, captured: bool) -> String {
+        self.title_with(monitor, captured, true)
+    }
+
+    /// [`title_of`](Self::title_of) without the app's name, for the
+    /// window's own title bar.
+    pub fn bar_title_of(&self, monitor: Option<usize>, captured: bool) -> String {
+        self.title_with(monitor, captured, false)
+    }
+
+    fn title_with(&self, monitor: Option<usize>, captured: bool, app: bool) -> String {
         let name = self.snapshot.desktop_name().unwrap_or(&self.title);
         let ringing = self.bell_until.is_some_and(|t| Instant::now() < t);
-        window_title(name, ringing, monitor, captured)
+        window_title(name, ringing, monitor, captured, app)
     }
 
     /// Whether the pointer is captured in `pane`'s window.
@@ -1837,14 +1849,17 @@ mod tests {
         assert_eq!(snapshot.desktop_name(), Some("evilname desk"));
         assert_eq!(snapshot.info[0].value, "evilname desk", "the panel's row too");
         for monitor in [None, Some(1)] {
-            let title = window_title(snapshot.desktop_name().unwrap(), true, monitor, false);
+            let title = window_title(snapshot.desktop_name().unwrap(), true, monitor, false, true);
             assert!(std::ffi::CString::new(title.clone()).is_ok(), "{title:?}");
         }
-        assert_eq!(window_title("evilname desk", false, Some(1), false), "evilname desk - monitor 2 - Vento");
+        assert_eq!(window_title("evilname desk", false, Some(1), false, true), "evilname desk - monitor 2 - Vento");
         assert_eq!(
-            window_title("desk", false, None, true),
+            window_title("desk", false, None, true, true),
             "desk - Vento (Press Ctrl+Alt to release pointer)"
         );
+        // The title bar's, without the app's name.
+        assert_eq!(window_title("10.33.0.208", false, Some(1), false, false), "10.33.0.208 - monitor 2");
+        assert_eq!(window_title("desk", false, None, false, false), "desk");
         // Nothing but control characters is no name: the address stands in.
         assert_eq!(named("\0\0\x01").desktop_name(), None);
         // A name of a megabyte is cut to NAME_MAX characters, the last an

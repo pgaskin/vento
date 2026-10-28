@@ -344,7 +344,7 @@ pub fn title_bar(
             }
             let side = rect.height();
             let mut x = rect.max.x - side * buttons.len() as f32;
-            let text = Rect::from_min_max(pos2(rect.min.x + 8.0, rect.min.y), pos2(x - 4.0, rect.max.y));
+            let text = Rect::from_min_max(pos2(rect.min.x + TEXT_INSET, rect.min.y), pos2(x - TEXT_GAP / 2.0, rect.max.y));
             draw_title(ui, text, title);
             for &button in &buttons {
                 let at = Rect::from_min_size(pos2(x, rect.min.y), vec2(side, side));
@@ -420,6 +420,20 @@ fn resize_from_top(ctx: &egui::Context, host: &mut Host, left: bool) {
         log::debug!("cannot resize the window");
     }
 }
+
+/// How wide a title bar is to show all of `title` beside its buttons, in
+/// points: the toolbar under it is made as wide (see `Pane::toolbar`).
+pub fn title_width(ctx: &egui::Context, host: &Host, title: &str) -> f32 {
+    let buttons = title_buttons(host.buttons, host.window.is_maximized()).len() as f32;
+    let text = ctx.fonts_mut(|f| {
+        f.layout_no_wrap(title.to_string(), FontId::proportional(TITLE_TEXT), TITLE_COLOR).size().x
+    });
+    TEXT_INSET + text + TEXT_GAP + buttons * TITLE_BAR
+}
+
+/// The room left of the title text, and between it and the buttons.
+const TEXT_INSET: f32 = 8.0;
+const TEXT_GAP: f32 = 8.0;
 
 /// `title` in `rect`, centred, and cut short with an ellipsis where it does
 /// not fit.

@@ -55,10 +55,11 @@ const BUTTON_INSET: f32 = 6.0;
 
 /// Makes a window drawn with its own decorations the panel's size: the
 /// dialog's width, and `height`, the panel's, up to the height of the
-/// monitor it is on. Not while maximised, which keeps its size, nor while
-/// fullscreen, which may be on its way out (`--fullscreen` leaving it for
-/// the dialog): whether it is done with, which it is not while fullscreen.
-fn fit_window(host: &Host, height: f32) -> bool {
+/// monitor it is on, and where `centre`, with its centre kept where it is
+/// (X11). Not while maximised, which keeps its size, nor while fullscreen,
+/// which may be on its way out (`--fullscreen` leaving it for the dialog):
+/// whether it is done with, which it is not while fullscreen.
+fn fit_window(host: &Host, height: f32, centre: bool) -> bool {
     let window = host.window;
     if window.fullscreen().is_some() {
         return false;
@@ -72,6 +73,13 @@ fn fit_window(host: &Host, height: f32) -> bool {
         size.height = size.height.min(room.height);
     }
     log::debug!("fitting the window to the connection dialog: {}×{}", size.width, size.height);
+    if centre
+        && let Ok(at) = window.outer_position()
+    {
+        let now = window.inner_size().height as i32;
+        let new = (size.height as f64 * window.scale_factor()).round() as i32;
+        window.set_outer_position(winit::dpi::PhysicalPosition::new(at.x, at.y + (now - new) / 2));
+    }
     let _ = window.request_inner_size(size);
     true
 }
@@ -106,6 +114,14 @@ pub struct Dialog {
     /// The dialog has been drawn at least once, and so measured: until
     /// then egui's size for it is an earlier dialog's.
     drawn: bool,
+    /// The next fit keeps the window's centre where it is rather than its
+    /// top: the window opened taller than the dialog, and was placed by
+    /// the window manager for that height (X11).
+    pub centre: bool,
+    /// The dialog's height with all of its form shown, as last drawn: its
+    /// height and what its form scrolls by, where the window is too short
+    /// for it.
+    natural: Option<f32>,
 }
 
 impl Dialog {
@@ -124,6 +140,8 @@ impl Dialog {
             error: None,
             fit: false,
             drawn: false,
+            natural: None,
+            centre: false,
         }
     }
 
@@ -187,8 +205,8 @@ impl Dialog {
         // pass, which is not drawn.
         let measured = ctx.memory(|m| m.area_rect(id));
         let size = measured.map_or(vec2(width, 0.0), |r| r.size());
-        if self.fit && self.drawn && host.csd && let Some(measured) = measured {
-            self.fit = !fit_window(host, measured.height());
+        if self.fit && self.drawn && host.csd && let Some(natural) = self.natural {
+            self.fit = !fit_window(host, natural, std::mem::take(&mut self.centre));
         }
         let at = if host.csd {
             pos2(screen.center().x - size.x / 2.0, screen.min.y).max(screen.min)
@@ -196,6 +214,7 @@ impl Dialog {
             left_top(size, screen)
         };
         let mut connect = false;
+        let mut overflow = 0.0;
         let shown = egui::Area::new(id)
             .fixed_pos(at)
             // With the window's own decorations, a drag on it that is not
@@ -222,14 +241,23 @@ impl Dialog {
                             ui.add_space(8.0);
                         }
                     });
-                    ScrollArea::vertical().show(ui, |ui| {
+                    let selected = self.selected;
+                    let form = ScrollArea::vertical().show(ui, |ui| {
                         connect = self.form(ui, settings);
                     });
+                    overflow = (form.content_size.y - form.inner_rect.height()).max(0.0);
+                    // Another backend's form is another height: the window
+                    // is fitted to it once it has been drawn.
+                    if self.selected != selected {
+                        self.fit = true;
+                        self.drawn = false;
+                    }
                 });
             });
         if host.csd && shown.response.drag_started_by(PointerButton::Primary) {
             csd::drag_window(&ctx, host);
         }
+        self.natural = Some(shown.response.rect.height() + overflow);
         self.drawn = true;
         if !connect {
             return None;
