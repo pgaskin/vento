@@ -31,7 +31,7 @@ mod host {
     use super::cli::{self, Arg, Step};
     use runtime::media::audio::Outputs as _;
     use std::cell::Cell;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
     use vento::backend::{Backend, Credentials, Monitor};
@@ -45,12 +45,13 @@ mod host {
 
     /// What the command line resolved to.
     enum Mode {
-        /// The options, and the backends with theirs.
-        Help,
+        /// The options, and the backends with theirs, RealVNC's libraries
+        /// looked for in `realvnc/` under the extra libraries' directory.
+        Help { extlib: PathBuf },
         /// `vento` and [`cli::version`].
         Version,
-        /// Each backend's library.
-        List,
+        /// Each backend's library, RealVNC's libraries as for `Help`.
+        List { extlib: PathBuf },
         /// A headless session, as the probe.
         Probe(Box<Probe>),
         /// The window: a session, or the dialog to make one.
@@ -107,17 +108,23 @@ mod host {
         };
         vento::log::init(args.contains(&Arg::Flag("verbose", None)));
         match parse(args) {
-            Ok(Mode::Help) => {
-                print!("{}\n{}", cli::usage(&defaults()), cli::backends(&help_backends()));
+            Ok(Mode::Help { extlib }) => {
+                print!("{}\n{}", cli::usage(&defaults()), cli::backends(&help_backends(&extlib)));
                 0
             }
             Ok(Mode::Version) => {
                 println!("vento {}", cli::version());
                 0
             }
-            Ok(Mode::List) => {
+            Ok(Mode::List { extlib }) => {
                 for kind in backends::all() {
-                    println!("{}", cli::list_line(kind.id, &backends::library_path(kind)));
+                    let library = backends::library_path(kind).and_then(|path| {
+                        match backends::missing(kind, &backends::dirs(Path::new(""), &extlib)) {
+                            Some(why) => Err((path, why)),
+                            None => Ok(path),
+                        }
+                    });
+                    println!("{}", cli::list_line(kind.id, &library));
                 }
                 0
             }
@@ -166,14 +173,16 @@ mod host {
     }
 
     /// The backends and their options as the help lists them, each library
-    /// opened for its version.
-    fn help_backends() -> Vec<cli::Backend> {
+    /// opened for its version, and RealVNC's not available where its
+    /// libraries in `extlib` are missing or another build.
+    fn help_backends(extlib: &Path) -> Vec<cli::Backend> {
+        let dirs = backends::dirs(Path::new(""), extlib);
         backends::all()
             .into_iter()
             .map(|kind| cli::Backend {
                 id: kind.id.to_string(),
                 name: kind.name.to_string(),
-                version: (kind.version)(),
+                version: backends::version(kind, &dirs),
                 description: kind.description.to_string(),
                 options: kind
                     .options
@@ -282,19 +291,20 @@ mod host {
             }
         }
 
+        let extlib = extlib_dir.unwrap_or_else(backends::default_extlib_dir);
         if help {
-            return Ok(Mode::Help);
+            return Ok(Mode::Help { extlib });
         }
         if version {
             return Ok(Mode::Version);
         }
         if list {
-            return Ok(Mode::List);
+            return Ok(Mode::List { extlib });
         }
         let headless = steps.is_some();
         let dirs = backends::dirs(
             &state_dir.unwrap_or_else(backends::default_state_dir),
-            &extlib_dir.unwrap_or_else(backends::default_extlib_dir),
+            &extlib,
         );
         if let Some(address) = forget {
             if !positional.is_empty() || headless || connect || !assignments.is_empty() {
@@ -425,7 +435,7 @@ mod host {
             let start = Instant::now();
             let say = |event: &str| println!("[{:8.3}] {event}", start.elapsed().as_secs_f64());
 
-            println!("{}", (self.kind.version)());
+            println!("{}", backends::version(self.kind, &self.dirs));
             let mailbox = Mailbox::new(None);
             let backend = {
                 let client_name = backends::client_name();
@@ -1089,16 +1099,16 @@ mod host {
 
         #[test]
         fn each_form_of_the_command_line_is_its_mode() {
-            assert!(matches!(parsed(&["-h"]), Ok(Mode::Help)));
+            assert!(matches!(parsed(&["-h"]), Ok(Mode::Help { .. })));
             assert!(parsed(&["rfb", "--help", "--x"]).is_err());
-            assert!(matches!(parsed(&["rfb", "127.0.0.1:1", "-c", "--help"]), Ok(Mode::Help)));
+            assert!(matches!(parsed(&["rfb", "127.0.0.1:1", "-c", "--help"]), Ok(Mode::Help { .. })));
             assert!(matches!(parsed(&["--version"]), Ok(Mode::Version)));
             assert!(matches!(parsed(&["rfb", "-cV"]), Ok(Mode::Version)));
-            assert!(matches!(parsed(&["-V", "--help"]), Ok(Mode::Help)));
+            assert!(matches!(parsed(&["-V", "--help"]), Ok(Mode::Help { .. })));
             assert!(matches!(parsed(&["-L", "-V"]), Ok(Mode::Version)));
             assert!(parsed(&["--version=1"]).is_err());
-            assert!(matches!(parsed(&["--list"]), Ok(Mode::List)));
-            assert!(matches!(parsed(&["-L", "rfb"]), Ok(Mode::List)));
+            assert!(matches!(parsed(&["--list"]), Ok(Mode::List { .. })));
+            assert!(matches!(parsed(&["-L", "rfb"]), Ok(Mode::List { .. })));
             assert!(matches!(parsed(&["--forget=host:1"]), Ok(Mode::Forget { .. })));
             assert_eq!(
                 parsed(&["-F", "host:1", "-c"]).err().unwrap(),

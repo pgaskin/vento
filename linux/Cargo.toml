@@ -127,3 +127,9 @@ winit = { path = "../third_party/winit" }
 # its debug info is kept.
 [profile.dev.package.remotedesktop-runtime]
 opt-level = 3
+
+# SHA-256, optimised in a debug build too: RealVNC's two libraries (6 MB) are
+# hashed on every Connect to RealVNC and by `--help` and `--list`
+# (`remotedesktop-realvnc`'s `libraries`), 190 ms unoptimised.
+[profile.dev.package.sha2]
+opt-level = 3

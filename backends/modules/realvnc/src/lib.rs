@@ -20,7 +20,10 @@
 //!
 //! Nothing of RealVNC's is in the tree: the session loads the two libraries,
 //! extracted from the viewer's APK, from `library_dir` and verifies their
-//! hashes, and the core's persistent files go under `state_dir`. Both come
+//! hashes, and the core's persistent files go under `state_dir`. The same
+//! hashes are checked here first ([`libraries`]), so that a session on files
+//! that are missing or from another build fails with that reason, and the
+//! client's `--help` and `--list` can say so too. Both come
 //! from [`Dirs`](api::kind::Dirs), with XDG defaults, and can be overridden
 //! on the client's command line. The client keeps the identity the core asks
 //! to have remembered, handed out through
@@ -70,6 +73,73 @@ pub fn not_built() {
     LIBRARY.not_built("libvento_realvnc.so not available (was clang installed when building?)".to_string());
 }
 
+/// The viewer's build the session's declarations were read from, and the
+/// SHA-256 of each of its two libraries for this machine's ABI, from
+/// `Library.java` (`build.rs`).
+const VERSION: &str = env!("VENTO_REALVNC_VERSION");
+const ABI: &str = env!("VENTO_REALVNC_ABI");
+const PINS: [(&str, &str); 2] = [
+    ("libc++_shared.so", env!("VENTO_REALVNC_SHA256_LIBCXX_SHARED")),
+    ("libvncviewer.so", env!("VENTO_REALVNC_SHA256_LIBVNCVIEWER")),
+];
+
+/// Whether RealVNC's two libraries are in `dir` and are the pinned build,
+/// as the session checks before it loads them; otherwise why not, with what
+/// to do about it. Missing files are reported first, then one that cannot
+/// be read, then the first that is another build.
+pub fn libraries(dir: &std::path::Path) -> Result<(), String> {
+    if ABI.is_empty() {
+        return Err(format!("RealVNC Viewer {VERSION} has no build for this machine's architecture"));
+    }
+    let copy = |into: &str| {
+        format!(
+            "Copy libc++_shared.so and libvncviewer.so from lib/{ABI}/ in the RealVNC Viewer {VERSION} APK into {into}"
+        )
+    };
+    let missing: Vec<&str> = PINS
+        .iter()
+        .map(|(name, _)| *name)
+        .filter(|name| !dir.join(name).is_file())
+        .collect();
+    if !missing.is_empty() {
+        let names = match missing.as_slice() {
+            [one] => format!("{one} is"),
+            _ => format!("{} are", missing.join(" and ")),
+        };
+        return Err(format!("{names} not in {}. {}", dir.display(), copy("it")));
+    }
+    for (name, pin) in PINS {
+        let path = dir.join(name);
+        let hash = sha256(&path).map_err(|e| format!("{} cannot be read: {e}", path.display()))?;
+        if hash != pin {
+            log::debug!("{}: SHA-256 {hash}, where RealVNC Viewer {VERSION}'s is {pin}", path.display());
+            return Err(format!(
+                "{} is not the one from RealVNC Viewer {VERSION}. {}",
+                path.display(),
+                copy(&dir.display().to_string())
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The file's SHA-256, as `sha256sum` prints it.
+fn sha256(path: &std::path::Path) -> std::io::Result<String> {
+    use sha2::Digest;
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buf = vec![0; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
 /// The library of a running session. A [`CSession`] of this backend exists
 /// only after [`create`] has opened the library, and it is never closed.
 fn loaded() -> &'static ffi::Library {
@@ -94,6 +164,7 @@ static BEHAVIOUR: Behaviour = Behaviour {
 
 fn create(c: &Connect) -> Result<std::sync::Arc<dyn Backend>, String> {
     let library = library().map_err(|why| format!("RealVNC is not available: {why}"))?;
+    libraries(&c.dirs.realvnc_libs).map_err(|why| format!("RealVNC is not available: {why}"))?;
     let o = c.options;
     // The provider's defaults, which are not all zero, then the rows over
     // them, as `RealVncBackend.connect` passes the whole options map.
@@ -321,6 +392,62 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "other::5900/extra=0201\n");
         assert_eq!(forget(&dirs, "127.0.0.1:5901"), Ok(Vec::new()));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `build.rs` read a version and a full hash for each library of this
+    /// machine's ABI out of `Library.java`.
+    #[test]
+    fn the_pins_come_from_library_java() {
+        assert!(!VERSION.is_empty());
+        assert!(matches!(ABI, "x86_64" | "arm64-v8a"), "{ABI}");
+        let java = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../realvnc/src/main/java/com/realvnc/vncviewer/jni/Library.java"
+        ))
+        .unwrap();
+        assert!(java.contains(&format!("VERSION = \"{VERSION}\"")));
+        for (name, pin) in PINS {
+            assert_eq!(pin.len(), 64, "{name}");
+            assert!(java.contains(&format!("\"{ABI}/{name}\",\n            \"{pin}\"")), "{name}");
+        }
+    }
+
+    /// Missing files are named with the directory and what to copy there;
+    /// a file of another build is named with the version it has to be.
+    #[test]
+    fn missing_or_other_libraries_say_which_and_what_to_do() {
+        let dir = std::env::temp_dir().join(format!("vento-realvnc-libraries-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let copy =
+            format!("Copy libc++_shared.so and libvncviewer.so from lib/{ABI}/ in the RealVNC Viewer {VERSION} APK");
+        assert_eq!(
+            libraries(&dir),
+            Err(format!("libc++_shared.so and libvncviewer.so are not in {}. {copy} into it", dir.display()))
+        );
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("libc++_shared.so"), "not it").unwrap();
+        assert_eq!(libraries(&dir), Err(format!("libvncviewer.so is not in {}. {copy} into it", dir.display())));
+        std::fs::write(dir.join("libvncviewer.so"), "not it either").unwrap();
+        assert_eq!(
+            libraries(&dir),
+            Err(format!(
+                "{}/libc++_shared.so is not the one from RealVNC Viewer {VERSION}. {copy} into {}",
+                dir.display(),
+                dir.display()
+            ))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sha256_is_sha256sums() {
+        let path = std::env::temp_dir().join(format!("vento-realvnc-sha256-{}", std::process::id()));
+        std::fs::write(&path, "abc").unwrap();
+        assert_eq!(
+            sha256(&path).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 
     /// Where the client's build made no library, the backend reports that

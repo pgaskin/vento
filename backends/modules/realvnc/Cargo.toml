@@ -32,6 +32,10 @@ remotedesktop-api = { workspace = true, features = ["c"] }
 # for dlopen, dlsym and errors naming the failed call. Already in the
 # dependency graph through bindgen's libclang.
 libloading = "0.8"
+# Checks RealVNC's two libraries against their pins before a session starts
+# (`src/lib.rs`), so that a missing or different file is reported as such.
+# Already in the dependency graph through `remotedesktop-runtime`.
+sha2 = "0.11"
 
 [build-dependencies]
 # Generates the bindings for `vento/realvnc.h` (build.rs) instead of

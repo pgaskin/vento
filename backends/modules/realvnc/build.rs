@@ -12,16 +12,24 @@
 //! made. Every function is required: a library missing one of them is not
 //! the one this header describes.
 //!
+//! Also reads the pins of the viewer's build from `Library.java`, as the
+//! Meson build does for the session: the version, and the SHA-256 of each
+//! of the two libraries for the target's ABI, as `VENTO_REALVNC_VERSION`,
+//! `VENTO_REALVNC_ABI`, `VENTO_REALVNC_SHA256_LIBCXX_SHARED` and
+//! `VENTO_REALVNC_SHA256_LIBVNCVIEWER`. The ABI and the hashes are empty for
+//! an architecture `Library.java` has no build for.
+//!
 //! Does nothing on targets other than Linux, where the crate is empty.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("linux") {
         return;
     }
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    pins(&manifest.join("../../../realvnc/src/main/java/com/realvnc/vncviewer/jni/Library.java"));
     let own = manifest.join("cpp/include");
     let shared = manifest.join("../../api/include");
     println!("cargo:rerun-if-changed={}", own.display());
@@ -45,4 +53,38 @@ fn main() {
         .expect("bindgen over vento/realvnc.h")
         .write_to_file(out.join("bindings.rs"))
         .expect("writing bindings.rs");
+}
+
+/// The pins in `Library.java`, as `cargo:rustc-env` variables. The parse is
+/// the Meson build's: the version after `VERSION = "`, and each hash as the
+/// first quoted string after its `"<abi>/<name>",` key.
+fn pins(library_java: &Path) {
+    println!("cargo:rerun-if-changed={}", library_java.display());
+    let text = std::fs::read_to_string(library_java)
+        .unwrap_or_else(|e| panic!("{}: {e}", library_java.display()));
+    let version = text
+        .split_once("VERSION = \"")
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .map(|(version, _)| version)
+        .expect("no VERSION in Library.java");
+    println!("cargo:rustc-env=VENTO_REALVNC_VERSION={version}");
+    // The APK's directory for the target's ABI.
+    let abi = match env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
+        Ok("x86_64") => "x86_64",
+        Ok("aarch64") => "arm64-v8a",
+        _ => "",
+    };
+    println!("cargo:rustc-env=VENTO_REALVNC_ABI={abi}");
+    for (name, var) in [("libc++_shared.so", "LIBCXX_SHARED"), ("libvncviewer.so", "LIBVNCVIEWER")] {
+        let hash = if abi.is_empty() { "" } else { hash(&text, abi, name) };
+        println!("cargo:rustc-env=VENTO_REALVNC_SHA256_{var}={hash}");
+    }
+}
+
+fn hash<'a>(text: &'a str, abi: &str, name: &str) -> &'a str {
+    let key = format!("\"{abi}/{name}\",");
+    text.split_once(&key)
+        .and_then(|(_, rest)| rest.split('"').nth(1))
+        .filter(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        .unwrap_or_else(|| panic!("no SHA-256 for {abi}/{name} in Library.java"))
 }

@@ -66,6 +66,27 @@ pub fn dirs(state: &Path, extlib: &Path) -> Dirs {
     }
 }
 
+/// Why `kind` cannot start although its own library opens, for the files
+/// it needs beside it: RealVNC's libraries in `dirs.realvnc_libs`, missing
+/// or another build. `None` for every other backend, and for RealVNC where
+/// they are in place.
+pub fn missing(kind: &Kind, dirs: &Dirs) -> Option<String> {
+    if !std::ptr::eq(kind, &remotedesktop_realvnc::KIND) {
+        return None;
+    }
+    remotedesktop_realvnc::libraries(&dirs.realvnc_libs).err()
+}
+
+/// `kind`'s version as `--help`, `--list` and the probe show it: the
+/// library's, or why it is not available, which includes [`missing`].
+pub fn version(kind: &Kind, dirs: &Dirs) -> String {
+    let version = (kind.version)();
+    match missing(kind, dirs) {
+        Some(why) if !version.starts_with("not available: ") => format!("not available: {why}"),
+        _ => version,
+    }
+}
+
 /// The file a backend's code is in: for the C backends the library they
 /// open, where it was found, opening it first; for the Rust ones this
 /// binary. Where a library cannot be opened, the path it was looked for at

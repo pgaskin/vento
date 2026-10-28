@@ -1806,6 +1806,13 @@ unzip -j com.realvnc.viewer.android_4.9.3.60175.apk \
 cargo run -- realvnc 127.0.0.1::5901 --password vncpass
 ```
 
+Where either file is missing or is another build, the backend's version in
+`--help`, its `--list` line, the probe and the dialog's notice on Connect say
+so, naming the file or the directory and what to copy there, rather than
+"could not start the connection". The client hashes the files against the
+same pins (`remotedesktop-realvnc` reads `Library.java` in its `build.rs`)
+before a session starts, and the session again before it loads them.
+
 `--extlib-dir` defaults to `$XDG_DATA_HOME/vento` where
 `realvnc/libvncviewer.so` is under it, and otherwise to `lib/` beside the
 binary, so a release tree with `lib/realvnc/` works wherever it is unpacked;
