@@ -24,7 +24,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -73,7 +72,9 @@ final class Plugins {
     /**
      * The cards the home screen shows above the connections, recomputed each
      * time it resumes: any of them can change while the app is in the
-     * background, usually by uninstalling from a card.
+     * background, usually by uninstalling from a card or by installing an
+     * add-on. An add-on installed since is loaded first ({@link Backends#refresh}),
+     * so it gets its setup card without a restart.
      *
      * <p>The result goes to a callback because asking a plugin whether it is set
      * up does not belong on the main thread ({@link Backends#isSetup}). The
@@ -81,6 +82,7 @@ final class Plugins {
      * already known.
      */
     static void cards(Context context, Consumer<List<Card>> then) {
+        final boolean restart = Backends.refresh(context);
         final List<String> ids = new ArrayList<>();
         for (String id : Backends.ids()) {
             if (Backends.packageOf(id) != null) {
@@ -88,7 +90,7 @@ final class Plugins {
             }
         }
         if (ids.isEmpty()) {
-            then.accept(build(context, Map.of()));
+            then.accept(build(context, Map.of(), restart));
             return;
         }
         // Every answer arrives on the main thread, so the map and the counter
@@ -101,27 +103,25 @@ final class Plugins {
                     waiting.computeIfAbsent(Backends.packageOf(id), k -> new ArrayList<>()).add(id);
                 }
                 if (--left[0] == 0) {
-                    then.accept(build(context, waiting));
+                    then.accept(build(context, waiting, restart));
                 }
             });
         }
     }
 
-    /** Builds the cards, given the backends that reported they are not set up. */
-    private static List<Card> build(Context context, Map<String, List<String>> waiting) {
+    /**
+     * Builds the cards, given the backends that reported they are not set up,
+     * and whether an add-on whose code this process has run was updated or
+     * uninstalled since.
+     */
+    private static List<Card> build(Context context, Map<String, List<String>> waiting,
+                                    boolean restart) {
         final PackageManager pm = context.getPackageManager();
         final Set<String> installed = Backends.installedPlugins(context);
         final List<Card> cards = new ArrayList<>();
-        final Set<String> known = new LinkedHashSet<>();
-        boolean stale = false;
         for (Backends.Plugin p : Backends.plugins()) {
-            known.add(p.packageName());
             if (!installed.contains(p.packageName())) {
-                // Uninstalled since the app started. Only a loaded one needs a
-                // restart: its dex and backends stay in this process until the
-                // process ends.
-                stale |= p.state() == Backends.PluginState.LOADED;
-                continue;
+                continue; // uninstalled since, which `restart` covers
             }
             final String label = label(pm, p.packageName());
             switch (p.state()) {
@@ -144,13 +144,7 @@ final class Plugins {
                         label, context.getString(R.string.plugin_failed), p.detail(), null));
             }
         }
-        // Installed while the app was running, which is the usual first run
-        // rather than a fault: it cannot be loaded until this process ends, so
-        // a restart is all there is to offer.
-        for (String pkg : installed) {
-            stale |= !known.contains(pkg);
-        }
-        if (stale) {
+        if (restart) {
             cards.add(new Card(Kind.RESTART, null, null,
                     context.getString(R.string.plugin_restart_title),
                     context.getString(R.string.plugin_restart), null, null));
@@ -270,13 +264,28 @@ final class Plugins {
     /**
      * End this process and come back to an empty home screen.
      *
-     * <p>The loaded set is fixed for the life of a process (open dex files and
-     * shared libraries cannot be swapped under a live session), so this is the
-     * only way to pick up a plugin installed since. Sessions are disconnected
-     * first: a far end that is disconnected cleanly knows at once, while one
-     * whose socket vanishes waits for a timeout.
+     * <p>A loaded plugin stays loaded for the life of a process (open dex files
+     * and shared libraries cannot be swapped under a live session), so this is
+     * the only way to pick up an update or removal of one. Sessions are
+     * disconnected first: a server that is disconnected cleanly knows at once,
+     * while one whose socket vanishes waits for a timeout. While a session is
+     * connected or connecting, this asks first; the card stays if the user
+     * declines.
      */
     static void restart(Activity host) {
+        if (Sessions.alive().isEmpty()) {
+            exit(host);
+            return;
+        }
+        new MaterialAlertDialogBuilder(host, R.style.ThemeOverlay_RemoteDesktop_Dialog)
+                .setTitle(R.string.plugin_restart_confirm)
+                .setMessage(R.string.plugin_restart_sessions)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.plugin_restart_action, (d, w) -> exit(host))
+                .show();
+    }
+
+    private static void exit(Activity host) {
         for (Session s : Sessions.all()) {
             s.disconnect();
         }

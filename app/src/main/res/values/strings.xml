@@ -41,6 +41,8 @@
     <string name="plugin_restart_title">Plugins changed</string>
     <string name="plugin_restart">Restart the app to use the plugins installed on this phone.</string>
     <string name="plugin_restart_action">Restart</string>
+    <string name="plugin_restart_confirm">Disconnect and restart?</string>
+    <string name="plugin_restart_sessions">Restarting the app disconnects all sessions.</string>
     <string name="plugin_set_up">Set up</string>
     <string name="plugin_uninstall">Uninstall</string>
     <!-- Opens a download of the plugin built for this version of the app, if the plugin

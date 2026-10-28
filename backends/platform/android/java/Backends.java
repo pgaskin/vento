@@ -19,6 +19,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -99,8 +100,12 @@ public final class Backends {
      * One add-on the app can see. A package that fails the signature check is
      * not one of these and is never reported: there is nothing useful to offer
      * about an impostor, and naming it invites the user to interact with it.
+     *
+     * <p>{@code updated} is the package's {@code lastUpdateTime} when it was
+     * examined, which changes on every install of it, including a reinstall of
+     * the same version ({@link #refresh}).
      */
-    public record Plugin(String packageName, PluginState state, String detail) {
+    public record Plugin(String packageName, PluginState state, String detail, long updated) {
     }
 
     private static volatile List<BackendProvider> providers;
@@ -195,9 +200,9 @@ public final class Backends {
      * <p>Called from {@code Application.onCreate} so that the home screen, a
      * session activity and the service all see the same list. It is once per
      * process and deliberately not repeatable: dex and a shared library that are
-     * already open cannot be swapped underneath a live session, so an add-on
-     * installed while the app runs is noticed ({@link #installedPlugins}) rather
-     * than loaded.
+     * already open cannot be swapped underneath a live session. An add-on
+     * installed while the app runs is loaded later by {@link #refresh}, unless
+     * this process has already run its code.
      */
     public static synchronized void discover(Context context) {
         if (providers != null) {
@@ -222,13 +227,7 @@ public final class Backends {
     }
 
     private static void find(Context context) {
-        final PackageManager pm = context.getPackageManager();
-        final long ours;
-        try {
-            ours = pm.getPackageInfo(context.getPackageName(), 0).getLongVersionCode();
-        } catch (PackageManager.NameNotFoundException e) {
-            throw new IllegalStateException(e); // we are installed
-        }
+        final long ours = ourVersion(context);
 
         // This build's own, before any add-on's, because an id is what a saved
         // connection names and two things cannot answer to one.
@@ -240,42 +239,118 @@ public final class Backends {
 
         final List<Plugin> found = new ArrayList<>();
         final List<BackendProvider> loaded = new ArrayList<>();
-        for (String pkg : signedLikeUs(pm, context.getPackageName())) {
-            final PackageInfo info;
-            try {
-                info = pm.getPackageInfo(pkg, 0);
-            } catch (PackageManager.NameNotFoundException e) {
-                continue; // uninstalled between the two calls
-            }
-            if (info.getLongVersionCode() != ours) {
-                found.add(new Plugin(pkg, PluginState.INCOMPATIBLE,
-                        "Built for app version " + info.getLongVersionCode() + "."));
-                continue;
-            }
-            // Everything from here runs the add-on's code.
-            try {
-                final List<BackendProvider> mine = load(info.applicationInfo, taken);
-                if (mine.isEmpty()) {
-                    found.add(new Plugin(pkg, PluginState.INCOMPATIBLE, "It has no backend in it."));
-                    continue;
-                }
-                for (BackendProvider p : mine) {
-                    taken.add(p.id());
-                }
-                loaded.addAll(mine);
-                found.add(new Plugin(pkg, PluginState.LOADED, null));
-                Log.i(TAG, "loaded " + mine.size() + " backend(s) from " + pkg);
-            } catch (Throwable t) {
-                Log.e(TAG, "loading " + pkg, t);
-                // Its own message where it has one, as everywhere else a
-                // plugin's failure is shown: a class name on a card is no help.
-                final String said = t.getMessage();
-                found.add(new Plugin(pkg, PluginState.FAILED,
-                        said == null || said.isEmpty() ? String.valueOf(t) : said));
-            }
+        for (PackageInfo info : installed(context).values()) {
+            found.add(examine(info, ours, taken, loaded));
         }
         plugins = List.copyOf(found);
         discovered = List.copyOf(loaded);
+    }
+
+    /**
+     * Load one add-on if it is built for this version of the app, adding its
+     * providers to {@code loaded} and their ids to {@code taken}.
+     */
+    private static Plugin examine(PackageInfo info, long ours, Set<String> taken,
+                                  List<BackendProvider> loaded) {
+        final String pkg = info.packageName;
+        if (info.getLongVersionCode() != ours) {
+            return new Plugin(pkg, PluginState.INCOMPATIBLE,
+                    "Built for app version " + info.getLongVersionCode() + ".",
+                    info.lastUpdateTime);
+        }
+        // Everything from here runs the add-on's code.
+        try {
+            final List<BackendProvider> mine = load(info.applicationInfo, taken);
+            if (mine.isEmpty()) {
+                return new Plugin(pkg, PluginState.INCOMPATIBLE, "It has no backend in it.",
+                        info.lastUpdateTime);
+            }
+            for (BackendProvider p : mine) {
+                taken.add(p.id());
+            }
+            loaded.addAll(mine);
+            Log.i(TAG, "loaded " + mine.size() + " backend(s) from " + pkg);
+            return new Plugin(pkg, PluginState.LOADED, null, info.lastUpdateTime);
+        } catch (Throwable t) {
+            Log.e(TAG, "loading " + pkg, t);
+            // Its own message where it has one, as everywhere else a
+            // plugin's failure is shown: a class name on a card is no help.
+            final String said = t.getMessage();
+            return new Plugin(pkg, PluginState.FAILED,
+                    said == null || said.isEmpty() ? String.valueOf(t) : said,
+                    info.lastUpdateTime);
+        }
+    }
+
+    /**
+     * Catch up with the add-ons installed, updated or uninstalled since
+     * {@link #discover}, as far as this process can, and return whether any of
+     * those changes needs a restart.
+     *
+     * <p>An add-on whose code has not run in this process (one installed since,
+     * or one refused as built for another version of the app) is examined now,
+     * as discovery would have. One whose code has run, loaded or failed, keeps
+     * its old dex, classes and libraries until the process ends, so its update
+     * or removal needs a restart. It stays in the list as it was, which keeps
+     * the answer true until then.
+     *
+     * <p>Called by a screen when it resumes, on the main thread, as discovery
+     * is.
+     */
+    public static synchronized boolean refresh(Context context) {
+        if (builtIn == null) {
+            return false; // discovery never ran, or could not start
+        }
+        final long ours = ourVersion(context);
+        final Map<String, PackageInfo> now = installed(context);
+        final Set<String> taken = new LinkedHashSet<>(ids());
+        final List<BackendProvider> loaded = new ArrayList<>(discovered);
+        final List<Plugin> found = new ArrayList<>();
+        boolean restart = false;
+        for (Plugin p : plugins) {
+            final PackageInfo info = now.remove(p.packageName());
+            final boolean same = info != null && info.lastUpdateTime == p.updated();
+            if (p.state() != PluginState.INCOMPATIBLE) {
+                found.add(p);
+                restart |= !same;
+            } else if (same) {
+                found.add(p);
+            } else if (info != null) {
+                found.add(examine(info, ours, taken, loaded));
+            }
+        }
+        for (PackageInfo info : now.values()) {
+            found.add(examine(info, ours, taken, loaded));
+        }
+        plugins = List.copyOf(found);
+        if (loaded.size() != discovered.size()) {
+            discovered = List.copyOf(loaded);
+            providers = null;
+        }
+        return restart;
+    }
+
+    private static long ourVersion(Context context) {
+        try {
+            return context.getPackageManager().getPackageInfo(context.getPackageName(), 0)
+                    .getLongVersionCode();
+        } catch (PackageManager.NameNotFoundException e) {
+            throw new IllegalStateException(e); // we are installed
+        }
+    }
+
+    /** {@link #signedLikeUs} with each package's details, by package. */
+    private static Map<String, PackageInfo> installed(Context context) {
+        final PackageManager pm = context.getPackageManager();
+        final Map<String, PackageInfo> found = new LinkedHashMap<>();
+        for (String pkg : signedLikeUs(pm, context.getPackageName())) {
+            try {
+                found.put(pkg, pm.getPackageInfo(pkg, 0));
+            } catch (PackageManager.NameNotFoundException e) {
+                // uninstalled between the two calls
+            }
+        }
+        return found;
     }
 
     /** The providers this build was compiled with, in no particular order. */
@@ -407,7 +482,7 @@ public final class Backends {
         for (Plugin p : plugins) {
             final String said = failedAtUse.get(p.packageName());
             merged.add(said == null ? p
-                    : new Plugin(p.packageName(), PluginState.FAILED, said));
+                    : new Plugin(p.packageName(), PluginState.FAILED, said, p.updated()));
         }
         return List.copyOf(merged);
     }
@@ -430,9 +505,8 @@ public final class Backends {
     }
 
     /**
-     * The add-ons installed now, which is not what {@link #discover} loaded if
-     * one has arrived or gone since. A screen compares the two and asks for a
-     * restart.
+     * The add-ons installed now, which is not what {@link #plugins} lists if one
+     * has arrived or gone since {@link #refresh} last ran.
      */
     public static Set<String> installedPlugins(Context context) {
         return signedLikeUs(context.getPackageManager(), context.getPackageName());
