@@ -29,7 +29,7 @@ nettle_build = custom_target('nettle',
     '--build', meson.current_build_dir() / 'build', '--prefix', nettle_prefix,
     # Neither configure should see the environment of whatever runs the
     # build. The pin is here so that a new tarball rebuilds.
-    '--env', 'CC=' + upstream_cc, '--env', 'CC_FOR_BUILD=' + upstream_cc,
+    '--env', 'CC=' + upstream_cc, '--env', 'CC_FOR_BUILD=' + upstream_cc_for_build,
     '--env', 'CFLAGS=' + ' '.join(upstream_cflags), '--env', 'CPPFLAGS=', '--env', 'LDFLAGS=',
     '--env', 'LIBS=', '--env', 'PKG_CONFIG_PATH=', '--env', 'PKG_CONFIG_LIBDIR=' + nettle_prefix / 'lib/pkgconfig',
     '--env', 'VENTO_PIN=' + nettle_pin,
@@ -38,7 +38,7 @@ nettle_build = custom_target('nettle',
     '--stamp', '@OUTPUT2@',
     '--', nettle_dir / 'configure', '--prefix=' + nettle_prefix, '--libdir=' + nettle_prefix / 'lib',
     '--disable-shared', '--enable-static', '--disable-documentation', '--disable-openssl']
-    + nettle_options,
+    + upstream_host + nettle_options,
   console: true)
 
 # The stamp is a header so that Meson compiles a consumer after the install.

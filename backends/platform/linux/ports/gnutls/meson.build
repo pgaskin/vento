@@ -45,7 +45,7 @@ gnutls_build = custom_target('gnutls',
     '--with-default-trust-store-file=/etc/ssl/certs/ca-certificates.crt',
     '--with-system-priority-file=/etc/gnutls/config',
     '--disable-doc', '--disable-tools', '--disable-tests', '--disable-cxx', '--disable-nls',
-    '--disable-libdane', '--disable-full-test-suite'],
+    '--disable-libdane', '--disable-full-test-suite'] + upstream_host,
   console: true)
 
 # By path, not link_with: see backend_link_depends in platform/linux/meson.build.

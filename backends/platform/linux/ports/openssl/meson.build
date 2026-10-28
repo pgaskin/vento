@@ -42,6 +42,11 @@ if run_command(perl, '-e', 'use FindBin; use IPC::Cmd; use File::Compare; use Ti
 endif
 
 openssl_prefix = meson.current_build_dir() / 'prefix'
+# Configure takes the build machine for the target unless it is named.
+openssl_target = []
+if meson.is_cross_build()
+  openssl_target = ['linux-' + cpu]
+endif
 openssl_build = custom_target('openssl',
   output: ['libssl.a', 'libcrypto.a', 'openssl.stamp.h'],
   command: [build_upstream_py,
@@ -56,7 +61,8 @@ openssl_build = custom_target('openssl',
     '--', perl, openssl_dir / 'Configure', '--prefix=' + openssl_prefix, '--libdir=lib',
     '--openssldir=/etc/ssl',
     'no-shared', 'no-tests', 'no-apps', 'no-docs', 'no-engine', 'no-dso', 'no-comp', 'no-dtls',
-    'no-quic', 'no-srp', 'no-psk', 'no-ssl3', 'no-weak-ssl-ciphers', 'no-autoload-config', '-fPIC'],
+    'no-quic', 'no-srp', 'no-psk', 'no-ssl3', 'no-weak-ssl-ciphers', 'no-autoload-config', '-fPIC']
+    + openssl_target,
   console: true)
 
 # By path, not link_with: see backend_link_depends in platform/linux/meson.build.

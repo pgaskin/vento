@@ -24,6 +24,15 @@ if get_option('b_ndebug') == 'true'
 endif
 upstream_cflags += '-fPIC'
 upstream_cc = ' '.join(cc.cmd_array())
+# A cross build names the target to each upstream's configure (its GNU triple
+# for nettle and GnuTLS, a target name for OpenSSL), and nettle compiles the
+# table generator it runs during its build with the build machine's compiler.
+upstream_cc_for_build = upstream_cc
+upstream_host = []
+if meson.is_cross_build()
+  upstream_cc_for_build = ' '.join(meson.get_compiler('c', native: true).cmd_array())
+  upstream_host = ['--host=@0@-linux-gnu'.format(cpu)]
+endif
 
 # A backend is libvento_<name>.so, which the Rust client under linux/ opens at
 # run time. It carries its vendored static dependencies with their symbols
