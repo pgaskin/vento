@@ -179,6 +179,13 @@ impl View {
 }
 
 impl Layout {
+    /// The black bars beside the desktop in each axis, in device pixels:
+    /// how much narrower and shorter than the window it is drawn, both
+    /// sides together, and zero in an axis it fills or overflows.
+    pub fn bars(&self) -> Vec2 {
+        ((self.window.size() - self.rect.size()) * self.pixels_per_point).round().max(Vec2::ZERO)
+    }
+
     /// The desktop pixel under a point, clamped into the source so that a
     /// pointer dragged past the edge keeps pressing the edge.
     ///
@@ -374,6 +381,56 @@ mod tests {
         let layout = view.layout(desktop, rect(0.0, 0.0, 2560.0, 1440.0), 1.0);
         assert_eq!(layout.scale, 1.0);
         assert_eq!(layout.rect, rect(0.0, 180.0, 3840.0, 1080.0));
+    }
+
+    #[test]
+    fn a_window_without_its_bars_shows_the_desktop_at_the_same_scale() {
+        // Fit with the aspect ratios differing: bars on two sides, in
+        // device pixels, so at 1.5 a point is a pixel and a half.
+        let mut view = View {
+            mode: ScaleMode::Fit,
+            ..View::default()
+        };
+        let layout = view.layout(rect(0.0, 0.0, 3840.0, 1080.0), rect(0.0, 0.0, 1920.0, 1080.0), 1.0);
+        assert_eq!(layout.bars(), vec2(0.0, 540.0));
+        let layout = view.layout(rect(0.0, 0.0, 1024.0, 768.0), rect(0.0, 0.0, 1280.0, 720.0), 1.5);
+        assert_eq!(layout.bars(), vec2(480.0, 0.0));
+        // Fill covers the window, and an overflow is not a bar.
+        view.mode = ScaleMode::Fill;
+        let layout = view.layout(rect(0.0, 0.0, 1024.0, 768.0), rect(0.0, 0.0, 1280.0, 720.0), 1.5);
+        assert_eq!(layout.bars(), Vec2::ZERO);
+
+        // In every mode, a window made smaller by its bars shows the
+        // desktop at the scale it had, to within a pixel of its size, and
+        // has at most a pixel of bar left: the desktop's size is rounded to
+        // whole pixels, and Fit can then take its scale from the other axis.
+        let sources = [vec2(1024.0, 768.0), vec2(3840.0, 1080.0), vec2(768.0, 1366.0), vec2(1920.0, 1200.0)];
+        let windows = [vec2(1600.0, 900.0), vec2(1000.0, 1000.0), vec2(2560.0, 1440.0), vec2(1601.0, 997.0)];
+        let mut mode = ScaleMode::Auto;
+        loop {
+            for source in sources {
+                for pixels in windows {
+                    for ppp in [1.0, 1.25, 1.5, 2.0] {
+                        let mut view = View {
+                            mode,
+                            ..View::default()
+                        };
+                        let source = Rect::from_min_size(Pos2::ZERO, source);
+                        let before = view.layout(source, Rect::from_min_size(Pos2::ZERO, pixels / ppp), ppp);
+                        let trimmed = pixels - before.bars();
+                        let after = view.layout(source, Rect::from_min_size(Pos2::ZERO, trimmed / ppp), ppp);
+                        let case = format!("{mode:?} {source:?} in {pixels:?} at {ppp}");
+                        let change = (after.scale - before.scale).abs() * source.size().max_elem() * ppp;
+                        assert!(change <= 1.0 + 1e-3, "{case}: {change}");
+                        assert!(after.bars().x <= 1.0 && after.bars().y <= 1.0, "{case}: {:?}", after.bars());
+                    }
+                }
+            }
+            mode = mode.next();
+            if mode == ScaleMode::Auto {
+                break;
+            }
+        }
     }
 
     #[test]

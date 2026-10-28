@@ -337,7 +337,7 @@ impl Pane {
             }
         }
 
-        self.toolbar(s, ctx, host);
+        self.toolbar(s, ctx, host, layout.as_ref());
         if let Some(until) = s.release_hint
             && s.captured_in(self.id)
         {
@@ -525,7 +525,7 @@ impl Pane {
     /// press, so the toolbar moves only once the pointer is decidedly
     /// dragging, which is also when a release stops being a click: a
     /// button is either clicked or dragged, never both.
-    fn toolbar(&mut self, s: &mut Session, ctx: &egui::Context, host: &mut Host) {
+    fn toolbar(&mut self, s: &mut Session, ctx: &egui::Context, host: &mut Host, layout: Option<&Layout>) {
         let pointer = ctx.input(|i| i.pointer.latest_pos());
         let screen = ctx.content_rect();
         let fullscreen = host.window.fullscreen().is_some();
@@ -580,7 +580,7 @@ impl Pane {
                         // made for a menu rather than for a bar at a
                         // screen's edge.
                         ui.spacing_mut().interact_size.y = TOOLBAR_BUTTON;
-                        ui.horizontal(|ui| self.toolbar_items(s, ui, host));
+                        ui.horizontal(|ui| self.toolbar_items(s, ui, host, layout));
                     })
                     .response
                     .rect;
@@ -635,10 +635,12 @@ impl Pane {
     ///
     /// The main window's: Scale, Resize, Monitor, Pop out, View only,
     /// Sound, Info, Fullscreen, Disconnect. A pop-out's: Scale, Resize,
-    /// Monitor, View only, Sound, Fullscreen, Return. Resize only at 1:1 in
-    /// a window not already the size it asks for, and Sound only where the
-    /// far end may send sound.
-    fn toolbar_items(&mut self, s: &mut Session, ui: &mut egui::Ui, host: &mut Host) {
+    /// Monitor, View only, Sound, Fullscreen, Return. Resize only in a
+    /// window: at 1:1 while it is not already the size it asks for, in the
+    /// other modes while the desktop has black bars beside it. Sound only
+    /// where the far end may send sound. `layout` is where the desktop was
+    /// drawn this frame, if it was.
+    fn toolbar_items(&mut self, s: &mut Session, ui: &mut egui::Ui, host: &mut Host, layout: Option<&Layout>) {
         let connected = s.connected();
         let mode = self.view.mode;
         let scale = ui.add_enabled(connected, icon_only(scale_icon(mode)));
@@ -671,6 +673,26 @@ impl Pane {
                 .clicked()
         {
             self.fit_window(s, host);
+        }
+        // In the other modes, a desktop of another shape than the window
+        // has black bars beside it. A window made narrower or shorter by
+        // them shows the desktop at the same scale, filling it (see
+        // `trimmed_size`); taken off the window's inner size rather than
+        // made the desktop's, so that anything else in the window keeps
+        // its room. The 1:1 button's icon, and hidden as that is: in
+        // fullscreen, and once the window is the size it asks for.
+        if mode != ScaleMode::Original
+            && host.window.fullscreen().is_none()
+            && let Some(size) = layout.and_then(|l| {
+                let min = super::super::min_size(&ui.ctx().global_style()).to_physical(host.window.scale_factor());
+                trimmed_size(host.window.inner_size(), l.bars(), min)
+            })
+            && ui
+                .add_enabled(connected, icon_only(icons::RESIZE))
+                .on_hover_text("Resize window to remove black bars")
+                .clicked()
+        {
+            request_size(host, size);
         }
 
         let facts = &s.snapshot.facts;
@@ -792,18 +814,12 @@ impl Pane {
 
     /// Asks for the window to be the size of what it shows (the desktop, or
     /// its monitor), in device pixels: one to one, nothing is panned or
-    /// left over. A maximised window is unmaximised first, since a window
-    /// manager keeps a maximised window's size.
+    /// left over.
     fn fit_window(&self, s: &Session, host: &Host) {
         let Some((width, height)) = s.desktop.as_ref().map(Desktop::size) else {
             return;
         };
-        let size = fit_size(self.source_rect(width, height));
-        log::info!("resizing the window to {}×{}", size.width, size.height);
-        if host.window.is_maximized() {
-            host.window.set_maximized(false);
-        }
-        let _ = host.window.request_inner_size(size);
+        request_size(host, fit_size(self.source_rect(width, height)));
     }
 
     /// The main window's Pop out, beside Monitor: what this window shows,
@@ -1181,6 +1197,33 @@ fn fit_size(source: Rect) -> PhysicalSize<u32> {
     PhysicalSize::new(source.width().round() as u32, source.height().round() as u32)
 }
 
+/// The window's inner size `inner` less the black bars `bars` (see
+/// [`Layout::bars`]), both in device pixels, and no smaller than the
+/// window's minimum `min`; `None` where that is no more than a pixel off
+/// `inner` in either axis. A bar of a pixel is what the rounding of the
+/// desktop's size to whole pixels leaves (and on Wayland that of the
+/// window's to logical pixels), which a window this function made the
+/// right size can still have.
+fn trimmed_size(inner: PhysicalSize<u32>, bars: Vec2, min: PhysicalSize<u32>) -> Option<PhysicalSize<u32>> {
+    let axis = |inner: u32, bar: f32, min: u32| {
+        let trimmed = inner.saturating_sub(bar as u32).max(min);
+        if inner.saturating_sub(trimmed) > 1 { trimmed } else { inner }
+    };
+    let size = PhysicalSize::new(axis(inner.width, bars.x, min.width), axis(inner.height, bars.y, min.height));
+    (size != inner).then_some(size)
+}
+
+/// Asks for the window's inner size to be `size`, in device pixels. A
+/// maximised window is unmaximised first, since a window manager keeps a
+/// maximised window's size.
+fn request_size(host: &Host, size: PhysicalSize<u32>) {
+    log::info!("resizing the window to {}×{}", size.width, size.height);
+    if host.window.is_maximized() {
+        host.window.set_maximized(false);
+    }
+    let _ = host.window.request_inner_size(size);
+}
+
 /// A Monitor choice in words, for the tooltip.
 fn monitor_name(monitor: Option<usize>, count: usize) -> String {
     match monitor {
@@ -1339,5 +1382,23 @@ mod tests {
         assert_eq!(pane.monitor(), None);
         // The whole desktop is never gone.
         assert_eq!(pane.rebind(&[]), Rebound::Kept);
+    }
+
+    #[test]
+    fn a_window_loses_its_bars_down_to_its_minimum_and_keeps_a_pixel_of_one() {
+        let size = PhysicalSize::new;
+        let min = size(600, 400);
+        // Bars beside the desktop, or above and below it.
+        assert_eq!(trimmed_size(size(1600, 900), vec2(400.0, 0.0), min), Some(size(1200, 900)));
+        assert_eq!(trimmed_size(size(1600, 1000), vec2(0.0, 100.0), min), Some(size(1600, 900)));
+        // None, or a pixel's rounding.
+        assert_eq!(trimmed_size(size(1600, 900), Vec2::ZERO, min), None);
+        assert_eq!(trimmed_size(size(1600, 900), vec2(1.0, 1.0), min), None);
+        assert_eq!(trimmed_size(size(1600, 900), vec2(2.0, 1.0), min), Some(size(1598, 900)));
+        // No smaller than the window may be, and once it is that small,
+        // nothing more to do.
+        assert_eq!(trimmed_size(size(1000, 1000), vec2(700.0, 0.0), min), Some(size(600, 1000)));
+        assert_eq!(trimmed_size(size(600, 1000), vec2(300.0, 0.0), min), None);
+        assert_eq!(trimmed_size(size(601, 1000), vec2(300.0, 0.0), min), None);
     }
 }
