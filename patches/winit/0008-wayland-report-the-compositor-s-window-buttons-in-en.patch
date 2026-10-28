@@ -1,0 +1,118 @@
+From 9e50aaec2a87f50b6252e4b902a52c8a710d7f11 Mon Sep 17 00:00:00 2001
+From: "Claude Opus 5.5" <noreply@anthropic.com>
+Date: Wed, 28 Oct 2026 08:26:10 -0400
+Subject: [PATCH 8/8] wayland: report the compositor's window buttons in
+ enabled_buttons
+
+xdg-shell v5 lets a compositor say which of its window operations it
+offers a toplevel (wm_capabilities: window menu, maximize, fullscreen,
+minimize). sctk decodes them into each configure, and winit's own
+fallback frame draws only the buttons they allow, but
+Window::enabled_buttons always returned WindowButtons::all(), so an
+application drawing its own decorations had no way to leave out a
+minimize button on a compositor that cannot minimize (sway), or a
+maximize button on one that cannot maximize.
+
+enabled_buttons now returns CLOSE, and MINIMIZE and MAXIMIZE where the
+last configure's capabilities include them. A compositor that sends no
+wm_capabilities offers everything, as the protocol says and as sctk
+assumes, and so does a window not configured yet.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+diff --git a/src/changelog/unreleased.md b/src/changelog/unreleased.md
+index c35b2ec..712fd17 100644
+--- a/src/changelog/unreleased.md
++++ b/src/changelog/unreleased.md
+@@ -43,6 +43,7 @@ changelog entry.
+ ### Added
+ 
+ - On Wayland, add `WindowEvent::Occluded` support, from the `xdg_toplevel` suspended state.
++- On Wayland, implement `Window::enabled_buttons`, from the compositor's `xdg_toplevel` `wm_capabilities`.
+ 
+ ### Fixed
+ 
+diff --git a/src/platform_impl/linux/wayland/window/mod.rs b/src/platform_impl/linux/wayland/window/mod.rs
+index 6d29a5a..7591e83 100644
+--- a/src/platform_impl/linux/wayland/window/mod.rs
++++ b/src/platform_impl/linux/wayland/window/mod.rs
+@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
+ use sctk::reexports::client::protocol::wl_display::WlDisplay;
+ use sctk::reexports::client::protocol::wl_surface::WlSurface;
+ use sctk::reexports::client::{Proxy, QueueHandle};
++use sctk::reexports::csd_frame::WindowManagerCapabilities;
+ 
+ use sctk::compositor::{CompositorState, Region, SurfaceData};
+ use sctk::reexports::protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
+@@ -400,10 +401,21 @@ impl Window {
+         // TODO(kchibisov) v5 of the xdg_shell allows that.
+     }
+ 
++    /// The buttons the compositor's `wm_capabilities` (xdg-shell v5) offer: close always, and
++    /// minimize and maximize where the compositor can do them.
+     #[inline]
+     pub fn enabled_buttons(&self) -> WindowButtons {
+-        // TODO(kchibisov) v5 of the xdg_shell allows that.
+-        WindowButtons::all()
++        let capabilities = self.window_state.lock().unwrap().wm_capabilities();
++        let mut buttons = WindowButtons::CLOSE;
++        buttons.set(
++            WindowButtons::MINIMIZE,
++            capabilities.contains(WindowManagerCapabilities::MINIMIZE),
++        );
++        buttons.set(
++            WindowButtons::MAXIMIZE,
++            capabilities.contains(WindowManagerCapabilities::MAXIMIZE),
++        );
++        buttons
+     }
+ 
+     #[inline]
+diff --git a/src/platform_impl/linux/wayland/window/state.rs b/src/platform_impl/linux/wayland/window/state.rs
+index 2e0f4fb..d160d3d 100644
+--- a/src/platform_impl/linux/wayland/window/state.rs
++++ b/src/platform_impl/linux/wayland/window/state.rs
+@@ -13,7 +13,8 @@ use sctk::reexports::client::protocol::wl_shm::WlShm;
+ use sctk::reexports::client::protocol::wl_surface::WlSurface;
+ use sctk::reexports::client::{Connection, Proxy, QueueHandle};
+ use sctk::reexports::csd_frame::{
+-    DecorationsFrame, FrameAction, FrameClick, ResizeEdge, WindowState as XdgWindowState,
++    DecorationsFrame, FrameAction, FrameClick, ResizeEdge, WindowManagerCapabilities,
++    WindowState as XdgWindowState,
+ };
+ use sctk::reexports::protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::WpFractionalScaleV1;
+ use sctk::reexports::protocols::wp::text_input::zv3::client::zwp_text_input_v3::ZwpTextInputV3;
+@@ -593,6 +594,16 @@ impl WindowState {
+             .is_some_and(|configure| configure.state.contains(XdgWindowState::SUSPENDED))
+     }
+ 
++    /// What the compositor offers to do with the window (xdg-shell v5's `wm_capabilities`), as
++    /// of the last configure. A compositor that never says offers everything, as the protocol
++    /// has it, and so does a window not yet configured.
++    #[inline]
++    pub fn wm_capabilities(&self) -> WindowManagerCapabilities {
++        self.last_configure
++            .as_ref()
++            .map_or(WindowManagerCapabilities::all(), |configure| configure.capabilities)
++    }
++
+     #[inline]
+     pub fn is_decorated(&mut self) -> bool {
+         let csd = self
+diff --git a/src/window.rs b/src/window.rs
+index e0158ef..571ad42 100644
+--- a/src/window.rs
++++ b/src/window.rs
+@@ -1042,7 +1042,11 @@ impl Window {
+     ///
+     /// ## Platform-specific
+     ///
+-    /// - **Wayland / X11 / Orbital:** Not implemented. Always returns [`WindowButtons::all`].
++    /// - **Wayland:** The buttons the compositor offers in `xdg_toplevel`'s `wm_capabilities`
++    ///   (xdg-shell v5): [`WindowButtons::CLOSE`] always, and [`WindowButtons::MINIMIZE`] and
++    ///   [`WindowButtons::MAXIMIZE`] where the compositor can minimize or maximize the window. A
++    ///   compositor that sends no capabilities offers all of them.
++    /// - **X11 / Orbital:** Not implemented. Always returns [`WindowButtons::all`].
+     /// - **Web / iOS / Android:** Unsupported. Always returns [`WindowButtons::all`].
+     pub fn enabled_buttons(&self) -> WindowButtons {
+         let _span = tracing::debug_span!("winit::Window::enabled_buttons",).entered();

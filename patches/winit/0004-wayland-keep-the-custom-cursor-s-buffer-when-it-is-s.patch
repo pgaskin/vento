@@ -1,7 +1,7 @@
 From 1f9c3b2cefd105927bd5daf3b56c3bb4845abd1b Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Thu, 15 Oct 2026 13:55:39 -0400
-Subject: [PATCH 4/7] wayland: keep the custom cursor's buffer when it is set
+Subject: [PATCH 4/8] wayland: keep the custom cursor's buffer when it is set
  again
 
 set_custom_cursor copied the image into a fresh wl_shm buffer on every

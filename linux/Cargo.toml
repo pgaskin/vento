@@ -108,10 +108,11 @@ ttf-parser = "0.25"
 
 # winit from the submodule, at the tag of the release on crates.io, with
 # `patches/winit/` applied by `./patch.sh`: the same source plus upstream's fix
-# for X11's wheel notch counted twice, cherry-picked from master, and six fixes
-# of ours, each written to go upstream and each saying what it fixes (a window
-# destroyed by another client, _NET_WM_STATE cached, RandR 1.5 monitors and
-# their changes; Wayland's suspended state, the custom cursor's buffer).
+# for X11's wheel notch counted twice, cherry-picked from master, and seven
+# changes of ours, each written to go upstream and each saying what it does (a
+# window destroyed by another client, _NET_WM_STATE cached, RandR 1.5 monitors
+# and their changes; Wayland's suspended state, the custom cursor's buffer, the
+# window buttons the compositor offers).
 # `dpi` comes along as winit's path dependency, from the same tag.
 [patch.crates-io]
 winit = { path = "../third_party/winit" }

@@ -1,7 +1,7 @@
 From fd57daf24412df20c6eeb89ef802ecd73436b069 Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Fri, 16 Oct 2026 03:36:48 -0400
-Subject: [PATCH 7/7] x11: list the monitors again when xrandr --setmonitor
+Subject: [PATCH 7/8] x11: list the monitors again when xrandr --setmonitor
  changes them
 
 The monitor list is cached and dropped on a RandR screen change event.

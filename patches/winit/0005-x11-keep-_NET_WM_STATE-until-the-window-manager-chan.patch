@@ -1,7 +1,7 @@
 From 087f4707c60daf52a53d767db552da7d026fc83e Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Thu, 15 Oct 2026 13:59:27 -0400
-Subject: [PATCH 5/7] x11: keep _NET_WM_STATE until the window manager changes
+Subject: [PATCH 5/8] x11: keep _NET_WM_STATE until the window manager changes
  it
 
 is_minimized and is_maximized read the window's _NET_WM_STATE from

@@ -1,7 +1,7 @@
 From b20b92a08da1c914fc6d2c491e25c39885fb17cd Mon Sep 17 00:00:00 2001
 From: "Claude Opus 5.5" <noreply@anthropic.com>
 Date: Thu, 15 Oct 2026 13:39:09 -0400
-Subject: [PATCH 2/7] wayland: report the suspended state as Occluded
+Subject: [PATCH 2/8] wayland: report the suspended state as Occluded
 
 xdg-shell v6 gave xdg_toplevel a suspended state, which a compositor
 sends while the window cannot be seen at all: minimized, on a
