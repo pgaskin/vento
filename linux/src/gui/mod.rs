@@ -970,35 +970,7 @@ impl App {
                 if !self.shown {
                     session.shown(false);
                 }
-                if self.dialog_type {
-                    self.dialog_type = false;
-                    if let Some(wm) = self.main.and_then(|id| self.windows.get(&id)).and_then(|s| s.wm.as_ref()) {
-                        wm.make_normal(&window);
-                    }
-                }
-                // Only from the dialog's size: a window opened for a session
-                // (`--connect`) has a session's already.
-                if std::mem::take(&mut self.compact) {
-                    Self::grow(&window);
-                }
-                // From the connecting screen on. After the growing to a
-                // session's size, which is the size the window has when it
-                // leaves fullscreen.
-                if self.settings.fullscreen {
-                    if window.fullscreen().is_none() {
-                        log::info!("--fullscreen: making the window fullscreen for the session");
-                        // A Wayland compositor gives a window back the size
-                        // of its last frame before fullscreen, so there it
-                        // waits for a frame at the size grown to.
-                        if self.csd && self.display_server == DisplayServer::Wayland {
-                            self.fullscreen_after_frame = true;
-                            window.request_redraw();
-                        } else {
-                            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
-                        }
-                    }
-                    self.fullscreened = Some(dialog_at);
-                }
+                self.make_session_window(&window, dialog_at);
                 self.screen = Screen::Session(Box::new(session));
             }
             Err(e) => {
@@ -1008,6 +980,67 @@ impl App {
             }
         }
         window.request_redraw();
+    }
+
+    /// The main window made a session's, from the connecting screen on: a
+    /// normal window rather than a dialog's, a session's size, and
+    /// fullscreen with `--fullscreen`. `dialog_at` is where the dialog was,
+    /// for the window to go back to.
+    fn make_session_window(&mut self, window: &Window, dialog_at: Option<PhysicalPosition<i32>>) {
+        if self.dialog_type {
+            self.dialog_type = false;
+            if let Some(wm) = self.main.and_then(|id| self.windows.get(&id)).and_then(|s| s.wm.as_ref()) {
+                wm.make_normal(window);
+            }
+        }
+        // Only from the dialog's size: a window opened for a session
+        // (`--connect`) has a session's already.
+        if std::mem::take(&mut self.compact) {
+            Self::grow(window);
+        }
+        // After the growing to a session's size, which is the size the
+        // window has when it leaves fullscreen.
+        if self.settings.fullscreen {
+            if window.fullscreen().is_none() {
+                log::info!("--fullscreen: making the window fullscreen for the session");
+                // A Wayland compositor gives a window back the size of its
+                // last frame before fullscreen, so there it waits for a
+                // frame at the size grown to.
+                if self.csd && self.display_server == DisplayServer::Wayland {
+                    self.fullscreen_after_frame = true;
+                    window.request_redraw();
+                } else {
+                    window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+                }
+            }
+            self.fullscreened = Some(dialog_at);
+        }
+    }
+
+    /// The main window made the dialog's again where
+    /// [`make_session_window`](Self::make_session_window) made it a session's:
+    /// out of fullscreen and back where the dialog was, or the dialog's size.
+    fn make_dialog_window(&mut self, window: &Window, dialog: &mut Dialog) {
+        self.fullscreen_after_frame = false;
+        if let Some(dialog_at) = self.fullscreened.take()
+            && window.fullscreen().is_some()
+        {
+            // `--fullscreen` made it so for the session: the dialog is a
+            // window again, of the size the window manager or the compositor
+            // gives back, and where it was (X11; a window manager's own place
+            // for it is lost where the window was mapped again, see
+            // `x11::WindowManager::make_normal`).
+            log::info!("--fullscreen: leaving fullscreen for the connection dialog");
+            window.set_fullscreen(None);
+            if let Some(at) = dialog_at {
+                window.set_outer_position(at);
+            }
+            dialog.fit = self.csd;
+        } else if self.csd {
+            Self::shrink(window);
+            dialog.fit = true;
+        }
+        self.compact = self.csd;
     }
 
     fn session(&mut self) -> Option<&mut Session> {
@@ -1543,36 +1576,19 @@ impl App {
         self.close_popouts(event_loop);
         let inhibitor = self.inhibitor(main);
         let focused = self.focused == Some(main);
-        let Some(surface) = self.windows.get_mut(&main) else {
+        let Some(window) = self.windows.get(&main).map(|s| Arc::clone(&s.window)) else {
             return;
         };
-        let window = Arc::clone(&surface.window);
         let screen = std::mem::replace(&mut self.screen, Screen::Dialog(Box::new(Dialog::new())));
         if let Screen::Session(session) = screen {
             let mut dialog = Dialog::from_request(&session.request);
             if !detail.is_empty() {
                 dialog.notice = Some(format!("Disconnected: {detail}"));
             }
-            self.fullscreen_after_frame = false;
-            if let Some(dialog_at) = self.fullscreened.take()
-                && window.fullscreen().is_some()
-            {
-                // `--fullscreen` made it so for the session: the dialog is
-                // a window again, of the size the window manager or the
-                // compositor gives back, and where it was (X11; a window
-                // manager's own place for it is lost where the window was
-                // mapped again, see `x11::WindowManager::make_normal`).
-                log::info!("--fullscreen: leaving fullscreen for the connection dialog");
-                window.set_fullscreen(None);
-                if let Some(at) = dialog_at {
-                    window.set_outer_position(at);
-                }
-                dialog.fit = self.csd;
-            } else if self.csd {
-                Self::shrink(&window);
-                dialog.fit = true;
-            }
-            self.compact = self.csd;
+            self.make_dialog_window(&window, &mut dialog);
+            let Some(surface) = self.windows.get_mut(&main) else {
+                return;
+            };
             let mut host = Host {
                 window: &window,
                 viewport: surface.viewport,
