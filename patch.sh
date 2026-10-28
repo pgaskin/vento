@@ -121,7 +121,9 @@ for path in $paths; do
     # apply patches
     if [ -n "$havepatches" ] && [ "$head" = "$base" ]; then
         printf '\033[1;34m> %s\033[0m\n' "$name: applying patches"
-        git -c user.name=user -c user.email=email -C "$path" am "$PWD/patches/$name"/*.patch
+        # --keep-non-patch strips only the "[PATCH n/m]" group, so a subject
+        # starting with another bracketed prefix is saved unchanged
+        git -c user.name=user -c user.email=email -C "$path" am --keep-non-patch "$PWD/patches/$name"/*.patch
         head=$(git -C "$path" rev-parse HEAD)
     fi
 
