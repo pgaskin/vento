@@ -156,6 +156,15 @@ pub fn find(id: &str) -> Option<&'static Kind> {
     all().into_iter().find(|k| k.id == id)
 }
 
+/// The domain to connect to `kind` with: `domain` for a backend whose user
+/// name carries one ([`About::user_has_domain`](api::catalog::About::user_has_domain),
+/// the two RDP backends), and empty for the others, which take none. A
+/// request keeps the domain it was given, so that the dialog has it again
+/// after a session on another backend.
+pub fn domain<'a>(kind: &Kind, domain: &'a str) -> &'a str {
+    if kind.user_has_domain { domain } else { "" }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,5 +180,12 @@ mod tests {
         for kind in all() {
             assert!(api::catalog::ALL.iter().any(|a| std::ptr::eq(*a, kind.about)));
         }
+    }
+
+    #[test]
+    fn only_the_rdp_backends_are_sent_a_domain() {
+        let sent: Vec<&str> = all().into_iter().filter(|k| !domain(k, "CORP").is_empty()).map(|k| k.id).collect();
+        assert_eq!(sent, ["freerdp", "rdp"]);
+        assert_eq!(domain(find("rdp").unwrap(), "CORP"), "CORP");
     }
 }

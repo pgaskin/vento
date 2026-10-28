@@ -433,7 +433,7 @@ mod host {
                 let connect = Connect {
                     address: &self.address,
                     user: &self.user,
-                    domain: &self.domain,
+                    domain: backends::domain(self.kind, &self.domain),
                     password: self.password.as_deref(),
                     options: &self.options,
                     mailbox: Arc::clone(&mailbox),

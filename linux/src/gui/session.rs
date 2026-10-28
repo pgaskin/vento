@@ -349,7 +349,7 @@ impl Session {
         let connect = Connect {
             address: &request.address,
             user: &request.user,
-            domain: &request.domain,
+            domain: backends::domain(request.kind, &request.domain),
             password: request.password.as_deref(),
             options: &request.options,
             mailbox: Arc::clone(&mailbox),

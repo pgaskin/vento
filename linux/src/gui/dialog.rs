@@ -4,10 +4,11 @@
 //! The connection dialog: what `vento` opens with when it is given nothing
 //! on the command line, and what a session returns to when it ends.
 //!
-//! A backend to pick, the four fields every backend takes, and under them
-//! that backend's options drawn from the registry in `api::options`: the
-//! same rows `-o` checks against, rendered by their kind and nothing else,
-//! so the dialog knows no option by name. Under those, the client's own
+//! A backend to pick, the address, user name and password, a domain for a
+//! backend whose user name carries one, and under them that backend's
+//! options drawn from the registry in `api::options`: the same rows `-o`
+//! checks against, rendered by their kind and nothing else, so the dialog
+//! knows no option by name. Under those, the client's own
 //! settings (`settings.rs`), which are not the connection's: they are one
 //! answer for every connection, so they are drawn once, apart, and not
 //! filled in from a request. Nothing is saved: there are no connections to
@@ -293,13 +294,17 @@ impl Dialog {
             }
             ui.end_row();
 
-            ui.label("Domain");
-            ui.add(
-                TextEdit::singleline(&mut self.domain)
-                    .hint_text("RDP only (DOMAIN\\user above)")
-                    .desired_width(f32::INFINITY),
-            );
-            ui.end_row();
+            // Only for a backend whose user name carries a domain. One typed
+            // for it stays, hidden and not sent, while another is picked.
+            if self.kinds[self.selected].user_has_domain {
+                ui.label("Domain");
+                ui.add(
+                    TextEdit::singleline(&mut self.domain)
+                        .hint_text("if not given with the user name")
+                        .desired_width(f32::INFINITY),
+                );
+                ui.end_row();
+            }
         });
 
         let kind = self.kinds[self.selected];

@@ -42,6 +42,8 @@ pub struct About {
     /// Whether a user name carries a domain, `DOMAIN\user` or `user@domain`
     /// (as in RDP): a credentials prompt has no domain field, so it starts
     /// with the domain in the name ([`credentials::prompt_user`](crate::credentials::prompt_user)).
+    /// The Linux client's connection dialog has a Domain field only for such
+    /// a backend, and sends no domain to the others.
     pub user_has_domain: bool,
     /// Whether the backend's library has its own identity store: it returns
     /// an identity to be remembered ([`Backend::saved_identity`]) and expects
