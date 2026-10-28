@@ -147,6 +147,8 @@ pub struct Host<'a> {
     /// The window buttons the window manager or the compositor offers:
     /// close always, minimise and maximise where it does them.
     pub buttons: WindowButtons,
+    /// X11's window manager, for its window menu.
+    pub wm: Option<&'a x11::WindowManager>,
     /// The window's own close button was pressed in this frame, which is
     /// handled as the window manager's close is.
     pub close: bool,
@@ -302,6 +304,9 @@ struct Surface {
     viewable: Option<x11::Viewable>,
     /// What it last said, and when it is next due.
     viewability: x11::Viewability,
+    /// X11's window manager, asked what it offers the window's own title
+    /// bar; `None` elsewhere.
+    wm: Option<x11::WindowManager>,
     /// The window buttons offered as of the last frame, for the log.
     buttons: Option<WindowButtons>,
     /// Wayland's keyboard shortcuts inhibitor, which is a surface's own;
@@ -738,6 +743,7 @@ impl App {
                 output: window.current_monitor().and_then(|m| m.name()),
                 viewable: x11::Viewable::new(&window),
                 viewability: x11::Viewability::default(),
+                wm: x11::WindowManager::new(&window),
                 buttons: None,
                 window,
                 surface: Some(surface),
@@ -1015,7 +1021,10 @@ impl App {
         if surface.release_held() {
             window.request_redraw();
         }
-        let buttons = window.enabled_buttons();
+        let buttons = match &mut surface.wm {
+            Some(wm) => wm.buttons(),
+            None => window.enabled_buttons(),
+        };
         if self.csd && surface.buttons != Some(buttons) {
             surface.buttons = Some(buttons);
             log::debug!("window {id:?}: window buttons offered: {buttons:?}");
@@ -1036,6 +1045,7 @@ impl App {
             video: gpu.video(),
             csd: self.csd,
             buttons,
+            wm: surface.wm.as_ref(),
             close: false,
         };
         let egui = self.egui.clone();
@@ -1272,6 +1282,7 @@ impl App {
             video: None,
             csd: self.csd,
             buttons: WindowButtons::all(),
+            wm: None,
             close: false,
         };
         Some(f(session, &mut host, &self.egui))
@@ -1310,6 +1321,7 @@ impl App {
                 video: None,
                 csd: self.csd,
                 buttons: WindowButtons::all(),
+                wm: None,
                 close: false,
             };
             self.settings = session.settings;
@@ -1347,6 +1359,7 @@ impl App {
                         video: None,
                         csd: self.csd,
                         buttons: WindowButtons::all(),
+                        wm: None,
                         close: false,
                     };
                     let teardown = session.shutdown(&self.egui, &mut host);
@@ -1432,6 +1445,7 @@ impl App {
                     video: None,
                     csd: self.csd,
                     buttons: WindowButtons::all(),
+                    wm: None,
                     close: false,
                 };
                 session.focus(focused, &mut host);
@@ -1537,6 +1551,9 @@ impl ApplicationHandler<Wake> for App {
                 return;
             }
             WindowEvent::Resized(size) => {
+                if let Some(wm) = self.windows.get_mut(&id).and_then(|s| s.wm.as_mut()) {
+                    wm.stale();
+                }
                 self.resize_surface(id, *size);
             }
             WindowEvent::Moved(_) | WindowEvent::ScaleFactorChanged { .. } => {

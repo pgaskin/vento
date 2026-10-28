@@ -41,14 +41,21 @@
 //! `_NET_WM_STATE_HIDDEN` only on a tab that is not the active one. The
 //! server knows, though, and says so to a `GetWindowAttributes`, which
 //! [`Viewability`] asks for once a second while frames run.
+//!
+//! And what the window manager offers for the title bar the window draws
+//! itself ([`WindowManager`]): which of minimise and maximise it does, and
+//! the window menu, which a window manager that takes
+//! `_GTK_SHOW_WINDOW_MENU` shows on request.
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
 use std::time::{Duration, Instant};
 use winit::dpi::PhysicalSize;
-use winit::window::Window;
+use winit::window::{Window, WindowButtons};
 use x11rb::connection::Connection;
 use x11rb::protocol::xfixes::{BarrierDirections, ConnectionExt as _};
-use x11rb::protocol::xproto::{ConnectionExt as _, GrabMode, GrabStatus, InputFocus, MapState};
+use x11rb::protocol::xproto::{
+    AtomEnum, ClientMessageEvent, ConnectionExt as _, EventMask, GrabMode, GrabStatus, InputFocus, MapState,
+};
 use x11rb::xcb_ffi::XCBConnection;
 
 /// How long a refused grab waits before it is asked for again.
@@ -512,6 +519,210 @@ impl Viewability {
     }
 }
 
+/// The atoms [`WindowManager`] reads and sends.
+#[derive(Clone, Copy, Debug, Default)]
+struct Atoms {
+    supported: u32,
+    allowed: u32,
+    minimize: u32,
+    maximize_horz: u32,
+    maximize_vert: u32,
+    maximized_horz: u32,
+    maximized_vert: u32,
+    show_window_menu: u32,
+    moveresize: u32,
+}
+
+/// What the window manager offers to do with the window: minimise and
+/// maximise, for the title bar's buttons, and the window menu. Read over
+/// winit's connection like the keyboard grab, and again at most once every
+/// [`ASK`] while frames run, as the window manager may change them (for a
+/// fullscreen window, say) and sends nothing this end hears of.
+pub struct WindowManager {
+    conn: XCBConnection,
+    window: u32,
+    root: u32,
+    atoms: Atoms,
+    /// The screen's `WM_S<n>` selection, which a window manager owns.
+    wm_selection: u32,
+    buttons: WindowButtons,
+    menu: bool,
+    asked: Option<Instant>,
+}
+
+impl WindowManager {
+    /// `None` on anything but an X11 window.
+    pub fn new(window: &Window) -> Option<WindowManager> {
+        let (conn, raw_window) = winit_connection(window, "the window manager's buttons")?;
+        let root = conn.get_geometry(raw_window).ok()?.reply().ok()?.root;
+        let screen = conn.setup().roots.iter().position(|s| s.root == root).unwrap_or(0);
+        let intern = |name: &str| -> Option<u32> { Some(conn.intern_atom(false, name.as_bytes()).ok()?.reply().ok()?.atom) };
+        let atoms = Atoms {
+            supported: intern("_NET_SUPPORTED")?,
+            allowed: intern("_NET_WM_ALLOWED_ACTIONS")?,
+            minimize: intern("_NET_WM_ACTION_MINIMIZE")?,
+            maximize_horz: intern("_NET_WM_ACTION_MAXIMIZE_HORZ")?,
+            maximize_vert: intern("_NET_WM_ACTION_MAXIMIZE_VERT")?,
+            maximized_horz: intern("_NET_WM_STATE_MAXIMIZED_HORZ")?,
+            maximized_vert: intern("_NET_WM_STATE_MAXIMIZED_VERT")?,
+            show_window_menu: intern("_GTK_SHOW_WINDOW_MENU")?,
+            moveresize: intern("_NET_WM_MOVERESIZE")?,
+        };
+        let wm_selection = intern(&format!("WM_S{screen}"))?;
+        Some(WindowManager {
+            conn,
+            window: raw_window,
+            root,
+            atoms,
+            wm_selection,
+            buttons: WindowButtons::CLOSE,
+            menu: false,
+            asked: None,
+        })
+    }
+
+    /// The buttons the window manager offers, as last read; read again
+    /// first where due.
+    pub fn buttons(&mut self) -> WindowButtons {
+        let now = Instant::now();
+        if self.asked.is_none_or(|at| now.saturating_duration_since(at) >= ASK) {
+            self.asked = Some(now);
+            self.read();
+        }
+        self.buttons
+    }
+
+    /// Has the next [`buttons`](Self::buttons) read them again: the window's
+    /// state may have changed.
+    pub fn stale(&mut self) {
+        self.asked = None;
+    }
+
+    fn read(&mut self) {
+        let atoms = |window: u32, property: u32| -> Option<Vec<u32>> {
+            let reply = self
+                .conn
+                .get_property(false, window, property, AtomEnum::ATOM, 0, 1024)
+                .ok()?
+                .reply()
+                .ok()?;
+            Some(reply.value32()?.collect())
+        };
+        let supported = atoms(self.root, self.atoms.supported).unwrap_or_default();
+        let allowed = atoms(self.window, self.atoms.allowed).filter(|a| !a.is_empty());
+        let managed = !supported.is_empty()
+            || self
+                .conn
+                .get_selection_owner(self.wm_selection)
+                .ok()
+                .and_then(|c| c.reply().ok())
+                .is_some_and(|r| r.owner != x11rb::NONE);
+        let buttons = offered(&self.atoms, &supported, allowed.as_deref(), managed);
+        let menu = supported.contains(&self.atoms.show_window_menu);
+        if menu != self.menu {
+            log::debug!("X11: window menu (_GTK_SHOW_WINDOW_MENU): {}", if menu { "yes" } else { "no" });
+        }
+        self.buttons = buttons;
+        self.menu = menu;
+    }
+
+    /// Asks the window manager for its window menu at the pointer, where it
+    /// takes `_GTK_SHOW_WINDOW_MENU`, as GTK does: the pointer's implicit
+    /// grab let go of, so that the window manager can take it. Whether it
+    /// was asked.
+    pub fn show_menu(&self) -> bool {
+        if !self.menu {
+            return false;
+        }
+        let Some(pointer) = self.conn.query_pointer(self.window).ok().and_then(|c| c.reply().ok()) else {
+            return false;
+        };
+        // The device is XI2's virtual core pointer, as winit's own moves
+        // and resizes name it.
+        let data = [2, pointer.root_x as u32, pointer.root_y as u32, 0, 0];
+        let event = ClientMessageEvent::new(32, self.window, self.atoms.show_window_menu, data);
+        let sent = self.conn.ungrab_pointer(x11rb::CURRENT_TIME).is_ok()
+            && self
+                .conn
+                .send_event(
+                    false,
+                    self.root,
+                    EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT,
+                    event,
+                )
+                .is_ok()
+            && self.conn.flush().is_ok();
+        if !sent {
+            log::debug!("X11: cannot ask for the window menu");
+        }
+        sent
+    }
+}
+
+impl WindowManager {
+    /// Where the pointer is on the screen, in device pixels.
+    pub fn pointer(&self) -> Option<(i32, i32)> {
+        let reply = self.conn.query_pointer(self.window).ok()?.reply().ok()?;
+        Some((reply.root_x.into(), reply.root_y.into()))
+    }
+
+    /// Asks the window manager to resize the window from its top left
+    /// (`left`) or top right corner while `button` is held, as winit's
+    /// `drag_resize_window` does for the first button only: the window
+    /// manager ends the resize when the button its message names is let go
+    /// of. Whether it was asked.
+    pub fn resize_from_top(&self, left: bool, button: u32) -> bool {
+        let Some(pointer) = self.conn.query_pointer(self.window).ok().and_then(|c| c.reply().ok()) else {
+            return false;
+        };
+        // _NET_WM_MOVERESIZE_SIZE_TOPLEFT and _SIZE_TOPRIGHT; the source is
+        // an application.
+        let direction = if left { 0 } else { 2 };
+        let data = [pointer.root_x as u32, pointer.root_y as u32, direction, button, 1];
+        let event = ClientMessageEvent::new(32, self.window, self.atoms.moveresize, data);
+        self.conn.ungrab_pointer(x11rb::CURRENT_TIME).is_ok()
+            && self
+                .conn
+                .send_event(
+                    false,
+                    self.root,
+                    EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT,
+                    event,
+                )
+                .is_ok()
+            && self.conn.flush().is_ok()
+    }
+}
+
+/// The buttons a window manager offers, from what it says it supports
+/// (`_NET_SUPPORTED`) and what it allows the window (`allowed`, its
+/// `_NET_WM_ALLOWED_ACTIONS`, where it has set any): close always; minimise
+/// and maximise as allowed. Where the window manager does not say,
+/// maximise where it supports both of EWMH's maximised states, and
+/// minimise only from a window manager without EWMH (ICCCM's iconify): one
+/// with EWMH but without allowed actions is a tiling one such as i3, which
+/// does not iconify. Without a window manager (`managed` false), close
+/// alone.
+fn offered(atoms: &Atoms, supported: &[u32], allowed: Option<&[u32]>, managed: bool) -> WindowButtons {
+    let mut buttons = WindowButtons::CLOSE;
+    if !managed {
+        return buttons;
+    }
+    let (minimize, maximize) = match allowed {
+        Some(allowed) if supported.contains(&atoms.allowed) => (
+            allowed.contains(&atoms.minimize),
+            allowed.contains(&atoms.maximize_horz) && allowed.contains(&atoms.maximize_vert),
+        ),
+        _ => (
+            supported.is_empty() || supported.contains(&atoms.allowed),
+            supported.contains(&atoms.maximized_horz) && supported.contains(&atoms.maximized_vert),
+        ),
+    };
+    buttons.set(WindowButtons::MINIMIZE, minimize);
+    buttons.set(WindowButtons::MAXIMIZE, maximize);
+    buttons
+}
+
 fn refusal(status: GrabStatus) -> &'static str {
     match status {
         GrabStatus::ALREADY_GRABBED => "already grabbed",
@@ -539,6 +750,39 @@ mod tests {
         );
         // Wholly off it: nothing that is a point.
         assert!(edges((-500, -500, 100, 100)).is_empty());
+    }
+
+    #[test]
+    fn the_window_manager_s_buttons_are_what_it_allows_or_failing_that_supports() {
+        let atoms = Atoms {
+            supported: 1,
+            allowed: 2,
+            minimize: 3,
+            maximize_horz: 4,
+            maximize_vert: 5,
+            maximized_horz: 6,
+            maximized_vert: 7,
+            show_window_menu: 8,
+            moveresize: 9,
+        };
+        let all = WindowButtons::all();
+        let close = WindowButtons::CLOSE;
+        // Openbox: allowed actions supported and set on the window.
+        let openbox = [2, 6, 7];
+        assert_eq!(offered(&atoms, &openbox, Some(&[3, 4, 5]), true), all);
+        assert_eq!(offered(&atoms, &openbox, Some(&[3]), true), close | WindowButtons::MINIMIZE);
+        // One of the two maximised states is not maximising.
+        assert_eq!(offered(&atoms, &openbox, Some(&[4]), true), close);
+        // Not set on the window yet: what the window manager supports.
+        assert_eq!(offered(&atoms, &openbox, None, true), all);
+        // A window manager without allowed actions: its states, and no
+        // minimise (i3).
+        assert_eq!(offered(&atoms, &[6, 7], Some(&[3]), true), close | WindowButtons::MAXIMIZE);
+        assert_eq!(offered(&atoms, &[6], None, true), close);
+        // An ICCCM window manager, with no EWMH at all: minimise.
+        assert_eq!(offered(&atoms, &[], None, true), close | WindowButtons::MINIMIZE);
+        // No window manager: close alone.
+        assert_eq!(offered(&atoms, &[], None, false), close);
     }
 
     #[test]

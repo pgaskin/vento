@@ -19,7 +19,10 @@
 //! The edges resize the window from [`CORNER`] at each corner and [`EDGE`]
 //! along each side, in a window that is not maximised or fullscreen. They
 //! are on a layer of their own above everything else, so that a press on
-//! them is never the desktop's and never reaches the server.
+//! them is never the desktop's and never reaches the server. On X11 a side
+//! is resized here rather than by the window manager ([`EdgeResize`]): i3
+//! takes `_NET_WM_MOVERESIZE` for a side as one for the corner nearest the
+//! pointer.
 //!
 //! A move, a resize and a window menu are the window manager's or the
 //! compositor's once asked for: it takes the pointer, and the release that
@@ -33,7 +36,7 @@ use egui::{
     Align2, Color32, CursorIcon, FontId, Id, Order, PointerButton, Pos2, Rect, Response, Sense, Shape, Stroke, Ui,
     pos2, vec2,
 };
-use winit::dpi::PhysicalPosition;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::window::{ResizeDirection, WindowButtons};
 
 /// The title bar's height, in points: about three fifths of the toolbar's,
@@ -128,6 +131,61 @@ pub fn title_buttons(buttons: WindowButtons, maximized: bool) -> Vec<Button> {
     shown
 }
 
+/// A resize from one side of the window done here, on X11: the pointer is
+/// the window's while the button pressed on the side is held (the server's
+/// implicit grab), and the window is made the size and the place it asks
+/// for, frame by frame. All in device pixels, on the screen.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct EdgeResize {
+    direction: ResizeDirection,
+    /// Where the pointer was pressed.
+    from: (i32, i32),
+    /// The window's position and inner size then.
+    at: (i32, i32),
+    size: PhysicalSize<u32>,
+}
+
+impl EdgeResize {
+    /// The window's position and size with the pointer at `pointer`: the
+    /// side moved with it, the opposite side where it was, and the size no
+    /// smaller than `min`.
+    fn geometry(&self, pointer: (i32, i32), min: PhysicalSize<u32>) -> ((i32, i32), PhysicalSize<u32>) {
+        let (dx, dy) = (pointer.0 - self.from.0, pointer.1 - self.from.1);
+        let (mut x, mut y) = self.at;
+        let (mut w, mut h) = (self.size.width as i32, self.size.height as i32);
+        let (min_w, min_h) = (min.width as i32, min.height as i32);
+        match self.direction {
+            ResizeDirection::East => w = (w + dx).max(min_w),
+            ResizeDirection::South => h = (h + dy).max(min_h),
+            ResizeDirection::West => {
+                let right = x + w;
+                w = (w - dx).max(min_w);
+                x = right - w;
+            }
+            ResizeDirection::North => {
+                let bottom = y + h;
+                h = (h - dy).max(min_h);
+                y = bottom - h;
+            }
+            _ => {}
+        }
+        ((x, y), PhysicalSize::new(w as u32, h as u32))
+    }
+}
+
+/// Whether `direction` is one side rather than a corner.
+fn side(direction: ResizeDirection) -> bool {
+    matches!(
+        direction,
+        ResizeDirection::North | ResizeDirection::South | ResizeDirection::East | ResizeDirection::West
+    )
+}
+
+/// Where an [`EdgeResize`] under way is kept, in egui's data.
+fn edge_resize_id() -> Id {
+    Id::new("edge-resize")
+}
+
 /// Whether the window is resized from its edges: drawn with its own
 /// decorations, resizable, and neither maximised nor fullscreen.
 pub fn resizable(host: &Host) -> bool {
@@ -143,6 +201,30 @@ pub fn resize_edges(ctx: &egui::Context, host: &mut Host, corner: f32, edge: f32
         return false;
     }
     let screen = ctx.content_rect();
+    if let Some(resize) = ctx.data(|d| d.get_temp::<EdgeResize>(edge_resize_id())) {
+        if ctx.input(|i| i.pointer.primary_down()) {
+            // The whole window is the resize's while it lasts.
+            egui::Area::new(Id::new("resize-edges"))
+                .order(Order::Tooltip)
+                .fixed_pos(screen.min)
+                .constrain(false)
+                .interactable(true)
+                .show(ctx, |ui| ui.interact(screen, Id::new("resize-edge"), Sense::drag()));
+            ctx.set_cursor_icon(cursor(resize.direction));
+            if let Some(pointer) = host.wm.and_then(|wm| wm.pointer()) {
+                let min = super::min_size(&ctx.global_style()).to_physical(host.window.scale_factor());
+                let (at, size) = resize.geometry(pointer, min);
+                if host.window.outer_position().ok() != Some(PhysicalPosition::new(at.0, at.1)) {
+                    host.window.set_outer_position(PhysicalPosition::new(at.0, at.1));
+                }
+                if host.window.inner_size() != size {
+                    let _ = host.window.request_inner_size(size);
+                }
+            }
+            return true;
+        }
+        ctx.data_mut(|d| d.remove::<EdgeResize>(edge_resize_id()));
+    }
     // Which way is the pointer's position alone, and only the zone it is
     // on has a widget: egui's hit test takes a pointer a few points past a
     // widget as on it, which would make edges of two points as wide as
@@ -168,6 +250,15 @@ pub fn resize_edges(ctx: &egui::Context, host: &mut Host, corner: f32, edge: f32
             ctx.set_cursor_icon(cursor(direction));
             if ctx.input(|i| i.pointer.primary_pressed()) {
                 log::debug!("resizing the window from its {direction:?} edge");
+                // X11: a side resized here (see `EdgeResize`).
+                if side(direction)
+                    && let Some(from) = host.wm.and_then(|wm| wm.pointer())
+                    && let Ok(at) = host.window.outer_position()
+                {
+                    let resize = EdgeResize { direction, from, at: (at.x, at.y), size: host.window.inner_size() };
+                    ctx.data_mut(|d| d.insert_temp(edge_resize_id(), resize));
+                    return;
+                }
                 match host.window.drag_resize_window(direction) {
                     Ok(()) => let_go(ctx, host, PointerButton::Primary),
                     Err(e) => log::debug!("cannot resize the window: {e}"),
@@ -247,12 +338,21 @@ pub fn title_bar(ctx: &egui::Context, host: &mut Host, rect: Rect, title: &str, 
 }
 
 /// Resizes the window from its top left (`left`) or top right corner while
-/// the right button is held.
+/// the right button is held: on X11 with the window manager told that it is
+/// that button (see `x11::WindowManager::resize_from_top`), elsewhere
+/// through winit, which names none.
 fn resize_from_top(ctx: &egui::Context, host: &mut Host, left: bool) {
-    let direction = if left { ResizeDirection::NorthWest } else { ResizeDirection::NorthEast };
-    match host.window.drag_resize_window(direction) {
-        Ok(()) => let_go(ctx, host, PointerButton::Secondary),
-        Err(e) => log::debug!("cannot resize the window: {e}"),
+    let started = match host.wm {
+        Some(wm) => wm.resize_from_top(left, 3),
+        None => {
+            let direction = if left { ResizeDirection::NorthWest } else { ResizeDirection::NorthEast };
+            host.window.drag_resize_window(direction).is_ok()
+        }
+    };
+    if started {
+        let_go(ctx, host, PointerButton::Secondary);
+    } else {
+        log::debug!("cannot resize the window");
     }
 }
 
@@ -342,21 +442,28 @@ fn press(host: &mut Host, button: Button) {
     }
 }
 
-/// The compositor's window menu, at the pointer, on Wayland: the
-/// compositor ignores it where it has none.
+/// The window manager's or the compositor's window menu, at the pointer:
+/// on Wayland asked of the compositor, which ignores it where it has none;
+/// on X11 only where the window manager takes `_GTK_SHOW_WINDOW_MENU`.
 fn window_menu(ctx: &egui::Context, host: &mut Host) {
-    if host.display_server != super::DisplayServer::Wayland {
-        return;
-    }
-    let Some(pos) = ctx.input(|i| i.pointer.latest_pos()) else {
-        return;
+    let shown = match host.wm {
+        Some(wm) => wm.show_menu(),
+        None if host.display_server == super::DisplayServer::Wayland => {
+            let Some(pos) = ctx.input(|i| i.pointer.latest_pos()) else {
+                return;
+            };
+            let ppp = ctx.pixels_per_point();
+            host.window.show_window_menu(PhysicalPosition::new(
+                (pos.x * ppp).round() as i32,
+                (pos.y * ppp).round() as i32,
+            ));
+            true
+        }
+        None => false,
     };
-    let ppp = ctx.pixels_per_point();
-    host.window.show_window_menu(PhysicalPosition::new(
-        (pos.x * ppp).round() as i32,
-        (pos.y * ppp).round() as i32,
-    ));
-    let_go(ctx, host, PointerButton::Secondary);
+    if shown {
+        let_go(ctx, host, PointerButton::Secondary);
+    }
 }
 
 /// The release of `button` given to egui for its next frame: a move, a
@@ -433,6 +540,27 @@ mod tests {
                 assert!(a.intersect(*b).area() <= 0.0, "{a:?} {b:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_side_resized_here_moves_that_side_alone_down_to_the_minimum() {
+        let resize = |direction| EdgeResize {
+            direction,
+            from: (500, 300),
+            at: (100, 50),
+            size: PhysicalSize::new(800, 600),
+        };
+        let min = PhysicalSize::new(400, 360);
+        let size = PhysicalSize::new;
+        // Right and bottom: the size alone, by the pointer's own axis.
+        assert_eq!(resize(ResizeDirection::East).geometry((530, 340), min), ((100, 50), size(830, 600)));
+        assert_eq!(resize(ResizeDirection::South).geometry((530, 340), min), ((100, 50), size(800, 640)));
+        // Left and top: the window moves with its side, the other side stays.
+        assert_eq!(resize(ResizeDirection::West).geometry((450, 340), min), ((50, 50), size(850, 600)));
+        assert_eq!(resize(ResizeDirection::North).geometry((450, 280), min), ((100, 30), size(800, 620)));
+        // Past the minimum, the minimum, with the opposite side still where it was.
+        assert_eq!(resize(ResizeDirection::West).geometry((1000, 300), min), ((500, 50), size(400, 600)));
+        assert_eq!(resize(ResizeDirection::South).geometry((500, -100), min), ((100, 50), size(800, 360)));
     }
 
     #[test]
