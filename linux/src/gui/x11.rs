@@ -22,6 +22,23 @@
 //! The way out of a grabbed window is the mouse: a click elsewhere has the
 //! window manager move the focus, and the focus-out ends the grab.
 //!
+//! A keyboard grab does not stop the window manager's mouse bindings (i3's
+//! `floating_modifier` with the left or right button, Openbox's Alt with
+//! either): they are passive button grabs, so the press goes to the window
+//! manager, even over a fullscreen window, and the server sees only the
+//! modifier pressed and released (on Windows, Super alone opens the Start
+//! menu). So while the keyboard grab is held and the server has a modifier
+//! other than Shift down, the pointer is grabbed as well (see
+//! `Session::holds_pointer`), and kept until no button is down: a passive
+//! grab does not activate while the pointer is actively grabbed. Only then,
+//! because a pointer grab sends every click to this window, a click on
+//! another window included. It is an XInput 2 grab with winit's event mask
+//! rather than a core grab, so that a release outside the window reaches
+//! winit, which reads the pointer only as XInput 2 events. It is not taken
+//! in relative mode: with any pointer grab held (core or XInput 2, on the
+//! window or on the root), the server delivers each raw motion twice, once
+//! for the grab and once for winit's selection on the root window.
+//!
 //! Also here: a focus-out the grab itself caused, told apart from a real
 //! one. A grab and an ungrab make the server send FocusOut and FocusIn with
 //! the Grab and Ungrab modes, which winit reports as plain focus changes;
@@ -53,10 +70,14 @@ use winit::dpi::PhysicalSize;
 use winit::window::{Window, WindowButtons};
 use x11rb::connection::Connection;
 use x11rb::protocol::xfixes::{BarrierDirections, ConnectionExt as _};
+use x11rb::protocol::xinput::{ConnectionExt as _, GrabOwner, XIEventMask};
 use x11rb::protocol::xproto::{
     AtomEnum, ClientMessageEvent, ConnectionExt as _, EventMask, GrabMode, GrabStatus, InputFocus, MapState,
 };
 use x11rb::xcb_ffi::XCBConnection;
+
+/// XInput 2's virtual core pointer, the master device every X server has.
+const VIRTUAL_CORE_POINTER: u16 = 2;
 
 /// How long a refused grab waits before it is asked for again.
 pub const RETRY: Duration = Duration::from_millis(250);
@@ -77,6 +98,13 @@ pub struct Keyboard {
     wanted: bool,
     last: Last,
     retry_at: Option<Instant>,
+    /// The XInput 2 pointer device grabbed beside the keyboard.
+    pointer_device: u16,
+    /// Whether the pointer is grabbed (see `hold_pointer`).
+    pointer: bool,
+    /// The last refusal of a pointer grab, logged once rather than on
+    /// every frame it is asked for again.
+    pointer_refused: Option<GrabStatus>,
 }
 
 /// winit's own connection and the window's id, or `None` on anything but
@@ -132,6 +160,14 @@ impl Keyboard {
                  off the compositor's own shortcuts — the Wayland backend is the better choice here"
             );
         }
+        // The pointer paired with the keyboard; the virtual core pointer
+        // where the server does not say.
+        let pointer_device = conn
+            .xinput_xi_get_client_pointer(x11rb::NONE)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .filter(|r| r.set)
+            .map_or(VIRTUAL_CORE_POINTER, |r| r.deviceid);
         Some(Keyboard {
             conn,
             window: raw_window,
@@ -139,6 +175,9 @@ impl Keyboard {
             wanted: false,
             last: Last::Released,
             retry_at: None,
+            pointer_device,
+            pointer: false,
+            pointer_refused: None,
         })
     }
 
@@ -164,6 +203,8 @@ impl Keyboard {
                 self.held = false;
                 self.grab();
             }
+            // Asked for again on the next `hold_pointer`, on this window.
+            self.release_pointer();
         }
     }
 
@@ -216,6 +257,84 @@ impl Keyboard {
             log::info!("X11 keyboard released");
         }
         self.last = Last::Released;
+    }
+
+    /// Grab the pointer as well while `wanted` and the keyboard grab is
+    /// held, and let it go otherwise, but only once no button is down: an
+    /// active grab let go of mid-drag leaves no implicit grab behind it, and
+    /// the release would go to whatever window is under the pointer. A
+    /// refused grab (the window manager holds the pointer, mid-drag) is
+    /// asked for again on the next call, which comes with the next key and
+    /// the next frame.
+    pub fn hold_pointer(&mut self, wanted: bool) {
+        let wanted = wanted && self.held;
+        if wanted == self.pointer {
+            return;
+        }
+        if !wanted {
+            if !self.buttons_down() {
+                self.release_pointer();
+            }
+            return;
+        }
+        // The pointer events of winit's own selection on its windows, so
+        // that the grab reports what winit reads.
+        let mask = XIEventMask::MOTION
+            | XIEventMask::BUTTON_PRESS
+            | XIEventMask::BUTTON_RELEASE
+            | XIEventMask::ENTER
+            | XIEventMask::LEAVE;
+        let reply = self
+            .conn
+            .xinput_xi_grab_device(
+                self.window,
+                x11rb::CURRENT_TIME,
+                x11rb::NONE,
+                self.pointer_device,
+                GrabMode::ASYNC,
+                GrabMode::ASYNC,
+                GrabOwner::OWNER,
+                &[u32::from(mask)],
+            )
+            .map_err(|e| e.to_string())
+            .and_then(|c| c.reply().map_err(|e| e.to_string()));
+        match reply {
+            Ok(r) if r.status == GrabStatus::SUCCESS => {
+                self.pointer = true;
+                self.pointer_refused = None;
+                log::debug!("X11 pointer grabbed, with a modifier down");
+            }
+            Ok(r) => {
+                if self.pointer_refused != Some(r.status) {
+                    log::debug!("X11 pointer grab refused: {}", refusal(r.status));
+                }
+                self.pointer_refused = Some(r.status);
+            }
+            Err(e) => log::warn!("X11 pointer grab failed: {e}"),
+        }
+    }
+
+    /// Whether the server has a button of the pointer down, from the
+    /// server's own state rather than the events read so far; `false` if
+    /// it does not answer.
+    fn buttons_down(&self) -> bool {
+        self.conn
+            .xinput_xi_query_pointer(self.window, self.pointer_device)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .is_some_and(|r| r.buttons.iter().any(|&bits| bits != 0))
+    }
+
+    fn release_pointer(&mut self) {
+        self.pointer_refused = None;
+        if self.pointer {
+            if let Ok(cookie) = self.conn.xinput_xi_ungrab_device(x11rb::CURRENT_TIME, self.pointer_device) {
+                cookie.ignore_error();
+            }
+            let _ = self.conn.flush();
+            self.pointer = false;
+            log::debug!("X11 pointer released");
+        }
     }
 
     /// Where the grab is, in a few words, for the debug overlay.
@@ -288,6 +407,7 @@ impl Keyboard {
 
 impl Drop for Keyboard {
     fn drop(&mut self) {
+        self.release_pointer();
         self.release();
     }
 }

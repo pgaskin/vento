@@ -490,6 +490,16 @@ impl Session {
         self.settings.grab_keyboard && self.accepts_input() && !self.toolbar_hovered(pane)
     }
 
+    /// Whether the window should hold the pointer as well as the keyboard
+    /// (X11, see `x11.rs`, which keeps it until the last button is let go
+    /// of): while it holds the shortcuts and the server has a modifier
+    /// down, so that the window manager's mouse bindings on that modifier
+    /// go to the server too. Not while the pointer is captured, where a
+    /// pointer grab doubles the raw motion.
+    pub fn holds_pointer(&self, pane: PaneId) -> bool {
+        self.holds_shortcuts(pane) && !self.captured() && self.keyboard.modifier_held()
+    }
+
     /// Whether a key event from winit, to `pane`'s window, is the far end's
     /// rather than egui's: not while the pointer is on that window's
     /// toolbar, where the shortcuts are this desktop's again and a key

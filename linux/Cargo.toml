@@ -82,11 +82,11 @@ wayland-client = "0.31"
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
 # X11's pieces winit does not do for us: the keyboard grab that stands in
-# for Wayland's shortcuts inhibitor, sent over winit's own connection (see
-# `gui/x11.rs`), and the clipboard, on a connection of its own (see
-# `gui/clipboard/x11.rs`). Both are already in the graph through winit, with
-# these features, so they add nothing to the build.
-x11rb = { version = "0.13", features = ["allow-unsafe-code", "dl-libxcb"] }
+# for Wayland's shortcuts inhibitor, and the XInput 2 pointer grab beside it,
+# sent over winit's own connection (see `gui/x11.rs`), and the clipboard, on a
+# connection of its own (see `gui/clipboard/x11.rs`). Both are already in the
+# graph through winit, with these features, so they add nothing to the build.
+x11rb = { version = "0.13", features = ["allow-unsafe-code", "dl-libxcb", "xinput"] }
 x11-dl = "2.21"
 # poll(2), pipe2(2) and the reads and writes on the clipboard's pipes (see
 # `gui/clipboard/`). Already in the graph through winit and the backends.

@@ -987,6 +987,21 @@ impl App {
                 None => keyboard.release(),
             }
         }
+        self.sync_pointer();
+    }
+
+    /// X11: the pointer grabbed beside the keyboard while the session wants
+    /// it (`Session::holds_pointer`). After every frame, with the keyboard
+    /// grab, and after every key, so that a modifier pressed has the
+    /// pointer grabbed before the click that follows it.
+    fn sync_pointer(&mut self) {
+        let wanted = self.focused.is_some_and(|id| {
+            let pane = self.windows.get(&id).map(|s| s.viewport);
+            matches!((&self.screen, pane), (Screen::Session(s), Some(pane)) if s.holds_pointer(pane))
+        });
+        if let Some(keyboard) = &mut self.keyboard {
+            keyboard.hold_pointer(wanted);
+        }
     }
 
     /// Wayland: dispatch what the compositor said to each inhibitor. X11:
@@ -1740,6 +1755,7 @@ impl ApplicationHandler<Wake> for App {
                     if session.takes_keys(viewport) {
                         session.key(key, since);
                         window.request_redraw();
+                        self.sync_pointer();
                         return;
                     }
                     // egui's, but the session still hears of it: a key

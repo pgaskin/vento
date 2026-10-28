@@ -73,7 +73,7 @@ clients, and what differs between them is each client's own code.
   a layout: the phone's `WindowFollower`, pure logic with tests), `keys.rs` (winit keys to X11 keysyms), `display_server.rs` (which display
   server the window is on),
   `wayland.rs` (the Wayland keyboard shortcuts inhibitor), `x11.rs` (the X11
-  keyboard grab that stands in for it), `cursor.rs` (the far end's cursor as
+  keyboard grab that stands in for it, and the pointer grab beside it), `cursor.rs` (the far end's cursor as
   the window's own, with tests), `hud.rs` (the debug overlay's box and rates,
   with tests), `settings.rs` (the client's own settings and their rows),
   `dialog.rs` (the connection dialog), `panel.rs` (the connection-info panel,
@@ -1565,7 +1565,14 @@ What the window uses beyond `xdg_wm_base`:
   keyboard** off. The log says when it is created, granted (`active`) and
   released. The compositor may show its own indicator
   while it is in force (niri does), and keeps one chord of its own to take
-  focus away.
+  focus away. Whether it holds off the compositor's mouse bindings too is
+  the compositor's choice, and no protocol asks for it: by their sources,
+  mutter (Super with a button), COSMIC (Super with a button) and Hyprland
+  (`bindm`) skip them while it is active, while niri (Mod with the left,
+  middle or right button; the right resizes a window that is not
+  fullscreen, from anywhere but the middle ninth of it) and sway
+  (`floating_modifier`) take them regardless, and there Super+right-drag
+  reaches the server as Super pressed and released.
 - `zwp_pointer_constraints_v1` and `zwp_relative_pointer_manager_v1` — the
   pointer lock and raw motion of relative mode, through winit's
   `CursorGrabMode::Locked` and `DeviceEvent::MouseMotion`.
@@ -1634,6 +1641,25 @@ handles.
   while it was held (it did with another window focused). The log says `X11
   keyboard grabbed` and `released`, and the overlay's inhibitor line says
   `grabbed`. With **Grab keyboard** off it is never taken.
+- **The pointer is grabbed too while a modifier is down.** A keyboard grab
+  does not stop a window manager's passive button grabs. i3's, on every
+  window it manages, takes `floating_modifier` with the right button (a
+  resize, and on a lone or fullscreen window nothing, but the press is
+  swallowed either way) and with the left where there is somewhere to drag
+  to, and the server saw Super pressed and released with nothing between
+  (on Windows, the Start menu). So while the keyboard grab is held and the
+  server has Control, Alt, Meta, Super, Hyper or AltGr down, the window
+  also holds an XInput 2 grab of the pointer (`X11 pointer grabbed` and
+  `released` in the debug log), kept until the server says no button is
+  down, and a passive grab does not activate while it is held. XInput 2 with winit's own event mask, so that a
+  release past the window's edge still reaches winit; not in relative mode,
+  where any pointer grab doubles the raw motion (below). The cost: while
+  such a modifier is held, a click on another window goes to this one. On
+  the rig with i3 (`floating_modifier Mod4`, the window fullscreen and
+  tiled beside an xterm), Super with a right or left drag reached
+  `protovnc`'s xev, and Windows' low-level hooks over `rdp` and `freerdp`,
+  in order and with Super held throughout, where before the grab only
+  Super's press and release did.
 - **A refused grab is retried** every 250 ms while the window has focus and
   a session takes input, with the loop woken for it; the overlay says why
   meanwhile (`refused (already grabbed)`). Tried with Openbox's Alt+Tab

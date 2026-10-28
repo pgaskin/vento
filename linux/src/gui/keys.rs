@@ -359,6 +359,26 @@ impl Keyboard {
         }
     }
 
+    /// Whether the server has a modifier down that a window manager's mouse
+    /// bindings could use: Control, Alt, Meta, Super, Hyper or AltGr, but
+    /// not Shift (see `Session::holds_pointer`).
+    pub fn modifier_held(&self) -> bool {
+        const MODIFIERS: [Keysym; 11] = [
+            Keysym::Control_L,
+            Keysym::Control_R,
+            Keysym::Alt_L,
+            Keysym::Alt_R,
+            Keysym::Meta_L,
+            Keysym::Meta_R,
+            Keysym::Super_L,
+            Keysym::Super_R,
+            Keysym::Hyper_L,
+            Keysym::Hyper_R,
+            Keysym::ISO_Level3_Shift,
+        ];
+        self.held.values().any(|&k| MODIFIERS.iter().any(|m| m.raw() == k))
+    }
+
     /// How many keys the far end has down: the overlay's count.
     pub fn held(&self) -> usize {
         self.held.len()
@@ -577,6 +597,8 @@ mod tests {
         match code {
             CTRL => Keysym::Control_L.raw(),
             ALT => Keysym::Alt_L.raw(),
+            KeyCode::SuperLeft => Keysym::Super_L.raw(),
+            KeyCode::ShiftLeft => Keysym::Shift_L.raw(),
             KeyCode::KeyA => 'a' as u32,
             _ => unreachable!(),
         }
@@ -606,6 +628,23 @@ mod tests {
     const SENT: Taken = Taken { sent: true, escape: false };
     const NOTHING: Taken = Taken { sent: false, escape: false };
     const ESCAPE: Taken = Taken { sent: true, escape: true };
+
+    #[test]
+    fn a_modifier_held_is_one_down_at_the_server_other_than_shift() {
+        let far = Far::default();
+        let mut keyboard = Keyboard::default();
+        keyboard.key(press(KeyCode::ShiftLeft), false, &far);
+        keyboard.key(press(KeyCode::KeyA), false, &far);
+        assert!(!keyboard.modifier_held(), "Shift and a letter");
+        keyboard.key(press(KeyCode::SuperLeft), false, &far);
+        assert!(keyboard.modifier_held());
+        keyboard.key(release(KeyCode::SuperLeft), false, &far);
+        assert!(!keyboard.modifier_held());
+        keyboard.key(press(ALT), false, &far);
+        assert!(keyboard.modifier_held());
+        keyboard.release_all(&far);
+        assert!(!keyboard.modifier_held(), "let go of at the server");
+    }
 
     #[test]
     fn ctrl_alt_is_the_escape_only_while_captured() {
