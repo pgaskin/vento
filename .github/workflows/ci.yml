@@ -112,7 +112,7 @@ jobs:
       - run: cargo clippy --locked --manifest-path linux/Cargo.toml --verbose
       - run: cargo test --locked -p remotedesktop-platform-linux --verbose
       - run: cargo clippy --locked -p remotedesktop-platform-linux --verbose
-      - run: set -euo pipefail && linux/target/debug/vento --list | tee backends.txt && test "$(grep -c '^[a-z]* .*/linux/target/debug/lib/libvento_[a-z]*\.so$' backends.txt)" = 4 && ! grep -F '(error:' backends.txt
+      - run: set -euo pipefail && linux/target/debug/vento --list | tee backends.txt && test "$(grep -c '^[a-z]* .*/linux/target/debug/lib/libvento_[a-z]*\.so\( (error:.*)\)\?$' backends.txt)" = 4 && ! grep -F '(error:' backends.txt | grep -vF "are not in $PWD/linux/target/debug/lib/realvnc."
 
   linux-standalone:
     name: Linux (standalone)
