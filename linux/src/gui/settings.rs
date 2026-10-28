@@ -56,6 +56,10 @@ pub struct Settings {
     /// Every session is view only, and the View only button and option
     /// cannot turn that off. Command line only (`--view-only`).
     pub view_only: bool,
+    /// The main window is made fullscreen when a session starts, from its
+    /// connecting screen on, and windowed again when it goes back to the
+    /// dialog. Command line only (`--fullscreen`).
+    pub fullscreen: bool,
     /// Every trust, security and message prompt is accepted without being
     /// shown, and nothing is pinned or remembered for it: a certificate the
     /// known hosts match is still taken as matching. Command line only
@@ -76,6 +80,7 @@ impl Default for Settings {
             scale: ScaleMode::Auto,
             fit_window: false,
             view_only: false,
+            fullscreen: false,
             trust: false,
         }
     }

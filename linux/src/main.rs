@@ -282,6 +282,7 @@ mod host {
                 "verbose" => {}
                 "scale" => (settings.scale, settings.fit_window) = scale(&value)?,
                 "view-only" => settings.view_only = true,
+                "fullscreen" => settings.fullscreen = true,
                 "hw-decode" => settings.hw_decode = true,
                 "no-send-clipboard" => settings.clipboard_out = false,
                 "no-recv-clipboard" => settings.clipboard_in = false,
@@ -1020,6 +1021,10 @@ mod host {
             let settings = launch(&[]).settings;
             assert!(settings.clipboard_out && settings.clipboard_in && settings.grab_keyboard);
             assert!(!settings.view_only && !settings.trust);
+
+            assert!(!settings.fullscreen);
+            assert!(launch(&["--fullscreen"]).settings.fullscreen);
+            assert!(launch(&["--fullscreen", "rfb", "127.0.0.1:1", "--connect"]).settings.fullscreen);
 
             let forced = launch(&["--view-only", "rfb", "127.0.0.1:1", "-o", "ViewOnly=false"]);
             assert!(forced.settings.view_only);

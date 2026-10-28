@@ -44,6 +44,7 @@ pub const FLAGS: &[Flag] = &[
     flag("state-dir", None, true),
     flag("verbose", None, false),
     flag("scale", None, true),
+    flag("fullscreen", None, false),
     flag("view-only", None, false),
     flag("hw-decode", None, false),
     flag("no-send-clipboard", None, false),
@@ -176,6 +177,7 @@ options:
 
 session options (also see backends below):
       --scale MODE           initial window scale (auto, fit, fill, fit-height, fit-width, fill-width, fill-height, none, none-resize) (default: <scale>)
+      --fullscreen           start in full-screen by default
       --view-only            force view-only mode
       --hw-decode            enable hardware decoding for video where supported
       --no-send-clipboard    do not send locally copied text to the server

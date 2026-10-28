@@ -55,12 +55,16 @@ const BUTTON_INSET: f32 = 6.0;
 
 /// Makes a window drawn with its own decorations the panel's size: the
 /// dialog's width, and `height`, the panel's, up to the height of the
-/// monitor it is on. Not while maximised or fullscreen, which keep their
-/// size.
-fn fit_window(host: &Host, height: f32) {
+/// monitor it is on. Not while maximised, which keeps its size, nor while
+/// fullscreen, which may be on its way out (`--fullscreen` leaving it for
+/// the dialog): whether it is done with, which it is not while fullscreen.
+fn fit_window(host: &Host, height: f32) -> bool {
     let window = host.window;
-    if window.is_maximized() || window.fullscreen().is_some() {
-        return;
+    if window.fullscreen().is_some() {
+        return false;
+    }
+    if window.is_maximized() {
+        return true;
     }
     let mut size = winit::dpi::LogicalSize::new(WIDTH, height.ceil());
     if let Some(monitor) = window.current_monitor() {
@@ -69,6 +73,7 @@ fn fit_window(host: &Host, height: f32) {
     }
     log::debug!("fitting the window to the connection dialog: {}×{}", size.width, size.height);
     let _ = window.request_inner_size(size);
+    true
 }
 
 /// Where a dialog of `size` goes in `window`: its top left corner, centred
@@ -183,8 +188,7 @@ impl Dialog {
         let measured = ctx.memory(|m| m.area_rect(id));
         let size = measured.map_or(vec2(width, 0.0), |r| r.size());
         if self.fit && self.drawn && host.csd && let Some(measured) = measured {
-            self.fit = false;
-            fit_window(host, measured.height());
+            self.fit = !fit_window(host, measured.height());
         }
         let at = if host.csd {
             pos2(screen.center().x - size.x / 2.0, screen.min.y).max(screen.min)

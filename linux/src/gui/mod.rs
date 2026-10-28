@@ -78,7 +78,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{DeviceEvent, DeviceId, ElementState, KeyEvent, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, EventLoopProxy};
-use winit::window::{Icon, UserAttentionType, Window, WindowAttributes, WindowButtons, WindowId};
+use winit::window::{Fullscreen, Icon, UserAttentionType, Window, WindowAttributes, WindowButtons, WindowId};
 
 /// A connection to open, as the command line or the dialog describes one.
 #[derive(Clone)]
@@ -181,6 +181,8 @@ pub fn run(launch: Launch) -> i32 {
         settings: launch.settings,
         csd: launch.csd,
         dialog_type: false,
+        fullscreened: None,
+        fullscreen_after_frame: false,
         launch: Some(launch),
         placement: Placement::default(),
         proxy,
@@ -616,6 +618,13 @@ struct App {
     /// The main window is still X11's dialog type it opened as, to be
     /// floated by a tiling window manager (see `open`).
     dialog_type: bool,
+    /// `--fullscreen`'s fullscreen is asked for once the main window's next
+    /// frame has been presented (see `connect`).
+    fullscreen_after_frame: bool,
+    /// The session on screen was made fullscreen by `--fullscreen`, which
+    /// is undone when it goes back to the dialog, and where the dialog was
+    /// then, where the window can be placed (X11).
+    fullscreened: Option<Option<PhysicalPosition<i32>>>,
     /// Whether any window could be seen when last looked, which is what the
     /// session is told (see `sync_shown`).
     shown: bool,
@@ -645,7 +654,10 @@ impl App {
             .with_title("Vento")
             .with_inner_size(size)
             .with_min_inner_size(min_size(&self.egui.global_style()))
-            .with_decorations(!self.csd);
+            .with_decorations(!self.csd)
+            // A session with `--fullscreen` is fullscreen from its first
+            // frame (see `connect`).
+            .with_fullscreen((session && self.settings.fullscreen).then_some(Fullscreen::Borderless(None)));
         // A dialog as far as X11 window managers go, which tiling ones float
         // (i3); made an ordinary window when a session starts (see `grow`).
         let attributes = if compact {
@@ -926,6 +938,8 @@ impl App {
             return;
         };
         let size = window.inner_size();
+        // Where the dialog is, before the window is made a session's.
+        let dialog_at = window.outer_position().ok();
         let proxy = self.proxy.clone();
         let wake: Box<dyn Fn() + Send + Sync> = Box::new(move || {
             let _ = proxy.send_event(Wake::Now(None));
@@ -956,6 +970,24 @@ impl App {
                 }
                 if self.csd {
                     Self::grow(&window);
+                }
+                // From the connecting screen on. After the growing to a
+                // session's size, which is the size the window has when it
+                // leaves fullscreen.
+                if self.settings.fullscreen {
+                    if window.fullscreen().is_none() {
+                        log::info!("--fullscreen: making the window fullscreen for the session");
+                        // A Wayland compositor gives a window back the size
+                        // of its last frame before fullscreen, so there it
+                        // waits for a frame at the size grown to.
+                        if self.csd && self.display_server == DisplayServer::Wayland {
+                            self.fullscreen_after_frame = true;
+                            window.request_redraw();
+                        } else {
+                            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+                        }
+                    }
+                    self.fullscreened = Some(dialog_at);
                 }
                 self.screen = Screen::Session(Box::new(session));
             }
@@ -1299,6 +1331,10 @@ impl App {
         }
         let paint_jobs = egui.tessellate(output.shapes, output.pixels_per_point);
         let presented = gpu.present(surface, &paint_jobs, output.pixels_per_point);
+        if self.fullscreen_after_frame && viewport == ViewportId::ROOT {
+            self.fullscreen_after_frame = false;
+            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+        }
         // The overlay's render latency ends here: the frame's pixels have
         // been submitted and the surface handed to the compositor, which
         // is as far as this end can follow them.
@@ -1507,7 +1543,22 @@ impl App {
             if !detail.is_empty() {
                 dialog.notice = Some(format!("Disconnected: {detail}"));
             }
-            if self.csd {
+            self.fullscreen_after_frame = false;
+            if let Some(dialog_at) = self.fullscreened.take()
+                && window.fullscreen().is_some()
+            {
+                // `--fullscreen` made it so for the session: the dialog is
+                // a window again, of the size the window manager or the
+                // compositor gives back, and where it was (X11; a window
+                // manager's own place for it is lost where the window was
+                // mapped again, see `x11::WindowManager::make_normal`).
+                log::info!("--fullscreen: leaving fullscreen for the connection dialog");
+                window.set_fullscreen(None);
+                if let Some(at) = dialog_at {
+                    window.set_outer_position(at);
+                }
+                dialog.fit = self.csd;
+            } else if self.csd {
                 Self::shrink(&window);
                 dialog.fit = true;
             }
