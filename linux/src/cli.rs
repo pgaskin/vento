@@ -36,6 +36,7 @@ pub const FLAGS: &[Flag] = &[
     flag("option", Some('o'), true),
     flag("trust", None, false),
     flag("platform", None, true),
+    flag("no-csd", None, false),
     flag("video", None, true),
     flag("audio", None, true),
     flag("cursor", None, true),
@@ -165,6 +166,7 @@ options:
       --trust                automatically accept all trust/security/message prompts (ignoring and not writing to known_hosts)
 
       --platform NAME        window server protocol (auto, x11, wayland) (default: auto)
+      --no-csd               use the window manager's title bar and borders
       --video NAME           video hardware decoding backend (auto, vaapi, off) (default: auto)
       --audio NAME           audio backend (auto, pipewire, alsa, off) (default: auto)
       --cursor MODE          how to draw the remote cursor (native, software) (default: native)

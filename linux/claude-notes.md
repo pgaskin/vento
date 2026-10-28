@@ -65,6 +65,8 @@ clients, and what differs between them is each client's own code.
   DMA-BUFs and converted on the GPU, with tests), `view.rs` (scale modes, panning and the
   pointer's mapping, pure arithmetic with tests), `toolbar.rs` (where the
   toolbar sits and which strip of the edge brings it out, with tests),
+  `csd.rs` (the window's own decorations, unless `--no-csd`: the title bar
+  above the toolbar, the window buttons, the resize edges, with tests),
   `icons.rs` (the toolbar's font and the symbols it draws, tested against
   the font and its codepoints file), `follow.rs` (the desktop
   following the windows' sizes, a monitor per window where the far end takes

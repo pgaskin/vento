@@ -221,6 +221,8 @@ mod host {
         // The window's display server, if named; the probe has no window and
         // takes any.
         let mut display_server = None;
+        // The window's own decorations, unless `--no-csd`.
+        let mut csd = true;
         let mut forget = None;
 
         for arg in args {
@@ -258,6 +260,7 @@ mod host {
                     settings.audio_output = backends::AudioOutput::from_name(&value)
                         .ok_or_else(|| format!("--audio: {value:?} is not one of auto, pipewire, alsa, or off"))?
                 }
+                "no-csd" => csd = false,
                 "cursor" => {
                     settings.software_cursor = match value.as_str() {
                         "native" => false,
@@ -309,6 +312,7 @@ mod host {
                 dirs,
                 settings,
                 display_server,
+                csd,
             })));
         }
         // The dialog can be filled in from a backend alone; a session needs
@@ -345,6 +349,7 @@ mod host {
                 dirs,
                 settings,
                 display_server,
+                csd,
             })));
         };
 

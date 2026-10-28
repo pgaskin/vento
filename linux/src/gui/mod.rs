@@ -42,6 +42,7 @@
 //! has to say arrives through the mailbox between frames.
 
 mod clipboard;
+mod csd;
 mod cursor;
 mod desktop;
 mod dialog;
@@ -77,7 +78,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{DeviceEvent, DeviceId, ElementState, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, EventLoopProxy};
-use winit::window::{Icon, UserAttentionType, Window, WindowAttributes, WindowId};
+use winit::window::{Icon, UserAttentionType, Window, WindowAttributes, WindowButtons, WindowId};
 
 /// A connection to open, as the command line or the dialog describes one.
 #[derive(Clone)]
@@ -102,6 +103,10 @@ pub struct Launch {
     /// The display server to open the window on, where the command line
     /// named one; `None` is winit's choice.
     pub display_server: Option<DisplayServer>,
+    /// The windows draw their own title bars and resize edges (see
+    /// `csd.rs`) rather than have the window manager or the compositor
+    /// decorate them; off with `--no-csd`.
+    pub csd: bool,
 }
 
 /// Why the loop was woken from another thread or from egui.
@@ -137,6 +142,14 @@ pub struct Host<'a> {
     /// The GPU, for a picture left on it: only in a window's frame, and
     /// only where it can draw one.
     pub video: Option<Video<'a>>,
+    /// The window draws its own decorations (see `csd.rs`).
+    pub csd: bool,
+    /// The window buttons the window manager or the compositor offers:
+    /// close always, minimise and maximise where it does them.
+    pub buttons: WindowButtons,
+    /// The window's own close button was pressed in this frame, which is
+    /// handled as the window manager's close is.
+    pub close: bool,
 }
 
 /// Runs the window until it is closed; the process's exit status.
@@ -164,6 +177,7 @@ pub fn run(launch: Launch) -> i32 {
     let mut app = App {
         dirs: launch.dirs.clone(),
         settings: launch.settings,
+        csd: launch.csd,
         launch: Some(launch),
         placement: Placement::default(),
         proxy,
@@ -288,6 +302,8 @@ struct Surface {
     viewable: Option<x11::Viewable>,
     /// What it last said, and when it is next due.
     viewability: x11::Viewability,
+    /// The window buttons offered as of the last frame, for the log.
+    buttons: Option<WindowButtons>,
     /// Wayland's keyboard shortcuts inhibitor, which is a surface's own;
     /// X11's grab is the client's, and the `App`'s.
     inhibitor: Option<wayland::Shortcuts>,
@@ -549,6 +565,8 @@ struct App {
     focus_events: Vec<(WindowId, bool)>,
     /// The modifiers held, as winit last said: for the paste command.
     modifiers: winit::keyboard::ModifiersState,
+    /// The windows draw their own decorations (`Launch::csd`).
+    csd: bool,
     /// Whether any window could be seen when last looked, which is what the
     /// session is told (see `sync_shown`).
     shown: bool,
@@ -571,7 +589,8 @@ impl App {
         let attributes = Window::default_attributes()
             .with_title("Vento")
             .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 800.0))
-            .with_min_inner_size(min_size(&self.egui.global_style()));
+            .with_min_inner_size(min_size(&self.egui.global_style()))
+            .with_decorations(!self.csd);
         let id = match self.add_window(event_loop, attributes, ViewportId::ROOT) {
             Ok(id) => id,
             Err(e) => {
@@ -673,6 +692,7 @@ impl App {
         window.request_redraw();
     }
 
+
     /// Opens a window as `viewport`, with the window icon, the app ID and a
     /// surface on the shared device (made now, for the first window, with
     /// the adapter chosen to suit its surface).
@@ -718,6 +738,7 @@ impl App {
                 output: window.current_monitor().and_then(|m| m.name()),
                 viewable: x11::Viewable::new(&window),
                 viewability: x11::Viewability::default(),
+                buttons: None,
                 window,
                 surface: Some(surface),
                 config,
@@ -994,6 +1015,11 @@ impl App {
         if surface.release_held() {
             window.request_redraw();
         }
+        let buttons = window.enabled_buttons();
+        if self.csd && surface.buttons != Some(buttons) {
+            surface.buttons = Some(buttons);
+            log::debug!("window {id:?}: window buttons offered: {buttons:?}");
+        }
         let mut next: Option<Request> = None;
         let mut ended: Option<(String, bool)> = None;
         let mut host = Host {
@@ -1008,6 +1034,9 @@ impl App {
             output: surface.output.clone(),
             clipboard: self.clipboard.as_ref(),
             video: gpu.video(),
+            csd: self.csd,
+            buttons,
+            close: false,
         };
         let egui = self.egui.clone();
         let settings = &mut self.settings;
@@ -1056,6 +1085,7 @@ impl App {
         if let Screen::Session(session) = &mut self.screen {
             session.cursor_after(&mut host, icon);
         }
+        let close = host.close;
 
         for (id, deltas) in &output.textures_delta.set {
             for delta in deltas {
@@ -1116,6 +1146,15 @@ impl App {
         if let Some(request) = next {
             self.connect(request);
         }
+        // The title bar's close, as the window manager's (see
+        // `window_event`).
+        if close {
+            if Some(id) == self.main {
+                self.close(event_loop);
+                return;
+            }
+            self.close_window(event_loop, id, true);
+        }
         self.window_ops(event_loop);
         self.sync_shortcuts();
     }
@@ -1135,7 +1174,8 @@ impl App {
                     let attributes = Window::default_attributes()
                         .with_title(title)
                         .with_inner_size(winit::dpi::LogicalSize::new(size.0, size.1))
-                        .with_min_inner_size(min_size(&self.egui.global_style()));
+                        .with_min_inner_size(min_size(&self.egui.global_style()))
+                        .with_decorations(!self.csd);
                     match self.add_window(event_loop, attributes, pane) {
                         Ok(id) => self.windows[&id].window.request_redraw(),
                         Err(e) => {
@@ -1230,6 +1270,9 @@ impl App {
             output: surface.output.clone(),
             clipboard: self.clipboard.as_ref(),
             video: None,
+            csd: self.csd,
+            buttons: WindowButtons::all(),
+            close: false,
         };
         Some(f(session, &mut host, &self.egui))
     }
@@ -1265,6 +1308,9 @@ impl App {
                 output: surface.output.clone(),
                 clipboard: self.clipboard.as_ref(),
                 video: None,
+                csd: self.csd,
+                buttons: WindowButtons::all(),
+                close: false,
             };
             self.settings = session.settings;
             self.placement = session.placement();
@@ -1299,6 +1345,9 @@ impl App {
                         output: surface.output.clone(),
                         clipboard: self.clipboard.as_ref(),
                         video: None,
+                        csd: self.csd,
+                        buttons: WindowButtons::all(),
+                        close: false,
                     };
                     let teardown = session.shutdown(&self.egui, &mut host);
                     self.reap(teardown);
@@ -1381,6 +1430,9 @@ impl App {
                     output: surface.output.clone(),
                     clipboard: self.clipboard.as_ref(),
                     video: None,
+                    csd: self.csd,
+                    buttons: WindowButtons::all(),
+                    close: false,
                 };
                 session.focus(focused, &mut host);
             }

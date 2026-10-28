@@ -500,8 +500,11 @@ impl Session {
         self.accepts_input() && !self.toolbar_hovered(pane) && !self.pane(pane).is_some_and(|p| p.wants_keys)
     }
 
+    /// Whether the pointer is on `pane`'s toolbar or its title bar, or on
+    /// one of its resize edges, where an X11 window manager needs the
+    /// keyboard to resize the window.
     fn toolbar_hovered(&self, pane: PaneId) -> bool {
-        self.pane(pane).is_some_and(|p| p.toolbar_hovered)
+        self.pane(pane).is_some_and(|p| p.toolbar_hovered || p.on_edge)
     }
 
     /// Whether mouse events from winit go to the far end as raw input,

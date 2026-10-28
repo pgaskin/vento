@@ -29,6 +29,7 @@
 //! A child of the session's module, though a file beside it, so that a
 //! pane's frame can read and drive the session's private state.
 
+use super::super::csd;
 use super::super::cursor::{Key, Native};
 use super::super::desktop::Desktop;
 use super::super::hud::{self, Rate};
@@ -142,9 +143,13 @@ pub struct Pane {
     /// The toolbar's size as last drawn, which is where it would be when
     /// out, and so the span of the edge that brings it out.
     toolbar_size: Vec2,
-    /// The pointer is on the toolbar: it stays out, and the keyboard is
-    /// this end's meanwhile.
+    /// The pointer is on the toolbar or the title bar above it: the toolbar
+    /// stays out, and the keyboard is this end's meanwhile.
     pub toolbar_hovered: bool,
+    /// The pointer is on one of the window's own resize edges (see
+    /// `csd.rs`): the keyboard is this end's there too, as the window
+    /// manager takes it for the resize.
+    pub on_edge: bool,
     /// When the pane opened, which is how long its toolbar stays out first.
     opened: Instant,
     /// Whether the pointer was over the desktop in the last frame.
@@ -193,6 +198,7 @@ impl Pane {
             drag_from: None,
             toolbar_size: vec2(0.0, 40.0),
             toolbar_hovered: false,
+            on_edge: false,
             opened: Instant::now(),
             hovered: false,
             native: Native::default(),
@@ -343,7 +349,8 @@ impl Pane {
         {
             let now = Instant::now();
             if now < until {
-                release_hint(ctx, self.toolbar_size.y);
+                let title = if titled(host) { csd::TITLE_BAR } else { 0.0 };
+                release_hint(ctx, title + self.toolbar_size.y);
                 ctx.request_repaint_after(until - now);
             } else {
                 s.release_hint = None;
@@ -353,7 +360,7 @@ impl Pane {
         // (see `holds_shortcuts`), so what the far end has down is let go
         // of there, as for anything else that takes input away; the
         // releases that follow are `key_elsewhere`'s.
-        if self.toolbar_hovered {
+        if self.toolbar_hovered || self.on_edge {
             s.release_keys();
         }
         if self.main() {
@@ -379,6 +386,7 @@ impl Pane {
             // brought to attention (see `App::draw`).
             notice(ctx, "Answer in the main window", Align2::CENTER_CENTER);
         }
+        self.on_edge = csd::resize_edges(ctx, host, csd::CORNER, csd::EDGE);
     }
 
     /// The desktop pixels on screen: one monitor's, or all of them. The
@@ -517,6 +525,12 @@ impl Pane {
     /// the top of the far end's screen, a menu bar or a tab, had the toolbar
     /// come down over it wherever it touched the edge.
     ///
+    /// A window drawing its own decorations has its title bar above the
+    /// toolbar, as wide as it and moved with it (see `csd.rs`), in a window
+    /// and while maximised. There the toolbar comes out from under the
+    /// title bar while the pointer is on either, and is otherwise wholly
+    /// under it: the title bar shows where it is, so it does not peek.
+    ///
     /// It can be dragged along the edge, out of the way of what is under
     /// it, by any part of it: the area senses drags beneath its buttons,
     /// which sense only clicks, so egui gives a press on a button the click
@@ -531,7 +545,11 @@ impl Pane {
         let fullscreen = host.window.fullscreen().is_some();
         let width = self.toolbar_size.x;
         let left = self.placement.left(screen, width);
-        let at_edge = pointer.is_some_and(|p| toolbar::reveals(screen, left, width, fullscreen, ctx.pixels_per_point(), p));
+        let title = titled(host).then(|| csd::title_rect(screen, left, width));
+        let at_edge = pointer.is_some_and(|p| match title {
+            Some(title) => title.contains(p),
+            None => toolbar::reveals(screen, left, width, fullscreen, ctx.pixels_per_point(), p),
+        });
         let reveal = self.opened.elapsed() < TOOLBAR_REVEAL;
         // A menu of the toolbar's (Pop out's) keeps it out while it is
         // open, as the pointer on it would: the menu hangs from it.
@@ -557,17 +575,30 @@ impl Pane {
         // pointer is on the screen's top row anywhere along it; the slide
         // to and from the peek is the same slide, the same 0.2 s.
         let peeks = toolbar::peeks(screen, fullscreen, ctx.pixels_per_point(), pointer);
-        let hidden = toolbar::hidden_y(self.toolbar_size.y, peeks);
+        // Under a title bar, out below it and hidden wholly behind it.
+        let (out, hidden) = match title {
+            Some(title) => (title.height(), title.height() - self.toolbar_size.y),
+            None => (0.0, toolbar::hidden_y(self.toolbar_size.y, peeks)),
+        };
         // Keyed by the pane: egui's animations are the context's, by id
         // alone, and two toolbars on one id would slide as one.
-        let y = ctx.animate_value_with_time(Id::new(("toolbar-y", self.id)), if show { 0.0 } else { hidden }, 0.2);
+        let y = ctx.animate_value_with_time(Id::new(("toolbar-y", self.id)), if show { out } else { hidden }, 0.2);
         if reveal {
             ctx.request_repaint_after(TOOLBAR_REVEAL.saturating_sub(self.opened.elapsed()));
         }
+        let title_hovered = title.is_some_and(|rect| {
+            let name = self.title_set(ctx);
+            // The toolbar shows nothing below the title bar.
+            let hidden = y + self.toolbar_size.y <= out + 0.5;
+            csd::title_bar(ctx, host, rect, &name, hidden).contains_pointer()
+        });
 
         let area = egui::Area::new(Id::new("toolbar"))
             .order(Order::Foreground)
             .fixed_pos(pos2(left, screen.min.y + y))
+            // Drawn and hit-tested only below the title bar, if there is
+            // one, which it slides out from under.
+            .constrain_to(Rect::from_min_max(pos2(screen.min.x, screen.min.y + out), screen.max))
             // Unconstrained, or egui would keep it on screen: off the top
             // is where it goes to hide.
             .constrain(false)
@@ -622,8 +653,9 @@ impl Pane {
         }
         self.toolbar_size = response.rect.size();
         // A drag that has run off the toolbar is still the toolbar's, and
-        // so is the keyboard while it lasts.
-        self.toolbar_hovered = response.contains_pointer() || self.drag_from.is_some() || menu;
+        // so is the keyboard while it lasts; the title bar is this end's
+        // as the toolbar is.
+        self.toolbar_hovered = response.contains_pointer() || title_hovered || self.drag_from.is_some() || menu;
     }
 
     /// The toolbar's buttons: Material Symbols and no words, each with its
@@ -1016,6 +1048,12 @@ impl Pane {
         lines.extend([window, shortcuts]);
         lines
     }
+}
+
+/// Whether the window has its own title bar: drawn with its own
+/// decorations, and not fullscreen.
+fn titled(host: &Host) -> bool {
+    host.csd && host.window.fullscreen().is_none()
 }
 
 /// The far end's cursor under the local pointer, in absolute mode.
