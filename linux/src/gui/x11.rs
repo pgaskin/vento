@@ -702,6 +702,18 @@ impl WindowManager {
         Some((reply.root_x.into(), reply.root_y.into()))
     }
 
+    /// Whether a pointer button is held, as during a move or a resize the
+    /// window manager is doing.
+    pub fn button_held(&self) -> bool {
+        use x11rb::protocol::xproto::KeyButMask;
+        let buttons = KeyButMask::BUTTON1 | KeyButMask::BUTTON2 | KeyButMask::BUTTON3;
+        self.conn
+            .query_pointer(self.window)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .is_some_and(|r| r.mask.intersects(buttons))
+    }
+
     /// Asks the window manager to resize the window from its top left
     /// (`left`) or top right corner while `button` is held, as winit's
     /// `drag_resize_window` does for the first button only: the window

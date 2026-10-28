@@ -770,6 +770,33 @@ impl App {
         let _ = window.request_inner_size(winit::dpi::LogicalSize::new(dialog::WIDTH, inner.height));
     }
 
+    /// A window drawn with its own decorations, given the focus, moved down
+    /// where its top edge is above the top of the monitor it is on, so that
+    /// its title bar can be reached; the window manager's decorations are
+    /// the window manager's to keep on screen. Only on X11, where a window
+    /// can place itself, in a window that is neither maximised nor
+    /// fullscreen, and not while a pointer button is held, as it is while
+    /// the window manager moves the window.
+    fn keep_top_visible(&self, id: WindowId) {
+        let Some(surface) = self.windows.get(&id) else {
+            return;
+        };
+        let (window, Some(wm)) = (&surface.window, &surface.wm) else {
+            return;
+        };
+        if !self.csd || window.is_maximized() || window.fullscreen().is_some() || wm.button_held() {
+            return;
+        }
+        let (Some(monitor), Ok(at)) = (window.current_monitor(), window.outer_position()) else {
+            return;
+        };
+        let top = monitor.position().y;
+        if at.y < top {
+            log::info!("the window's top edge is {} pixels above its monitor's; moving it down", top - at.y);
+            Self::place(window, &Some(monitor), 0.0, 0.0);
+        }
+    }
+
     /// Moves `window` by `dx`, `dy` device pixels where the display server
     /// lets it be placed, keeping its top edge no higher than the top of
     /// `monitor`.
@@ -1667,6 +1694,9 @@ impl ApplicationHandler<Wake> for App {
                 }
             }
             WindowEvent::Focused(focused) => {
+                if *focused {
+                    self.keep_top_visible(id);
+                }
                 // On X11 the keyboard grab makes focus events of its own,
                 // which are not the focus moving (see `x11.rs`): neither
                 // the session nor egui hears of them.
