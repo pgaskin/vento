@@ -37,6 +37,11 @@ libloading = "0.8"
 # Already in the dependency graph through `remotedesktop-runtime`.
 sha2 = "0.11"
 
+[features]
+# The Linux client's downloader is built in, so the reason the backend
+# cannot start also names AutoFetchLibraries' download (`src/lib.rs`).
+download = []
+
 [build-dependencies]
 # Generates the bindings for `vento/realvnc.h` (build.rs) instead of
 # retyping them, as the `api` crate does for the shared headers and each C

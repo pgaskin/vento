@@ -86,6 +86,14 @@ pub const PINS: [(&str, &str); 2] = [
     ("libvncviewer.so", env!("VENTO_REALVNC_SHA256_LIBVNCVIEWER")),
 ];
 
+/// What else to do where the libraries are not in place: the client's
+/// `AutoFetchLibraries`, with what it takes in a build with the downloader
+/// or without.
+#[cfg(feature = "download")]
+const HINT: &str = "or set AutoFetchLibraries to auto or to the APK's path or URL";
+#[cfg(not(feature = "download"))]
+const HINT: &str = "or set AutoFetchLibraries to the APK's path (this build of vento does not download)";
+
 /// Whether RealVNC's two libraries are in `dir` and are the pinned build,
 /// as the session checks before it loads them; otherwise why not, with what
 /// to do about it. Missing files are reported first, then one that cannot
@@ -97,7 +105,7 @@ pub fn libraries(dir: &std::path::Path) -> Result<(), String> {
     let copy = |into: &str| {
         format!(
             "Copy libc++_shared.so and libvncviewer.so from lib/{ABI}/ in the RealVNC Viewer {VERSION} APK into \
-             {into}, or set AutoFetchLibraries to the APK's path"
+             {into}, {HINT}"
         )
     };
     let missing: Vec<&str> = PINS
@@ -424,7 +432,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let copy =
             format!("Copy libc++_shared.so and libvncviewer.so from lib/{ABI}/ in the RealVNC Viewer {VERSION} APK");
-        let hint = "or set AutoFetchLibraries to the APK's path";
+        let hint = HINT;
         assert_eq!(
             libraries(&dir),
             Err(format!("libc++_shared.so and libvncviewer.so are not in {}. {copy} into it, {hint}", dir.display()))

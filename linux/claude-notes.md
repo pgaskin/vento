@@ -1821,6 +1821,21 @@ renamed into place once both match their pins. They go to `realvnc/` under
 `--extlib-dir` where it was given, and otherwise under `$XDG_DATA_HOME/vento`,
 which the default `--extlib-dir` resolves to from then on.
 
+`AutoFetchLibraries=auto` downloads the pinned APK from the add-on's sources
+(`Viewer.java`: Aptoide's API for the exact version code, then a Wayback
+Machine copy), and an `http://` or `https://` URL downloads it from there,
+the pins deciding in both cases. The download (`src/realvnc/download.rs`, ureq
+over rustls) trusts the system's certificates (`SSL_CERT_FILE` and
+`SSL_CERT_DIR` where set), goes through the proxy in `ALL_PROXY`,
+`HTTPS_PROXY` or `HTTP_PROXY` unless `NO_PROXY` names the host (HTTP CONNECT
+or SOCKS), follows at most five redirects and never from https to http, and
+sends the add-on's browser User-Agent. `VENTO_REALVNC_DOWNLOAD_INSECURE` (any
+value but empty or `0`) turns off every certificate check and follows
+redirects to http, with a warning in the log; the pins still apply. The
+`realvnc-download` feature (on by default; `cargo build
+--no-default-features` leaves it out) is the whole downloader: without it the
+client has no network code of its own, and only a path is taken.
+
 `--extlib-dir` defaults to `$XDG_DATA_HOME/vento` where
 `realvnc/libvncviewer.so` is under it, and otherwise to `lib/` beside the
 binary, so a release tree with `lib/realvnc/` works wherever it is unpacked;

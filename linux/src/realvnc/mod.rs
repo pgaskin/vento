@@ -15,6 +15,8 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "realvnc-download")]
+mod download;
 mod zip;
 
 /// The option's key.
@@ -87,13 +89,24 @@ pub fn install_dir(extlib: Option<&Path>) -> PathBuf {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
     Apk(PathBuf),
+    /// The pinned APK, from the add-on's sources.
+    #[cfg(feature = "realvnc-download")]
+    Pinned,
+    /// An APK at this URL.
+    #[cfg(feature = "realvnc-download")]
+    Url(String),
 }
 
-/// The source `fetch` names, for those that name one without asking.
+/// The source `fetch` names, for those that name one without asking. A
+/// build without the downloader (`realvnc-download`) has only the APK.
 pub fn source(fetch: &Fetch) -> Option<Source> {
     match fetch {
         Fetch::Apk(path) => Some(Source::Apk(path.clone())),
-        Fetch::Off | Fetch::Prompt | Fetch::Auto | Fetch::Url(_) => None,
+        #[cfg(feature = "realvnc-download")]
+        Fetch::Auto => Some(Source::Pinned),
+        #[cfg(feature = "realvnc-download")]
+        Fetch::Url(url) => Some(Source::Url(url.clone())),
+        _ => None,
     }
 }
 
@@ -112,6 +125,10 @@ impl Report for Unattended {
 /// add-on's (`plugins/src/main/res/values/strings.xml`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step<'a> {
+    /// Asking a download service which file it has.
+    Asking(&'a str),
+    /// Downloading the APK from this host.
+    Downloading(&'a str),
     /// Reading a local APK.
     Reading,
     /// Opening the APK.
@@ -123,6 +140,8 @@ pub enum Step<'a> {
 impl Step<'_> {
     pub fn text(&self) -> String {
         match self {
+            Step::Asking(host) => format!("Looking for APK on {host}"),
+            Step::Downloading(host) => format!("Downloading the APK from {host}"),
             Step::Reading => "Reading the chosen APK".into(),
             Step::Opening => "Reading the APK".into(),
             Step::Extracting(name) => format!("Extracting and verifying {name}"),
@@ -177,11 +196,16 @@ pub fn install(source: &Source, dir: &Path, report: &dyn Report) -> Result<(), E
     let result = (|| {
         let apk = match source {
             Source::Apk(path) => read(path, report)?,
+            #[cfg(feature = "realvnc-download")]
+            Source::Pinned => download::apk(None, report)?,
+            #[cfg(feature = "realvnc-download")]
+            Source::Url(url) => download::apk(Some(url), report)?,
         };
         extract(&apk, dir, report)
     })();
     match &result {
         Ok(()) => log::info!("installed the RealVNC library in {}", dir.display()),
+        Err(Error::Cancelled) if !matches!(source, Source::Apk(_)) => log::info!("the RealVNC download was cancelled"),
         Err(Error::Cancelled) => log::info!("installing the RealVNC library was cancelled"),
         Err(Error::Failed(why)) => log::warn!("the RealVNC library was not installed: {why}"),
     }

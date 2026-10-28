@@ -454,7 +454,7 @@ mod host {
                 match realvnc::install(&source, &self.realvnc_install, &realvnc::Unattended) {
                     Ok(()) => self.dirs.realvnc_libs = self.realvnc_install.clone(),
                     Err(realvnc::Error::Failed(why)) => {
-                        say(&format!("install failed: {}", why.replace('\n', "; ")));
+                        say(&format!("install failed: {}", why.replace('\n', " ")));
                         return 1;
                     }
                     Err(realvnc::Error::Cancelled) => unreachable!("nothing cancels the probe's install"),

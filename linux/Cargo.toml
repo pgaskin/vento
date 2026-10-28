@@ -100,6 +100,22 @@ bytemuck = "1"
 # written. Both already in the graph through the backends.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 sha2 = "0.11"
+# Downloading the viewer's APK (`src/realvnc/download.rs`), for
+# `AutoFetchLibraries`: a blocking HTTP/1.1 client over rustls with ring, both
+# already in the graph through the backends, the system's trusted
+# certificates, and the proxies the environment names, SOCKS included. All
+# behind `realvnc-download`. Aptoide's API answers in JSON.
+ureq = { version = "3.4", default-features = false, features = ["rustls-no-provider", "socks-proxy"], optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"], optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
+serde_json = { version = "1", optional = true }
+
+[features]
+default = ["realvnc-download"]
+# The downloader for RealVNC's libraries. Without it, a build has no network
+# code of its own: `AutoFetchLibraries` takes only the path of an APK, and
+# the reason RealVNC cannot start says how to install them by hand.
+realvnc-download = ["dep:ureq", "dep:rustls", "dep:rustls-native-certs", "dep:serde_json", "remotedesktop-realvnc/download"]
 
 [build-dependencies]
 # Decodes the window icon, `metadata/icon.png`, into the raw RGBA the binary
