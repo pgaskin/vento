@@ -971,15 +971,29 @@ impl App {
         // RealVNC's libraries first, where they are needed and the option
         // names where from: on the connecting screen, as the session's would
         // be, which then starts with them in place.
-        if let Some((why, fetch)) = realvnc::needed(request.kind, &request.options, &self.dirs)
-            && let Some(source) = realvnc::source(&fetch)
-        {
-            self.make_session_window(&window, dialog_at);
-            window.set_title(&session::connecting_title(&request.address));
+        // With `prompt`, the panel asks first.
+        if let Some((why, fetch)) = realvnc::needed(request.kind, &request.options, &self.dirs) {
             let dir = self.realvnc_install.clone();
-            self.screen = Screen::Installing(Box::new(Installing::start(request, dir, source, why, wake)));
-            window.request_redraw();
-            return;
+            let proxy = self.proxy.clone();
+            let woken: Box<dyn Fn() + Send + Sync> = Box::new(move || {
+                let _ = proxy.send_event(Wake::Now(None));
+            });
+            let installing = match (realvnc::source(&fetch), realvnc::asks(&fetch)) {
+                (Some(source), _) => Some(Installing::start(request.clone(), dir, source, why, woken)),
+                (None, Some(source)) => {
+                    let libs = &self.dirs.realvnc_libs;
+                    let panel = Installing::ask(request.clone(), dir, source, why, woken);
+                    Some(if realvnc::present(libs) { panel.other_build(libs) } else { panel })
+                }
+                (None, None) => None,
+            };
+            if let Some(installing) = installing {
+                self.make_session_window(&window, dialog_at);
+                window.set_title(&session::connecting_title(&request.address));
+                self.screen = Screen::Installing(Box::new(installing));
+                window.request_redraw();
+                return;
+            }
         }
         let zerocopy = match self.gpu.as_ref().map(|g| &g.zerocopy) {
             Some(Ok(_)) => Ok(()),

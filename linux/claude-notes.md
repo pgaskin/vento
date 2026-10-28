@@ -1821,6 +1821,20 @@ renamed into place once both match their pins. They go to `realvnc/` under
 `--extlib-dir` where it was given, and otherwise under `$XDG_DATA_HOME/vento`,
 which the default `--extlib-dir` resolves to from then on.
 
+With `AutoFetchLibraries` at its default, `prompt`, Connect opens the
+add-on's setup screen as a panel over the connecting screen, styled as the
+server's signature prompt (`gui/install.rs`, `prompts::library_panel`): its
+explanation, with the option and the directory to put the files in by hand
+where the add-on has its file picker, a first line where the files in place
+are another build, the pins as small print, and *Download it* (Enter) and
+*Cancel*. One press downloads and extracts: the buttons go, the status line
+steps through the add-on's lines with a progress bar, and the connection goes
+on once both libraries are in place, or the panel shows why not in red with
+the buttons back. Escape stops a running download (a click outside does not),
+and Cancel, Escape or a click outside before then go back to the dialog with
+the reason. `--trust` does not answer the panel, and the probe never asks:
+there `prompt` fails with the reason as `off` does.
+
 `AutoFetchLibraries=auto` downloads the pinned APK from the add-on's sources
 (`Viewer.java`: Aptoide's API for the exact version code, then a Wayback
 Machine copy), and an `http://` or `https://` URL downloads it from there,

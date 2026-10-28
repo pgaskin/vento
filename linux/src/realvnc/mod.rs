@@ -110,6 +110,56 @@ pub fn source(fetch: &Fetch) -> Option<Source> {
     }
 }
 
+/// The source `fetch` downloads from once the user agreed: the add-on's
+/// sources for `prompt`, in a build with the downloader; the window asks
+/// first, on Connect.
+pub fn asks(fetch: &Fetch) -> Option<Source> {
+    match fetch {
+        #[cfg(feature = "realvnc-download")]
+        Fetch::Prompt => Some(Source::Pinned),
+        _ => None,
+    }
+}
+
+/// Whether both libraries are in `dir`, so that where they do not pass the
+/// check, they are another build rather than missing.
+pub fn present(dir: &Path) -> bool {
+    remotedesktop_realvnc::PINS.iter().all(|(name, _)| dir.join(name).is_file())
+}
+
+/// The panel's text, as the add-on's setup screen words it
+/// (`setup_explanation`), with where to set a local APK and where the files
+/// can be put by hand, `dir`, instead of its file picker.
+pub fn explanation(dir: &Path) -> String {
+    let (version, abi) = (remotedesktop_realvnc::VERSION, remotedesktop_realvnc::ABI);
+    format!(
+        "This backend requires a proprietary library from the RealVNC Viewer {version} APK. You can select it from \
+         a local file with -o {OPTION}=/path/to/the.apk, or it can be automatically downloaded and verified. You \
+         can also put lib/{abi}/libc++_shared.so and lib/{abi}/libvncviewer.so from it in {}.",
+        dir.display()
+    )
+}
+
+/// The first line of the panel where the libraries in `dir` are another
+/// build.
+pub fn other_build(dir: &Path) -> String {
+    format!("The library in {} is not the build this backend was written for.", dir.display())
+}
+
+/// The small print under the panel, as the add-on's (`SetupActivity.pins`):
+/// where in the APK each library is looked for, and the hash it must match,
+/// for someone who hashed their own copy to compare.
+pub fn pins() -> String {
+    remotedesktop_realvnc::PINS
+        .iter()
+        .map(|(name, pin)| {
+            let (a, b) = pin.split_at(pin.len() / 2);
+            format!("lib/{}/{name}\n  {a}\n  {b}", remotedesktop_realvnc::ABI)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// An installation nobody watches: the probe's, which logs its steps.
 pub struct Unattended;
 

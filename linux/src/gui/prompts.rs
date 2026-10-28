@@ -293,6 +293,68 @@ pub fn show(
     None
 }
 
+/// What the RealVNC library panel shows: the add-on's setup screen as a
+/// prompt over the connecting screen (`install.rs`).
+pub struct LibraryPanel<'a> {
+    pub address: &'a str,
+    /// The first line where the libraries in place are another build.
+    pub other_build: Option<&'a str>,
+    pub explanation: &'a str,
+    /// The pins, as small print.
+    pub pins: &'a str,
+    /// The current step, or why the last attempt failed (`failed`).
+    pub status: Option<&'a str>,
+    pub failed: bool,
+    /// A download's bytes so far and total, while one runs.
+    pub progress: Option<(u64, Option<u64>)>,
+    /// Whether the download and the extraction are running, which hides
+    /// the buttons, as the add-on does.
+    pub working: bool,
+}
+
+/// Draws the panel as a modal; `Some(true)` for Download it (or Enter),
+/// `Some(false)` for Cancel, Escape, or a click outside it. While it works
+/// only Escape answers, so that a stray click does not throw away a
+/// download.
+pub fn library_panel(ctx: &egui::Context, panel: &LibraryPanel) -> Option<bool> {
+    let modal = Modal::new(Id::new("prompt")).show(ctx, |ui| {
+        ui.set_width(WIDTH);
+        heading(ui, "RealVNC", panel.address, None);
+        if let Some(line) = panel.other_build {
+            ui.label(line);
+            ui.add_space(6.0);
+        }
+        ui.label(panel.explanation);
+        if let Some(status) = panel.status {
+            ui.add_space(8.0);
+            let text = RichText::new(status);
+            ui.label(if panel.failed { text.color(ui.visuals().error_fg_color) } else { text });
+        }
+        let mut answer = None;
+        if panel.working {
+            ui.add_space(4.0);
+            let (done, total) = panel.progress.unwrap_or((0, None));
+            let bar = match panel.progress {
+                Some(_) => progress_bar(done, total),
+                None => egui::ProgressBar::new(0.0).animate(true),
+            };
+            ui.add(bar);
+        } else {
+            answer = yes_no(ui, "Download it", "Cancel", true);
+        }
+        ui.add_space(8.0);
+        ui.label(RichText::new(panel.pins).small().monospace().weak());
+        answer
+    });
+    if modal.inner.is_some() {
+        return modal.inner;
+    }
+    // The modal takes Escape for itself and closes on it as on a click
+    // outside; a click is what tells them apart.
+    let clicked = ctx.input(|i| i.pointer.any_click() || i.pointer.any_pressed());
+    (modal.should_close() && !(panel.working && clicked)).then_some(false)
+}
+
 /// The title, and under it the address and the connecting screen's status.
 fn heading(ui: &mut Ui, title: &str, address: &str, status: Option<&str>) {
     ui.heading(title);
@@ -477,6 +539,74 @@ mod tests {
         }
         assert!(frame(egui::RawInput::default(), Some(prompt)).is_none());
         frame(press(held), Some(prompt))
+    }
+
+    /// What the RealVNC library panel answers to `inputs`, one per frame
+    /// after the first, idle or `working`.
+    fn panel_answer(working: bool, inputs: Vec<egui::RawInput>) -> Option<bool> {
+        let ctx = egui::Context::default();
+        let panel = LibraryPanel {
+            address: "far",
+            other_build: None,
+            explanation: "text",
+            pins: "pins",
+            status: working.then_some("Looking for APK on host"),
+            failed: false,
+            progress: None,
+            working,
+        };
+        let frame = |input| {
+            let mut answered = None;
+            let mut out = ctx.run_ui(input, |ui| answered = library_panel(ui.ctx(), &panel));
+            out.textures_delta.clear();
+            answered
+        };
+        let screen = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 1000.0))),
+            ..Default::default()
+        };
+        assert!(frame(screen()).is_none());
+        inputs.into_iter().find_map(|input| frame(egui::RawInput { screen_rect: screen().screen_rect, ..input }))
+    }
+
+    fn key(key: Key) -> Vec<egui::RawInput> {
+        vec![egui::RawInput {
+            events: vec![egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        }]
+    }
+
+    /// A click far outside the panel (on the screen it covers), over three
+    /// frames.
+    fn click_outside() -> Vec<egui::RawInput> {
+        let at = egui::pos2(5.0, 5.0);
+        let event = |e| egui::RawInput {
+            events: vec![e],
+            ..Default::default()
+        };
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        vec![event(egui::Event::PointerMoved(at)), event(button(true)), event(button(false)), egui::RawInput::default()]
+    }
+
+    #[test]
+    fn the_library_panel_downloads_on_enter_and_stops_on_escape_but_not_a_click_while_working() {
+        assert_eq!(panel_answer(false, key(Key::Enter)), Some(true));
+        assert_eq!(panel_answer(false, key(Key::Escape)), Some(false));
+        assert_eq!(panel_answer(false, click_outside()), Some(false));
+        assert_eq!(panel_answer(true, key(Key::Enter)), None);
+        assert_eq!(panel_answer(true, key(Key::Escape)), Some(false));
+        assert_eq!(panel_answer(true, click_outside()), None);
     }
 
     fn yes(answer: Option<Answer>) -> Option<bool> {
