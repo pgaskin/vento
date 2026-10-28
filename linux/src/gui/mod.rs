@@ -74,7 +74,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use toolbar::Placement;
 use winit::application::ApplicationHandler;
-use winit::dpi::PhysicalPosition;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{DeviceEvent, DeviceId, ElementState, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, EventLoopProxy};
 use winit::window::{Icon, UserAttentionType, Window, WindowAttributes, WindowId};
@@ -912,7 +912,37 @@ impl App {
             .unwrap_or("none")
     }
 
+    /// The window's surface made `size`, in device pixels, and the session
+    /// told.
+    fn resize_surface(&mut self, id: WindowId, size: PhysicalSize<u32>) {
+        if let (Some(gpu), Some(surface)) = (&self.gpu, self.windows.get_mut(&id))
+            && size.width > 0
+            && size.height > 0
+        {
+            surface.config.width = size.width;
+            surface.config.height = size.height;
+            if let Some(s) = &surface.surface {
+                s.configure(&gpu.device, &surface.config);
+            }
+        }
+        if let Screen::Session(session) = &mut self.screen {
+            session.resized();
+        }
+    }
+
     fn draw(&mut self, event_loop: &ActiveEventLoop, id: WindowId) {
+        // A size the window asked for itself is applied at once on Wayland,
+        // where winit sends no `Resized` for it: the surface follows the
+        // window's size here, or the compositor scales the old one to it.
+        let Some(size) = self.windows.get(&id).map(|s| s.window.inner_size()) else {
+            return;
+        };
+        if size.width > 0
+            && size.height > 0
+            && self.windows.get(&id).is_some_and(|s| (s.config.width, s.config.height) != (size.width, size.height))
+        {
+            self.resize_surface(id, size);
+        }
         let Some(surface) = self.windows.get_mut(&id) else {
             return;
         };
@@ -1455,19 +1485,7 @@ impl ApplicationHandler<Wake> for App {
                 return;
             }
             WindowEvent::Resized(size) => {
-                if let (Some(gpu), Some(surface)) = (&self.gpu, self.windows.get_mut(&id))
-                    && size.width > 0
-                    && size.height > 0
-                {
-                    surface.config.width = size.width;
-                    surface.config.height = size.height;
-                    if let Some(s) = &surface.surface {
-                        s.configure(&gpu.device, &surface.config);
-                    }
-                }
-                if let Screen::Session(session) = &mut self.screen {
-                    session.resized();
-                }
+                self.resize_surface(id, *size);
             }
             WindowEvent::Moved(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 // Moved to another output, or its output went away and the
