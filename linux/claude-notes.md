@@ -1276,6 +1276,15 @@ is on the toolbar: the toolbar is this end's, so while it is under the pointer
 the keyboard is too, the grab or the inhibitor is let go (Alt+Tab is the window
 manager's again), the keys the far end has down are released there, and what
 is typed goes nowhere. Moving off the toolbar takes the keyboard back.
+The pointer is on the toolbar, or on anything else in a window, only once it
+has moved there: where a window opens, or is mapped or raised, under a
+pointer at rest, egui is not told where the pointer is until the device moves
+it or a button, the wheel or a touch is used (`Rest` in `src/gui/mod.rs`), so
+a toolbar sliding out at the session's start under it shows no tooltip,
+slides away after its three seconds and leaves the keyboard with the server.
+On niri, where a new window opened under a pointer left at the top of the
+screen, the inhibitor was let go a tenth of a second after it was granted,
+until the pointer moved.
 The pointer is sent from egui's frame and keys as winit delivers them, so a
 key typed after a pointer event that no frame has read yet waits in that
 window's queue and is sent once that frame has sent the pointer's: the

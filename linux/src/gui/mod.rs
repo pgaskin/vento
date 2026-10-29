@@ -205,6 +205,7 @@ pub fn run(launch: Launch) -> i32 {
         display_server: DisplayServer::Other,
         focused: None,
         focus_events: Vec::new(),
+        pointer_moving: false,
         modifiers: Default::default(),
         shown: true,
         repaint_at: Arc::new(Mutex::new(HashMap::new())),
@@ -333,6 +334,9 @@ struct Surface {
     /// [`Held`]).
     held: VecDeque<Held>,
     split: PointerSplit,
+    /// The pointer at rest where it came over the window, and its position
+    /// kept from egui meanwhile (see [`Rest`]).
+    rest: Rest<WindowEvent>,
 }
 
 /// What waits in a window's queue for its next frame: a pointer event for
@@ -377,6 +381,88 @@ impl PointerSplit {
         self.fed = true;
         self.pressed = button == Some(true);
         true
+    }
+}
+
+/// How long after the pointer comes over a window, or the window is
+/// resized under it, a new position for it is taken as the display server
+/// placing it rather than the pointer moving (see [`Rest`]).
+const SETTLE: Duration = Duration::from_secs(1);
+
+/// The pointer at rest where it came over a window: the window was opened,
+/// mapped or raised under it, or switched to with the keyboard. The user
+/// did not point at what is under it, so its positions are kept from egui
+/// until it moves, and nothing is hovered meanwhile. Otherwise a toolbar
+/// sliding out at the session's start (`pane.rs`) under a pointer resting
+/// there counted as hovered: it showed a button's tooltip, stayed out, and
+/// gave the keyboard shortcuts back to this desktop until the pointer
+/// moved.
+///
+/// The display server sends positions of its own around an enter: Xwayland
+/// repeats it, and moves it again as the compositor finishes placing the
+/// window. So the pointer counts as moved on the device's own motion (XI2's
+/// raw motion on X11, `zwp_relative_pointer_v1` on Wayland), and on a
+/// button, the wheel or a touch, before which egui is given the kept
+/// position. For a device with no relative motion (an absolute tablet on
+/// Wayland), a new position more than [`SETTLE`] after the enter or a
+/// resize is a move too.
+///
+/// Generic over the kept event for the tests.
+#[derive(Debug)]
+struct Rest<T> {
+    /// When the pointer came over the window, or the window was last
+    /// resized under it; `None` once it has moved.
+    since: Option<Instant>,
+    /// Where it came over the window.
+    at: Option<PhysicalPosition<f64>>,
+    /// The last position the display server gave meanwhile.
+    held: Option<T>,
+}
+
+impl<T> Default for Rest<T> {
+    fn default() -> Self {
+        Rest { since: None, at: None, held: None }
+    }
+}
+
+impl<T> Rest<T> {
+    /// The pointer came over the window.
+    fn entered(&mut self, now: Instant) {
+        *self = Rest { since: Some(now), ..Rest::default() };
+    }
+
+    /// The window was resized: a position that follows is the display
+    /// server's for the new size.
+    fn resized(&mut self, now: Instant) {
+        if self.since.is_some() {
+            self.since = Some(now);
+        }
+    }
+
+    /// A position from the display server, as `event`: given back for egui
+    /// unless the pointer is at rest, in which case it is kept.
+    fn moved(&mut self, position: PhysicalPosition<f64>, event: T, now: Instant) -> Option<T> {
+        let Some(since) = self.since else {
+            return Some(event);
+        };
+        let at = *self.at.get_or_insert(position);
+        if at != position && now.saturating_duration_since(since) >= SETTLE {
+            *self = Rest::default();
+            return Some(event);
+        }
+        self.held = Some(event);
+        None
+    }
+
+    /// The pointer moved, or a button, the wheel or a touch was used: the
+    /// position kept meanwhile, for egui to have before what follows.
+    fn stirred(&mut self) -> Option<T> {
+        std::mem::take(self).held
+    }
+
+    /// The pointer left the window.
+    fn left(&mut self) {
+        *self = Rest::default();
     }
 }
 
@@ -625,6 +711,10 @@ struct App {
     /// The focus events of this turn of the loop, resolved in
     /// `about_to_wait` (see `resolve_focus`).
     focus_events: Vec<(WindowId, bool)>,
+    /// The pointer device moved in this turn of the loop: an enter in the
+    /// same turn is the pointer moving into the window, whichever of the
+    /// two the display server sent first (see [`Rest`]).
+    pointer_moving: bool,
     /// The modifiers held, as winit last said: for the paste command.
     modifiers: winit::keyboard::ModifiersState,
     /// The windows draw their own decorations (`Launch::csd`).
@@ -849,6 +939,24 @@ impl App {
         let _ = window.request_inner_size(winit::dpi::LogicalSize::new(dialog::WIDTH, inner.height));
     }
 
+    /// The pointer moved, or a button, the wheel or a touch was used, over
+    /// `id`: the position [`Rest`] kept from egui is given to it now.
+    fn stir(&mut self, id: WindowId) {
+        let Some(surface) = self.windows.get_mut(&id) else {
+            return;
+        };
+        let Some(event) = surface.rest.stirred() else {
+            return;
+        };
+        if surface.give_egui(event) {
+            surface.window.request_redraw();
+        }
+        let viewport = surface.viewport;
+        if let Screen::Session(session) = &mut self.screen {
+            session.pointer_event(viewport);
+        }
+    }
+
     /// A window drawn with its own decorations, given the focus, moved down
     /// where its top edge is above the top of the monitor it is on, so that
     /// its title bar can be reached; the window manager's decorations are
@@ -950,6 +1058,7 @@ impl App {
                 minimized: None,
                 held: VecDeque::new(),
                 split: PointerSplit::default(),
+                rest: Rest::default(),
             },
         );
         Ok(id)
@@ -1903,6 +2012,9 @@ impl ApplicationHandler<Wake> for App {
         let Some((window, viewport)) = self.windows.get(&id).map(|s| (Arc::clone(&s.window), s.viewport)) else {
             return;
         };
+        if matches!(event, WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. } | WindowEvent::Touch(_)) {
+            self.stir(id);
+        }
         match &event {
             // A pop-out closed by the window manager is given back, as its
             // Return does; the main window closed is the end of it all.
@@ -1936,8 +2048,11 @@ impl ApplicationHandler<Wake> for App {
                 return;
             }
             WindowEvent::Resized(size) => {
-                if let Some(wm) = self.windows.get_mut(&id).and_then(|s| s.wm.as_mut()) {
-                    wm.stale();
+                if let Some(surface) = self.windows.get_mut(&id) {
+                    surface.rest.resized(Instant::now());
+                    if let Some(wm) = &mut surface.wm {
+                        wm.stale();
+                    }
                 }
                 self.resize_surface(id, *size);
             }
@@ -2043,6 +2158,9 @@ impl ApplicationHandler<Wake> for App {
                 }
                 if let Some(surface) = self.windows.get_mut(&id) {
                     surface.pointer = Some(*position);
+                    if surface.rest.moved(*position, event.clone(), Instant::now()).is_none() {
+                        return;
+                    }
                 }
                 if let Screen::Session(session) = &mut self.screen {
                     session.pointer_event(viewport);
@@ -2053,6 +2171,18 @@ impl ApplicationHandler<Wake> for App {
             {
                 let _ = window.set_cursor_position(display_server::centre(&window));
                 return;
+            }
+            WindowEvent::CursorEntered { .. } => {
+                if let Some(surface) = self.windows.get_mut(&id)
+                    && !self.pointer_moving
+                {
+                    surface.rest.entered(Instant::now());
+                }
+            }
+            WindowEvent::CursorLeft { .. } => {
+                if let Some(surface) = self.windows.get_mut(&id) {
+                    surface.rest.left();
+                }
             }
             WindowEvent::MouseInput { state: pressed, button, .. } => {
                 if let Screen::Session(session) = &mut self.screen
@@ -2095,14 +2225,20 @@ impl ApplicationHandler<Wake> for App {
     }
 
     fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
-        if let DeviceEvent::MouseMotion { delta } = event
-            && let Some(session) = self.session()
-        {
-            session.mouse_motion(delta.0, delta.1);
+        if let DeviceEvent::MouseMotion { delta } = event {
+            self.pointer_moving = true;
+            let ids: Vec<WindowId> = self.windows.keys().copied().collect();
+            for id in ids {
+                self.stir(id);
+            }
+            if let Some(session) = self.session() {
+                session.mouse_motion(delta.0, delta.1);
+            }
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.pointer_moving = false;
         self.settle_focus(event_loop);
         match self.redraw_due() {
             Some(at) => event_loop.set_control_flow(ControlFlow::WaitUntil(at)),
@@ -2306,6 +2442,62 @@ mod tests {
             queue = held;
         }
         frames
+    }
+
+    /// A pointer at rest after `Rest::entered` at `t0`, holding the enter's
+    /// position (1, 1).
+    fn resting(t0: Instant) -> Rest<u32> {
+        let mut rest = Rest::default();
+        rest.entered(t0);
+        assert_eq!(rest.moved(PhysicalPosition::new(1.0, 1.0), 1, t0), None);
+        rest
+    }
+
+    #[test]
+    fn a_pointer_that_came_over_the_window_is_kept_from_egui_until_it_moves() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        // Positions without an enter are given through.
+        let mut rest = Rest::<u32>::default();
+        assert_eq!(rest.moved(PhysicalPosition::new(1.0, 1.0), 1, t0), Some(1));
+        // The display server's own positions after an enter, the same one
+        // again or a new one soon after, are kept; the device's motion gives
+        // egui the last of them, and what follows goes through.
+        let mut rest = resting(t0);
+        assert_eq!(rest.moved(PhysicalPosition::new(1.0, 1.0), 2, t0 + ms(100)), None);
+        assert_eq!(rest.moved(PhysicalPosition::new(5.0, 1.0), 3, t0 + ms(250)), None);
+        assert_eq!(rest.stirred(), Some(3));
+        assert_eq!(rest.moved(PhysicalPosition::new(6.0, 1.0), 4, t0 + ms(260)), Some(4));
+        assert_eq!(rest.stirred(), None);
+        // A button pressed where it rests gives egui its position first.
+        let mut rest = resting(t0);
+        assert_eq!(rest.stirred(), Some(1));
+        // Leaving drops what was kept.
+        let mut rest = resting(t0);
+        rest.left();
+        assert_eq!(rest.stirred(), None);
+        assert_eq!(rest.moved(PhysicalPosition::new(2.0, 1.0), 2, t0), Some(2));
+    }
+
+    #[test]
+    fn a_new_position_long_after_the_enter_or_a_resize_is_a_move() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        // Where the device sends no motion of its own: a new position once
+        // the window has settled.
+        let mut rest = resting(t0);
+        assert_eq!(rest.moved(PhysicalPosition::new(1.0, 1.0), 2, t0 + SETTLE), None);
+        assert_eq!(rest.moved(PhysicalPosition::new(2.0, 1.0), 3, t0 + SETTLE), Some(3));
+        assert_eq!(rest.stirred(), None);
+        // A resize starts the wait again, for the position after it.
+        let mut rest = resting(t0);
+        rest.resized(t0 + ms(900));
+        assert_eq!(rest.moved(PhysicalPosition::new(9.0, 1.0), 2, t0 + ms(1200)), None);
+        assert_eq!(rest.moved(PhysicalPosition::new(9.0, 2.0), 3, t0 + ms(1900)), Some(3));
+        // A resize with the pointer moving changes nothing.
+        let mut rest = Rest::<u32>::default();
+        rest.resized(t0);
+        assert_eq!(rest.moved(PhysicalPosition::new(1.0, 1.0), 1, t0), Some(1));
     }
 
     #[test]
