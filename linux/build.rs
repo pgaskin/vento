@@ -59,7 +59,11 @@
 //!
 //! It also decodes the window icon, `metadata/icon.png`, into the RGBA rows
 //! winit takes (see `window_icon`), so that the binary carries no PNG
-//! decoder.
+//! decoder, and writes `LICENSE` beside the binary, the licences and
+//! notices of everything in the binary and the libraries (see
+//! `licenses.rs`).
+
+mod licenses;
 
 use std::env;
 use std::fs;
@@ -133,6 +137,26 @@ fn main() {
         assert!(path.is_file(), "the C build did not produce {}", path.display());
     }
     beside_the_binary(&tree, &out);
+    println!("cargo:rerun-if-env-changed=DEP_VENTO_VIDEO_CONFIG_H");
+    let ffmpeg_config = PathBuf::from(
+        env::var("DEP_VENTO_VIDEO_CONFIG_H").expect("remotedesktop-platform-linux says where FFmpeg's config.h is"),
+    );
+    let built: Vec<(&str, PathBuf)> = ["libvnc", "tigervnc", "freerdp", "realvnc"]
+        .into_iter()
+        .map(|name| (name, library(&tree, name)))
+        .filter(|(_, path)| path.is_file())
+        .collect();
+    licenses::generate(
+        &licenses::Inputs {
+            root: &root,
+            manifest: &manifest,
+            tree: &tree,
+            libraries: &built,
+            ffmpeg_prefix: &ffmpeg,
+            ffmpeg_config: &ffmpeg_config,
+        },
+        &profile_dir(&out).join(licenses::FILE),
+    );
     println!("cargo:rerun-if-env-changed=VENTO_COMPILE_COMMANDS");
     if let Some(dest) = env::var_os("VENTO_COMPILE_COMMANDS") {
         let dest = root.join(dest);
@@ -399,8 +423,7 @@ fn run(cmd: &mut Command, what: &str) {
 /// away from clang) is removed from there too, or the binary would open what
 /// an earlier build left.
 fn beside_the_binary(tree: &Path, out: &Path) {
-    let profile = out.ancestors().nth(3).expect("OUT_DIR is target/<profile>/build/<crate>/out");
-    let dest = profile.join("lib");
+    let dest = profile_dir(out).join("lib");
     fs::create_dir_all(&dest).expect("creating lib/ beside the binary");
     for name in ["libvnc", "tigervnc", "freerdp", "realvnc"] {
         let from = library(tree, name);
@@ -414,6 +437,12 @@ fn beside_the_binary(tree: &Path, out: &Path) {
             fs::copy(&from, &to).unwrap_or_else(|e| panic!("copying {} to {}: {e}", from.display(), to.display()));
         }
     }
+}
+
+/// The profile's directory of the target directory, where the binary is:
+/// `OUT_DIR` is three levels under it (`target/debug/build/vento-…/out`).
+fn profile_dir(out: &Path) -> &Path {
+    out.ancestors().nth(3).expect("OUT_DIR is target/<profile>/build/<crate>/out")
 }
 
 /// clang and clang++ where both are on the path and run, as the paths `PATH`

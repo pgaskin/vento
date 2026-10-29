@@ -7,6 +7,7 @@
 *
 
 !Cargo.toml
+!LICENSE
 !rust-toolchain.toml
 !meson.build
 !meson.options
@@ -31,8 +32,9 @@
 !third_party/openssl/
 !third_party/pixman/
 # Only the one directory of RustDesk's client that the build reads, its
-# message definitions.
+# message definitions, and its licence, for the release's LICENSE.
 !third_party/rustdesk/libs/base/protos/
+!third_party/rustdesk/LICENCE
 !third_party/ryll/
 !third_party/tigervnc/
 !third_party/winit/

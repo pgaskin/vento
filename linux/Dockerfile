@@ -4,9 +4,10 @@
 # The Linux client's release build. It runs the whole build in a container
 # and outputs only the installed tree: the `vento` binary and, beside it,
 # `lib/` with the backends' `libvento_*.so` (the binary's rpath is
-# `$ORIGIN/lib`). The tree can be moved anywhere as a whole: /opt/vento, a
-# home directory, a USB stick. From the repository root, with the submodules
-# initialised (`git submodule update --init --recursive`):
+# `$ORIGIN/lib`) and `LICENSE`, the licences and notices of everything
+# in them (linux/licenses.rs). The tree can be moved anywhere as a whole:
+# /opt/vento, a home directory, a USB stick. From the repository root, with
+# the submodules initialised (`git submodule update --init --recursive`):
 #
 #   docker build -f linux/Dockerfile --output type=local,dest=build/dist/vento .
 #
@@ -142,7 +143,7 @@ RUN RUSTUP_TOOLCHAIN=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' /src/rust-toolchain
 # it). The tools are LLVM's, since 18.04's binutils cannot read
 # clang's DWARF 5.
 RUN mkdir -p /out/lib \
- && cp target/release/vento /out/ \
+ && cp target/release/vento target/release/LICENSE /out/ \
  && cp target/release/lib/libvento_*.so /out/lib/ \
  && llvm-strip --strip-debug /out/lib/libvento_*.so
 
@@ -151,8 +152,9 @@ RUN mkdir -p /out/lib \
 # LD_LIBRARY_PATH unset, and `vento --list`, which opens each backend's
 # library (the binary does not link them), naming the tree's own lib/ for
 # all four C backends and no error but RealVNC's for its viewer libraries,
-# which the tree does not carry. Print the newest glibc and libstdc++
-# symbol versions each file needs.
+# which the tree does not carry. LICENSE, not empty, naming each
+# library. Print the newest glibc and libstdc++ symbol versions each file
+# needs.
 RUN llvm-readelf -d /out/vento | grep -q 'RUNPATH.*\[\$ORIGIN/lib' \
  && ! llvm-readelf -d /out/lib/libvento_*.so | grep -E '\((RPATH|RUNPATH)\)' \
  && for file in /out/vento /out/lib/*.so; do \
@@ -161,6 +163,10 @@ RUN llvm-readelf -d /out/vento | grep -q 'RUNPATH.*\[\$ORIGIN/lib' \
  && /out/vento --list | tee /tmp/backends \
  && test "$(grep -c '^[a-z]* /out/lib/libvento_[a-z]*\.so\( (error: .*)\)\?$' /tmp/backends)" = 4 \
  && ! grep -F '(error:' /tmp/backends | grep -vF 'are not in /out/lib/realvnc.' \
+ && test -s /out/LICENSE \
+ && for file in /out/lib/libvento_*.so; do \
+     grep -q "^lib/${file##*/}: " /out/LICENSE || { echo "error: LICENSE does not list $file" >&2; exit 1; }; \
+ done \
  && for file in /out/vento /out/lib/*.so; do \
      echo "$file: $(llvm-objdump -T "$file" | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -1)" \
       "$(llvm-objdump -T "$file" | grep -oE 'GLIBCXX_[0-9.]+' | sort -uV | tail -1)"; \

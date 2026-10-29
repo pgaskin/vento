@@ -271,6 +271,9 @@ fn main() {
     // with the cross file in a cross build, so that they are built with the
     // same compilers.
     println!("cargo:prefix={}", prefix.display());
+    // FFmpeg's configuration, for the licence `linux/build.rs` lists it under
+    // (its `FFMPEG_LICENSE`).
+    println!("cargo:config_h={}", root.join("ffmpeg-build/config.h").display());
     if let Some(file) = &cross_file {
         let path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("meson-cross.ini");
         if fs::read_to_string(&path).ok().as_deref() != Some(file.as_str()) {

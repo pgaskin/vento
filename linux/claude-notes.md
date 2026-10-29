@@ -316,7 +316,7 @@ codepoints file. It comes from google/material-design-icons at commit
 font; egui sets none of a variable font's axes, so what is here is a static
 instance of it made with fontTools (unfilled, weight 400, grade 0, optical
 size 24; `src/gui/icons.rs` has the command), 1.4 MB of the binary. FFmpeg is
-linked statically into the binary and the TigerVNC and FreeRDP libraries, as
+linked statically into the binary and the FreeRDP library, as
 configured LGPL 2.1 or later (no `--enable-gpl`, no `--enable-nonfree`;
 `third_party/ffmpeg/COPYING.LGPLv2.1`), unmodified; dav1d, inside it, is
 BSD-2-Clause (`third_party/dav1d/COPYING`). FFmpeg is compiled against
@@ -342,6 +342,20 @@ every program GCC builds links libgcc. libpipewire-0.3 (MIT) is not linked eithe
 compiled against: the sound output declares the functions and structures it
 uses by hand and loads the system's library at run time. Nothing of this crate's graph reaches the
 Android app or its licence page.
+
+`build.rs` writes all of this into `LICENSE` beside the binary
+(`licenses.rs`), and the release tree ships it: each component of the binary
+and of each backend's library, the files it is in, its licence and copyright,
+and each distinct licence or notice text once, by number. The crates are
+`cargo tree -e normal`'s for the target and features, as the Android page
+resolves them; the C libraries are the archives on each library's link line
+in the Meson tree's `build.ninja`, by the sources of the Meson targets that
+made them; FFmpeg's licence is the one its configure reports. A new
+`third_party/` library in a backend's library, a crate with a licence file
+deeper in its package that `licenses.rs` does not list, a crate with no
+licence file and no standard text for its licence, or FFmpeg configured
+under another licence fails the build. Copyright summaries and the licence
+files of the C libraries are written down in `licenses.rs`.
 
 ```sh
 cd linux

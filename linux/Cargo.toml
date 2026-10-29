@@ -121,6 +121,9 @@ realvnc-download = ["dep:ureq", "dep:rustls", "dep:rustls-native-certs", "dep:se
 # Decodes the window icon, `metadata/icon.png`, into the raw RGBA the binary
 # embeds (see `build.rs`).
 png = "0.18"
+# Reads `cargo metadata` and Meson's introspection files for `LICENSE`
+# (see `licenses.rs`). Already in the graph, under `realvnc-download`.
+serde_json = "1"
 
 [dev-dependencies]
 # For the test that every toolbar symbol is in the bundled font (icons.rs).
