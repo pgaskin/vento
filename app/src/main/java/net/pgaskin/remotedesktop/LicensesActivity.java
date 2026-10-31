@@ -62,7 +62,7 @@ public final class LicensesActivity extends AppCompatToolbarActivity {
      */
     static String read(Context context, String packageName) {
         try (InputStream in = open(context, packageName)) {
-            return in == null ? null : new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            return in == null ? null : new String(Streams.readAll(in), StandardCharsets.UTF_8);
         } catch (IOException e) {
             Log.i(TAG, "reading the licence page in " + packageName, e);
             return null;

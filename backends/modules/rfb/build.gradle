@@ -15,7 +15,7 @@ android {
     ndkVersion = project(':backends').nativeNdkVersion
 
     defaultConfig {
-        minSdk 34
+        minSdk 31
     }
 
     compileOptions {

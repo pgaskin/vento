@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Builds preference rows from setting descriptions.
@@ -245,7 +246,7 @@ final class OptionScreen {
             final ListPreference l = group.findPreference(o.key());
             final List<BackendOption.Choice> offered = o.choices().stream()
                     .filter(c -> c.requires() == null || on.test(c.requires()))
-                    .toList();
+                    .collect(Collectors.toList());
             l.setEntries(offered.stream()
                     .map(BackendOption.Choice::label).toArray(CharSequence[]::new));
             l.setEntryValues(offered.stream()

@@ -23,7 +23,7 @@ android {
 
     defaultConfig {
         applicationId "net.pgaskin.remotedesktop"
-        minSdk 34
+        minSdk 31
         targetSdk 36
         versionCode 8
         versionName "8"

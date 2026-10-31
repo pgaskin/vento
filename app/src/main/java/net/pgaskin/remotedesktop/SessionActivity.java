@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import androidx.appcompat.app.AlertDialog;
 
@@ -13,6 +14,7 @@ import com.google.android.material.radiobutton.MaterialRadioButton;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.ContextThemeWrapper;
@@ -214,13 +216,33 @@ public final class SessionActivity extends Activity
         session.attach(view, prompts);
         // Leaving this screen ends the connection, so back asks the same
         // question as the disconnect region. Registered only once there is a
-        // session; the message screens keep the default back.
-        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-                OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::disconnectRequested);
+        // session; the message screens keep the default back. Before API 33
+        // there is no dispatcher, and onBackPressed checks the flag instead.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::disconnectRequested);
+        } else {
+            backDisconnects = true;
+        }
         askAboutNotifications();
         if (started) {
             session.backend().focus(true);
             session.onScreen(true);
+        }
+    }
+
+    /** Whether back asks to disconnect, before API 33. */
+    private boolean backDisconnects;
+
+    // Only acts before API 33, where back gestures still call it.
+    @Override
+    @SuppressLint("GestureBackNavigation")
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        if (backDisconnects) {
+            disconnectRequested();
+        } else {
+            super.onBackPressed();
         }
     }
 
@@ -461,7 +483,8 @@ public final class SessionActivity extends Activity
      * only seeing or stopping it from the notification shade is lost.
      */
     private void askAboutNotifications() {
-        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1);
         }

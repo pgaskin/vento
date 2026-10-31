@@ -28,6 +28,7 @@ import net.pgaskin.remotedesktop.backend.BackendOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /**
  * {@link BackendOption}s as hand-built rows, the renderer used by both
@@ -221,7 +222,7 @@ final class PanelOptions {
         return o.choices().stream()
                 .filter(c -> c.requires() == null
                         || Boolean.parseBoolean(values.get(c.requires())))
-                .toList();
+                .collect(Collectors.toList());
     }
 
     private String value(BackendOption o) {
@@ -251,7 +252,7 @@ final class PanelOptions {
             final String v = values.get(key);
             return v == null || Boolean.parseBoolean(v);
         };
-        BackendOption.settle(rows.stream().map(r -> r.option).toList(), this::value, on,
+        BackendOption.settle(rows.stream().map(r -> r.option).collect(Collectors.toList()), this::value, on,
                 values::set);
     }
 

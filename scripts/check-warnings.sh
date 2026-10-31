@@ -56,7 +56,7 @@ fi
 # feature, and a warning in one is still a warning.
 RUSTFLAGS=-Dwarnings cargo check --workspace --all-targets --all-features
 ANDROID_NDK_HOME="$sdk/ndk/$ndk" RUSTFLAGS=-Dwarnings \
-    cargo ndk -t arm64-v8a -t x86_64 --platform 34 check --workspace --all-targets --all-features
+    cargo ndk -t arm64-v8a -t x86_64 --platform 31 check --workspace --all-targets --all-features
 
 # `check` for the lint and the unit tests, `assemble` for the native halves and
 # the dexer, and both under the property the build files read.

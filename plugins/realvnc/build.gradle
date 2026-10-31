@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         applicationId "net.pgaskin.remotedesktop.realvnc"
-        minSdk 34
+        minSdk 31
         targetSdk 36
         // Checked for equality against the app's before this APK's dex is
         // loaded: the `:backends` interfaces the two share have no stability

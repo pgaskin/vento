@@ -381,7 +381,7 @@ public final class Connections {
 
     private static byte[] readAll(File f) throws Exception {
         try (FileInputStream in = new FileInputStream(f)) {
-            return in.readAllBytes();
+            return Streams.readAll(in);
         }
     }
 }

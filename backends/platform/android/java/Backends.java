@@ -17,6 +17,7 @@ import android.util.Log;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -29,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import dalvik.system.PathClassLoader;
 
@@ -539,7 +541,8 @@ public final class Backends {
     }
 
     public static List<String> ids() {
-        return providers().stream().map(BackendProvider::id).toList();
+        return Collections.unmodifiableList(
+                providers().stream().map(BackendProvider::id).collect(Collectors.toList()));
     }
 
     public static String name(String id) {

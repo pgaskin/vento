@@ -777,7 +777,7 @@ public final class SettingsActivity extends AppCompatToolbarActivity {
                     }
                     // One byte more than this app ever writes, so a video
                     // picked by mistake is rejected rather than decoded.
-                    final byte[] bytes = in.readNBytes(Transfer.MAX_BYTES + 1);
+                    final byte[] bytes = Streams.readN(in, Transfer.MAX_BYTES + 1);
                     if (bytes.length > Transfer.MAX_BYTES) {
                         throw new IOException("larger than any file this app writes");
                     }

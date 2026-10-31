@@ -13,6 +13,7 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.os.Build;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -787,12 +788,16 @@ public final class PlaygroundView extends View
      */
     @Override
     public void keyFeedback(ExtensionKeyboard.Feedback what) {
+        if (what == ExtensionKeyboard.Feedback.REPEAT && !subtleHaptics) {
+            return;
+        }
         performHapticFeedback(switch (what) {
             case LOCK -> HapticFeedbackConstants.LONG_PRESS;
             case PRESS -> HapticFeedbackConstants.KEYBOARD_TAP;
-            case REPEAT -> subtleHaptics
+            // TEXT_HANDLE_MOVE is the same tick before API 34.
+            case REPEAT -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
                     ? HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
-                    : HapticFeedbackConstants.NO_HAPTICS;
+                    : HapticFeedbackConstants.TEXT_HANDLE_MOVE;
         });
     }
 

@@ -12,7 +12,7 @@ import net.pgaskin.remotedesktop.backend.Backends;
 /**
  * Applies Material You: every activity gets the system palette.
  *
- * <p>minSdk 34 is well past the API 31 minimum for
+ * <p>minSdk 31 is the API 31 minimum for
  * {@code android.R.color.system_accent1_*}, so there is no fallback path. The
  * session screen does not use the palette: it draws over a remote desktop,
  * where the phone's accent colour does not belong.

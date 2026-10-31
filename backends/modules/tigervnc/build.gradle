@@ -24,7 +24,7 @@ android {
     ndkVersion = project(':backends').nativeNdkVersion
 
     defaultConfig {
-        minSdk 34
+        minSdk 31
         ndk {
             // x86_64 is in that list; lint reads the literal and not the value.
             //noinspection ChromeOsAbiSupport

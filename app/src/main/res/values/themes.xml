@@ -3,7 +3,7 @@
     SPDX-FileCopyrightText: 2026 Patrick Gaskin
     SPDX-License-Identifier: GPL-3.0-or-later
 
-    Material You, which needs no fallback with minSdk 34: the dynamic palette
+    Material You, which needs no fallback with minSdk 31: the dynamic palette
     exists since API 31. RemoteDesktopApp applies the colours per activity;
     this is the rest of the theme.
 -->

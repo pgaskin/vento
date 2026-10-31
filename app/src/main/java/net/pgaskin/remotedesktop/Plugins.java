@@ -22,12 +22,13 @@ import java.io.File;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
  * Plugin state as the app presents it (what each plugin is waiting for or what
@@ -128,7 +129,7 @@ final class Plugins {
                 case LOADED -> {
                     final List<String> ids = waiting.get(p.packageName());
                     if (ids != null) {
-                        final List<String> names = ids.stream().map(Backends::name).toList();
+                        final List<String> names = ids.stream().map(Backends::name).collect(Collectors.toList());
                         cards.add(new Card(Kind.SETUP, p.packageName(), ids.get(0), label,
                                 context.getString(R.string.plugin_needs_setup,
                                         String.join(", ", names)), null, null));
@@ -179,13 +180,13 @@ final class Plugins {
      * that. It is the less common case (an add-on is downloaded once and the app
      * updates itself), and it resolves once the app is updated.
      */
+    @SuppressWarnings("deprecation") // the flags overloads are API 33
     private static String updateUrl(Context context, String packageName) {
         final PackageManager pm = context.getPackageManager();
         final String template;
         final long version;
         try {
-            final Bundle meta = pm.getApplicationInfo(packageName,
-                    PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA)).metaData;
+            final Bundle meta = pm.getApplicationInfo(packageName, PackageManager.GET_META_DATA).metaData;
             if (meta == null) {
                 return null;
             }
@@ -193,10 +194,8 @@ final class Plugins {
                 return null;
             }
             template = meta.getString(Backends.PLUGIN_UPDATE_URL);
-            version = pm.getPackageInfo(context.getPackageName(),
-                    PackageManager.PackageInfoFlags.of(0)).getLongVersionCode();
-            if (pm.getPackageInfo(packageName,
-                    PackageManager.PackageInfoFlags.of(0)).getLongVersionCode() > version) {
+            version = pm.getPackageInfo(context.getPackageName(), 0).getLongVersionCode();
+            if (pm.getPackageInfo(packageName, 0).getLongVersionCode() > version) {
                 return null;
             }
         } catch (PackageManager.NameNotFoundException e) {
@@ -214,6 +213,7 @@ final class Plugins {
      * out, in the format {@code apksigner verify --print-certs} prints. False
      * for a missing or malformed fingerprint.
      */
+    @SuppressWarnings("deprecation") // the flags overload is API 33
     private static boolean signedWith(Context context, String sha256) {
         if (sha256 == null || sha256.isEmpty()) {
             return false;
@@ -221,7 +221,7 @@ final class Plugins {
         final SigningInfo signing;
         try {
             signing = context.getPackageManager().getPackageInfo(context.getPackageName(),
-                    PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES))
+                    PackageManager.GET_SIGNING_CERTIFICATES)
                     .signingInfo;
         } catch (PackageManager.NameNotFoundException e) {
             throw new IllegalStateException(e); // we are installed
@@ -239,8 +239,11 @@ final class Plugins {
             throw new IllegalStateException(e); // every Android has it
         }
         for (Signature s : signing.getApkContentsSigners()) {
-            if (sha256.equalsIgnoreCase(
-                    HexFormat.of().formatHex(digest.digest(s.toByteArray())))) {
+            final StringBuilder hex = new StringBuilder();
+            for (byte b : digest.digest(s.toByteArray())) {
+                hex.append(String.format(Locale.ROOT, "%02x", b));
+            }
+            if (sha256.equalsIgnoreCase(hex.toString())) {
                 return true;
             }
         }

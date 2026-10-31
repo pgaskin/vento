@@ -62,6 +62,7 @@ gnutls_sources = {
     'gl/mbszero.c',
     'gl/memchr.c',
     'gl/memeq.c',
+    'gl/memset_explicit.c',
     'gl/open.c',
     'gl/printf-args.c',
     'gl/printf-parse.c',

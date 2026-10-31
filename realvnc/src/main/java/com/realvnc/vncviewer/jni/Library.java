@@ -38,7 +38,7 @@ public final class Library {
 
     /**
      * SHA-256 by {@code <abi>/<name>}, which is also the path each lives at
-     * inside the viewer's APK. arm64 is every device that can run minSdk 34 and
+     * inside the viewer's APK. arm64 is every device that can run minSdk 31 and
      * x86_64 is the emulator.
      */
     private static final Map<String, String> SHA256 = Map.of(

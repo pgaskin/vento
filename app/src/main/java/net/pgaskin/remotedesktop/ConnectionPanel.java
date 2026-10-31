@@ -30,6 +30,7 @@ import net.pgaskin.remotedesktop.session.WindowFollower;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * What the {@code information} tap region opens: one sheet holding the session's
@@ -205,7 +206,7 @@ final class ConnectionPanel {
         });
 
         backendName = Backends.name(backendId);
-        live = Backends.options(backendId).stream().filter(BackendOption::live).toList();
+        live = Backends.options(backendId).stream().filter(BackendOption::live).collect(Collectors.toList());
         // What the session was opened with, rather than what the record says:
         // the two differ once the record has been edited since, and a session
         // opened by address has no record.

@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * The two documents this app exports and imports: the connections, and the
@@ -270,7 +271,7 @@ final class Transfer {
         if (deleteExisting) {
             // A restore. This also deletes the previews, which belong to the
             // connections being replaced.
-            Connections.delete(ctx, Connections.all(ctx).stream().map(Connection::id).toList());
+            Connections.delete(ctx, Connections.all(ctx).stream().map(Connection::id).collect(Collectors.toList()));
         }
         final Set<String> taken = new LinkedHashSet<>();
         for (Connection c : Connections.all(ctx)) {

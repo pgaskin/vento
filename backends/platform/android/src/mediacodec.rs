@@ -135,7 +135,7 @@ unsafe extern "C" {
 }
 
 // For the calls Android 16 added (API 36), looked up rather than linked:
-// the app runs from API 34, where linking them would fail to load.
+// the app runs from API 31, where linking them would fail to load.
 unsafe extern "C" {
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
 }

@@ -22,7 +22,7 @@ android {
 
     defaultConfig {
         applicationId "net.pgaskin.remotedesktop.rustdesk"
-        minSdk 34
+        minSdk 31
         targetSdk 36
         // Checked for equality against the app's before this APK's dex is
         // loaded: the interface between the two is a set of Java interfaces

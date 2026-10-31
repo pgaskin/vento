@@ -3,6 +3,7 @@
 
 package net.pgaskin.remotedesktop;
 
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -12,6 +13,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.IBinder;
+
+import androidx.core.app.ServiceCompat;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -169,6 +172,7 @@ public final class SessionService extends Service implements Sessions.Watcher {
      * Running it twice would post a notification for a session that has already
      * ended, under an id that is never cancelled.
      */
+    @SuppressLint("InlinedApi") // ServiceCompat drops the type before API 34
     private void update() {
         final List<Session> alive = Sessions.alive();
         final NotificationManager nm = getSystemService(NotificationManager.class);
@@ -181,8 +185,8 @@ public final class SessionService extends Service implements Sessions.Watcher {
             // startForeground is still required here, so it is called and the
             // service stopped right after. It reuses the outgoing session's id
             // if there is one, so no new notification appears.
-            startForeground(elected != 0 ? elected : NOTIFICATION_NONE, build(null),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            ServiceCompat.startForeground(this, elected != 0 ? elected : NOTIFICATION_NONE,
+                    build(null), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
             for (int id : posted) {
                 nm.cancel(id);
             }
@@ -203,7 +207,7 @@ public final class SessionService extends Service implements Sessions.Watcher {
         if (foreground == null) {
             foreground = alive.get(0);
         }
-        startForeground(foreground.notificationId(), build(foreground),
+        ServiceCompat.startForeground(this, foreground.notificationId(), build(foreground),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         elected = foreground.notificationId();
 

@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * The connection editor: a full-screen dialog over the home screen, with a
@@ -432,7 +433,7 @@ final class ConnectionEditorPanel {
                         .filter(o -> o.scope() != BackendOption.Scope.GLOBAL)
                         .map(o -> o.scope() == BackendOption.Scope.LAYERED
                                 ? withAppDefault(o, defaults.get(o.key())) : o)
-                        .toList());
+                        .collect(Collectors.toList()));
         // Last, after the backend's own: the app's per-connection options are
         // fewer and less central than the protocol's.
         connectionOptions.addAll(AppOptions.options(activity));
