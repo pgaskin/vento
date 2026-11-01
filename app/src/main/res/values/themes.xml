@@ -118,6 +118,7 @@
         parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="android:colorBackgroundFloating">?attr/colorSurfaceContainerHigh</item>
         <item name="android:colorBackground">?attr/colorSurfaceContainerHigh</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">never</item>
     </style>
 
     <!--
