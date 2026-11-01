@@ -222,6 +222,9 @@ final class PromptDialogs implements Prompt.Handler {
         box.setHint(hint);
         final TextInputEditText text = box.findViewById(R.id.value);
         text.setInputType(inputType);
+        if ((inputType & InputType.TYPE_MASK_VARIATION) == InputType.TYPE_TEXT_VARIATION_PASSWORD) {
+            box.setEndIconMode(TextInputLayout.END_ICON_PASSWORD_TOGGLE);
+        }
         if (wanted) {
             ((ViewGroup.MarginLayoutParams) box.getLayoutParams()).bottomMargin =
                     Dialogs.dp(activity, 8);
